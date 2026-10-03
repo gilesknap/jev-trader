@@ -93,7 +93,8 @@ parked ideas in the [design](design.md).
   them for the rest of the trading day. If the runner looks dead (no heartbeat for 3 minutes),
   STOP flattens directly through Alpaca.
 - **HOLD LIVE** (dashboard, or `trader hold-live`): vetoes going live, at any stage, until the
-  human runs `trader release-live`.
+  human runs `trader release-live`. The runner reads it when it starts, before the open, so on a
+  live account it applies from the next session; STOP is the immediate control.
 - **`config/mode.yaml`** (in the data repository's `main`): forces `paper` or `live`, overriding
   the automatic go-live, after a deploy, which always shows the change.
 - **Money movements** are the human's alone. No part of the system has transfer permissions:

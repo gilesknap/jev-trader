@@ -64,8 +64,9 @@ The `strategist` branch may change only `state/`, `journal/`, `features/custom/`
   the weekly journal, ending with a link comparing the `strategist` branch with last week's, so
   the week's changes to `state/` are one click away. It closes last week's issue, and flags a
   go-live assessment in the title when there is one.
-- Strategy changes need no deploy: the runner reads `state/` and `features/custom/` at each
-  session start. `trader validate` checks them first; a broken classifier file means nothing
+- Strategy changes need no deploy: the runner reads `state/` and `features/custom/` once per
+  session, 2 minutes before the open; an edit made during a session applies only if the runner
+  restarts. `trader validate` checks them first; a broken classifier file means nothing
   trades that day.
 
 ## The wrapper

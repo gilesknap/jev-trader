@@ -39,6 +39,10 @@ uv run trader hold-live
 A HOLD always wins, at any stage, even one pressed while the runner is re-checking the gate. It
 stays until you release it.
 
+The runner decides paper or live once, when it starts before the open. A HOLD pressed while the
+account is already live takes it back to paper from the next session; to stop today's live
+trading as well, press STOP.
+
 ## Re-arm
 
 ```bash
