@@ -34,8 +34,11 @@ minutes old.
 - **Paid real-time SIP** (Alpaca's Algo Trader Plus, about $99 a month at the time of writing)
   gives the live runner the full consolidated tape, and lifts the 30-symbol stream limit.
 - **What changes in code:** the runner asks for `feed="iex"` / `DataFeed.IEX` in
-  `src/trader/runner.py` (the stream, the REST fallback, and the prior session's volume). Switch
-  those, and then revisit [the IEX/SIP notes in Limitations](../explanations/limitations.md):
+  `src/trader/runner.py`: the stream, the REST fallback, the seed after a mid-session restart,
+  and the prior session's volume. To use more than 30 symbols, also raise
+  `STREAM_SYMBOL_LIMIT` there, and the 30-symbol rule in
+  [Configuration](../reference/configuration.md). All market data is fetched with the **paper**
+  keys, so the data plan must be on the account those keys belong to. Then revisit [the IEX/SIP notes in Limitations](../explanations/limitations.md):
   live and backtest data would then come from the same feed.
 - **Is it worth it?** On a small account, $99 a month is a large fraction of the capital. It pays
   only once there's an edge to scale.
@@ -53,8 +56,8 @@ These are larger changes. Each one touches the parts of the code that handle rea
 them as projects, with their own design and review.
 
 - **Overnight holds.** Parked on purpose: the [design](../explanations/design.md) lists why, under
-  "Parked ideas", and the conditions for reopening it. The end-of-day flatten, the session model and the P&L attribution all assume flat
-  nights.
+  "Parked ideas", and the conditions for reopening it. The end-of-day flatten, the session model
+  and the P&L attribution all assume flat nights.
 - **Shorting and margin.** The engine, guardrails and order paths are long only, and the
   settled-cash ledger assumes a cash account. Shorting needs a margin account, borrow
   availability, short-side stops and different risk limits (a short's loss is unbounded).

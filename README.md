@@ -17,12 +17,12 @@ it beats doing nothing.
 
 - **It invents its own strategies.** The strategist reads its results every evening, forms
   hypotheses, backtests them and writes the next day's classifiers. It labels each idea `novel`
-  or `conventional`. A scoreboard ranks those families against a fixed control strategy and
-  buy-and-hold SPY, after slippage, and won't call anything an edge until the evidence clears
-  luck.
+  or `conventional`. A scoreboard ranks those families against a fixed control strategy, after
+  slippage, and won't call anything an edge until the evidence clears luck. Buy-and-hold SPY
+  runs alongside on the equity chart.
 - **The safety lives in code, not in prompts.** Position limits, stops, the daily kill switch,
   settled-cash accounting and the go-live gate are enforced by a daemon the strategist can't
-  edit. The strategist's own code runs in a sandbox.
+  edit. The strategist's own feature code runs in a sandbox.
 - **It runs itself, and you can still steer it.** Pre-market, post-close and weekly runs happen
   on timers. You read a weekly retrospective, veto go-live if you disagree, and steer the
   strategist by talking it through in an ordinary Claude Code session that ends in a pull
