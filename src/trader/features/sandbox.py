@@ -28,30 +28,14 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from trader import config
+from trader.features.barcodec import decode_bars, encode_bars  # noqa: F401  (decode_bars: re-export)
 from trader.safeio import read_sources
 
 REQUEST_TIMEOUT_S = 5.0
 GATE_TIMEOUT_S = 180.0
-
-
-def encode_bars(df: pd.DataFrame) -> dict:
-    if df is None or df.empty:
-        return {"t": [], "o": [], "h": [], "l": [], "c": [], "v": []}
-    return {
-        "t": [int(x) for x in df.index.asi8],
-        "o": df.open.tolist(), "h": df.high.tolist(), "l": df.low.tolist(),
-        "c": df.close.tolist(), "v": df.volume.tolist(),
-    }
-
-
-def decode_bars(d: dict) -> pd.DataFrame:
-    idx = pd.to_datetime(np.array(d["t"], dtype="int64"), utc=True).tz_convert("America/New_York")
-    return pd.DataFrame({"open": d["o"], "high": d["h"], "low": d["l"], "close": d["c"], "volume": d["v"]},
-                        index=idx, dtype=float)
 
 
 class SandboxError(Exception):

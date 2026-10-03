@@ -1,8 +1,9 @@
 # Sourced by the setup scripts, which run before any venv exists: read one plain scalar from
-# config.yaml at the root of the checkout these scripts are in. `cfg owner github_repo` prints
-# gilesknap/trading. Only for two-level scalar keys; tests/test_config.py checks it agrees
-# with the real loader (`trader config get`) for every key the scripts use.
-CONFIG_YAML="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/config.yaml"
+# config.yaml. `cfg owner github_repo` prints gilesknap/trading. Only for two-level scalar keys;
+# tests/test_config.py checks it agrees with the real loader (`trader config get`) for every key
+# the scripts use. The file is the one in $TRADER_DATA_ROOT (a data checkout, #169) when that's
+# set, else the one at the root of the checkout these scripts are in (the monorepo).
+CONFIG_YAML="${TRADER_DATA_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}/config.yaml"
 cfg() {
     local v
     v=$(awk -v s="$1:" -v k="$2:" '

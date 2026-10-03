@@ -16,6 +16,10 @@ install -d -o root   -g trading -m 0750 /srv/trading
 install -d -o trader -g trading -m 2750 /srv/trading/strategist
 install -d -o runner -g trading -m 2750 /srv/trading/main
 install -d -o runner -g trading -m 2750 /srv/trading/runtime
+# The split layout's (#169) checkout of the private data repo's main, cloned by 3-runner.sh. Empty
+# and unused on a monorepo host: the other scripts key the split layout on a checkout (.git) here,
+# never on the directory alone.
+install -d -o runner -g trading -m 2750 /srv/trading/config
 
 # The SSH-tunnel dashboard (trader-dashboard-ssh.service): its socket lives in a directory only
 # the dashview group can enter. Add the admin running this, never trader or runner.

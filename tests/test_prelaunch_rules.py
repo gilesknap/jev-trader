@@ -1,9 +1,12 @@
 import datetime as dt
+from pathlib import Path
 
 import pandas as pd
 import pytest
 
-from trader import cli
+from trader import cli, config
+from trader import features as F
+from trader.classifier import load_specs
 from conftest import TEST_START_DATE as START_DATE  # what the autouse fixture pins golive.START_DATE to
 from trader.jev import Decision
 from trader.runner import _exclude_prelaunch_specs
@@ -20,6 +23,20 @@ def test_plumbing_rules_are_disabled_on_start_date_even_if_left_configured():
     for day in (START_DATE, START_DATE + dt.timedelta(days=30)):
         assert _exclude_prelaunch_specs(tests + experiment, day, notify) == experiment
     assert len(alerts) == 2 and all(lvl == "urgent" and "test_market" in m and "test_exit" in m for lvl, m in alerts)
+
+
+# The pre-launch pack: a new data repo's strategist branch starts with it as state/classifiers.yaml (#169).
+PACK = Path(__file__).resolve().parents[1] / "templates" / "data" / "strategist" / "state" / "classifiers.yaml"
+
+
+def test_prelaunch_pack_leaves_only_the_control_and_probe_from_start_date():
+    specs = load_specs(PACK, set(F.REGISTRY), set(config.universe()))
+    plumbing = [s.id for s in specs if s.id.startswith("test_")]
+    assert plumbing, "the pack exists to push orders through every execution path before launch"
+    notes = []
+    kept = _exclude_prelaunch_specs(specs, START_DATE, lambda level, message: notes.append(message))
+    assert sorted(s.id for s in kept) == ["control_orb", "probe_universe_baseline"]
+    assert len(notes) == 1 and all(i in notes[0] for i in plumbing)
 
 
 def test_validate_rejects_the_reserved_prefix_from_start_date(tmp_path, monkeypatch, capsys):

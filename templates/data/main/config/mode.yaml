@@ -1,0 +1,6 @@
+# Human override for the account mode. Changes take effect only after a human deploy.
+#   auto  - go live automatically when the runner's code-enforced gate passes, after a
+#           3-session veto window (HOLD LIVE on the dashboard / `trader hold-live`)
+#   paper - force paper trading
+#   live  - force live trading
+mode: paper

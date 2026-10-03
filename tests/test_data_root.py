@@ -5,10 +5,16 @@ directory ("split mode"), it moves config.yaml, config/mode.yaml, the .env fallb
 rendered deploy files, plus STRATEGIST_ROOT's default; nothing else. config.py resolves its paths
 and loads SETTINGS at import, so those checks run in a fresh interpreter with a scrubbed
 environment: nothing leaks into, or in from, the other tests.
+
+CODE is the code root those subprocesses run with: this tree when it holds config.yaml (the monorepo),
+otherwise (the public code repo, whose data lives elsewhere) a temp code tree built from this one's
+templates and universe plus the conftest's data-root config, passed as TRADER_CODE_ROOT. The trader
+package itself always imports from this tree.
 """
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -18,7 +24,33 @@ import yaml
 
 from trader import config
 
-ROOT = Path(__file__).resolve().parents[1]  # the tree under test; also CODE_ROOT in the subprocesses
+ROOT = Path(__file__).resolve().parents[1]  # the tree under test
+CODE: Path = ROOT  # CODE_ROOT in the subprocesses: set by the code_root fixture below
+CODE_ENV: dict = {}  # what puts it there ({} when CODE is ROOT)
+
+
+@pytest.fixture(autouse=True, scope="module")
+def code_root(tmp_path_factory):
+    """A code root holding config.yaml, config/mode.yaml and up-to-date rendered deploy files, as this tree
+    does in the monorepo. In the public layout (no ROOT/config.yaml) build one: the templates and universe
+    from this tree, config.yaml and mode.yaml from the data root this process loaded (tests/conftest.py's)."""
+    global CODE, CODE_ENV
+    if (ROOT / "config.yaml").exists():
+        CODE, CODE_ENV = ROOT, {}
+    else:
+        CODE = tmp_path_factory.mktemp("code")
+        shutil.copytree(ROOT / "deploy" / "templates", CODE / "deploy" / "templates")
+        (CODE / "config").mkdir()
+        shutil.copy(ROOT / "config" / "universe.yaml", CODE / "config" / "universe.yaml")
+        shutil.copy(config.SETTINGS_FILE, CODE / "config.yaml")
+        mode = config.MODE_FILE.read_text() if config.MODE_FILE.exists() else "mode: auto\n"
+        (CODE / "config" / "mode.yaml").write_text(mode)
+        for rel, text in config.render_deploy(CODE, CODE).items():
+            (CODE / rel).parent.mkdir(parents=True, exist_ok=True)
+            (CODE / rel).write_text(text)
+        CODE_ENV = {"TRADER_CODE_ROOT": str(CODE)}
+    yield CODE
+    CODE, CODE_ENV = ROOT, {}
 
 SHOW = """
 import json
@@ -38,10 +70,11 @@ print(json.dumps({
 
 def _env(home: Path, **env) -> dict:
     """The current environment minus every TRADER_* variable and every secret load_secrets() lets the
-    environment override, with HOME moved (no services.env, no ~/.config/trading/env), plus `env`."""
+    environment override, with HOME moved (no services.env, no ~/.config/trading/env), plus CODE_ENV and
+    `env` (a None value drops that variable)."""
     secrets = ("ALPACA_", "OPENROUTER_API_KEY", "NTFY_TOPIC")
     base = {k: v for k, v in os.environ.items() if not k.startswith(("TRADER_", *secrets))}
-    return base | {"HOME": str(home)} | env
+    return {k: v for k, v in (base | {"HOME": str(home)} | CODE_ENV | env).items() if v is not None}
 
 
 def _run(args: list[str], home: Path, cwd: Path = ROOT, **env) -> subprocess.CompletedProcess:
@@ -59,7 +92,7 @@ def _data_root(tmp_path: Path, mode: str | None = "paper", repo: str = "someone/
     loaded) and, unless mode is None, config/mode.yaml."""
     d = tmp_path / "data"
     (d / "config").mkdir(parents=True)
-    raw = yaml.safe_load((ROOT / "config.yaml").read_text())
+    raw = yaml.safe_load((CODE / "config.yaml").read_text())
     raw["owner"]["github_repo"] = repo
     (d / "config.yaml").write_text(yaml.safe_dump(raw))
     if mode:
@@ -86,25 +119,25 @@ def _old_layout(code: Path) -> dict:
 
 @pytest.mark.parametrize("data_env", [None, "", "same"], ids=["unset", "empty", "equal-to-code-root"])
 def test_unset_data_root_changes_no_path(tmp_path, data_env):
-    env = {} if data_env is None else {"TRADER_DATA_ROOT": str(ROOT) if data_env == "same" else ""}
+    env = {} if data_env is None else {"TRADER_DATA_ROOT": str(CODE) if data_env == "same" else ""}
     got = _paths(tmp_path, **env)
     code = Path(got["CODE_ROOT"])
-    assert code == ROOT
+    assert code == CODE
     assert {k: got[k] for k in _old_layout(code)} == _old_layout(code)
     assert got["SECRETS_FILES"] == [str(code / ".env"), str(tmp_path / ".config" / "trading" / "env")]
     assert Path(got["DATA_ROOT"]).resolve() == code.resolve()
     assert got["split"] is False
-    assert got["repo"] == config.load_settings(ROOT / "config.yaml").owner.github_repo
+    assert got["repo"] == config.load_settings(CODE / "config.yaml").owner.github_repo
 
 
 def test_existing_overrides_still_win_without_data_root(tmp_path):
     got = _paths(tmp_path, TRADER_STRATEGIST_ROOT=str(tmp_path / "s"), TRADER_RUNTIME=str(tmp_path / "rt"),
-                 TRADER_SECRETS=str(tmp_path / "sec"), TRADER_CONFIG=str(ROOT / "config.yaml"))
+                 TRADER_SECRETS=str(tmp_path / "sec"), TRADER_CONFIG=str(CODE / "config.yaml"))
     assert got["STRATEGIST_ROOT"] == str(tmp_path / "s")
     assert got["CLASSIFIERS_FILE"] == str(tmp_path / "s" / "state" / "classifiers.yaml")
     assert got["RUNTIME_DIR"] == str(tmp_path / "rt") and got["REPLAY_DIR"] == str(tmp_path / "rt" / "replay")
-    assert got["SECRETS_FILES"][:2] == [str(tmp_path / "sec"), str(ROOT / ".env")]
-    assert got["MODE_FILE"] == str(ROOT / "config" / "mode.yaml") and got["split"] is False
+    assert got["SECRETS_FILES"][:2] == [str(tmp_path / "sec"), str(CODE / ".env")]
+    assert got["MODE_FILE"] == str(CODE / "config" / "mode.yaml") and got["split"] is False
 
 
 # ---- what TRADER_DATA_ROOT moves ----------------------------------------------------------
@@ -112,7 +145,7 @@ def test_existing_overrides_still_win_without_data_root(tmp_path):
 def test_data_root_moves_config_mode_and_env_fallback_only(tmp_path):
     data = _data_root(tmp_path)
     got = _paths(tmp_path, TRADER_DATA_ROOT=str(data))
-    old = _old_layout(ROOT)
+    old = _old_layout(CODE)
     assert got["DATA_ROOT"] == str(data) and got["split"] is True
     assert got["SETTINGS_FILE"] == str(data / "config.yaml")
     assert got["repo"] == "someone/their-data"  # SETTINGS really loaded from the data root
@@ -130,6 +163,16 @@ def test_data_root_moves_config_mode_and_env_fallback_only(tmp_path):
     assert got["STRATEGIST_ALERTS"] == str(tmp_path / "s" / "strategist-alerts.log")
 
 
+def test_code_root_defaults_to_the_packages_own_tree(tmp_path):
+    """Without TRADER_CODE_ROOT, CODE_ROOT is the tree the package imports from, in either layout (a data
+    root supplies the config, since the public code tree has none)."""
+    data = _data_root(tmp_path)
+    got = _paths(tmp_path, TRADER_DATA_ROOT=str(data), TRADER_CODE_ROOT=None)
+    assert got["CODE_ROOT"] == str(ROOT) and got["split"] is True
+    assert got["UNIVERSE_FILE"] == str(ROOT / "config" / "universe.yaml")
+    assert got["RUNTIME_DIR"] == str(ROOT / "runtime") and got["SETTINGS_FILE"] == str(data / "config.yaml")
+
+
 def test_a_relative_data_root_is_made_absolute_once_at_import(tmp_path):
     data = _data_root(tmp_path)
     got = _paths(tmp_path, cwd=tmp_path, TRADER_DATA_ROOT="data")
@@ -143,8 +186,8 @@ def test_a_relative_data_root_is_made_absolute_once_at_import(tmp_path):
 
 def test_trader_config_still_overrides_the_data_root(tmp_path):
     data = _data_root(tmp_path)
-    got = _paths(tmp_path, TRADER_DATA_ROOT=str(data), TRADER_CONFIG=str(ROOT / "config.yaml"))
-    assert got["SETTINGS_FILE"] == str(ROOT / "config.yaml") and got["MODE_FILE"] == str(data / "config" / "mode.yaml")
+    got = _paths(tmp_path, TRADER_DATA_ROOT=str(data), TRADER_CONFIG=str(CODE / "config.yaml"))
+    assert got["SETTINGS_FILE"] == str(CODE / "config.yaml") and got["MODE_FILE"] == str(data / "config" / "mode.yaml")
 
 
 def test_secrets_fall_back_to_the_data_roots_env(tmp_path):
@@ -209,19 +252,19 @@ def test_render_deploy_reads_templates_from_code_and_config_from_data(tmp_path):
     raw = yaml.safe_load((data / "config.yaml").read_text())
     raw["schedule"]["runner_start"] = "07:07"
     (data / "config.yaml").write_text(yaml.safe_dump(raw))
-    files = config.render_deploy(ROOT, data)
-    assert set(files) == set(config.render_deploy(ROOT, ROOT))  # same relative paths
+    files = config.render_deploy(CODE, data)
+    assert set(files) == set(config.render_deploy(CODE, CODE))  # same relative paths
     assert "OnCalendar=Mon..Fri 07:07 " in files["deploy/systemd/trader-runner.timer"]
 
 
 def test_render_deploy_into_a_separate_data_root_needs_its_mode_file(tmp_path):
     data = _data_root(tmp_path, mode=None)
     with pytest.raises(config.SettingsError, match="mode.yaml is missing"):
-        config.render_deploy(ROOT, data)
+        config.render_deploy(CODE, data)
 
 
 def _snapshot(paths) -> dict:
-    return {p: (ROOT / p).read_text() for p in paths}
+    return {p: (CODE / p).read_text() for p in paths}
 
 
 @pytest.mark.parametrize("how", ["option", "env"])

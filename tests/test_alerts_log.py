@@ -2,10 +2,14 @@
 
 import os
 import stat
+from pathlib import Path
 
 import pytest
 
 from trader import alerts, config
+
+ROOT_GITIGNORE = Path(__file__).resolve().parents[1] / ".gitignore"
+TEMPLATE_GITIGNORE = Path(__file__).resolve().parents[1] / "templates/data/strategist/.gitignore"
 
 
 @pytest.fixture
@@ -62,5 +66,17 @@ def test_fallback_defaults_into_the_strategist_checkout_and_is_gitignored():
     if "TRADER_STRATEGIST_ALERTS" in os.environ:
         pytest.skip("default overridden")
     assert config.STRATEGIST_ALERTS.parent == config.STRATEGIST_ROOT
-    ignored = (config.CODE_ROOT / ".gitignore").read_text().split()
-    assert config.STRATEGIST_ALERTS.name in ignored  # else the wrapper's non-strategy-path check would delete it
+    # Else the wrapper's non-strategy-path check would delete it. A new data repo's strategist branch gets
+    # the template's .gitignore (tested below); today's monorepo checkout uses the code root's.
+    if ROOT_GITIGNORE.exists():
+        assert config.STRATEGIST_ALERTS.name in ROOT_GITIGNORE.read_text().split()
+
+
+def test_template_strategist_gitignore_covers_the_wrappers_local_files():
+    """The strategist branch's own .gitignore (#169 section 3.2): secrets, stamps, the alerts fallback, the
+    run lock, replays and decision logs must never be committed, or be reverted by the path check."""
+    ignored = TEMPLATE_GITIGNORE.read_text().split()
+    for name in (".env", ".last_run", ".last_postclose", "strategist-alerts.log", ".run.lock", "replays/",
+                 "logs/decisions/*.jsonl.gz", "runtime/", "__pycache__/", ".pytest_cache/", ".venv/"):
+        assert name in ignored, name
+    assert config.STRATEGIST_ALERTS.name in ignored

@@ -7,6 +7,7 @@ import sys
 import textwrap
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from trader import features as F
@@ -239,6 +240,110 @@ def test_sandbox_runs_on_the_callers_environment(tmp_path):
     assert Path(r.stdout.strip()).resolve() == Path(sys.prefix).resolve()
 
 
+# Runs the real worker module (`python -I -m trader.features.worker`, as bwrap does) with `import trader.config`
+# made impossible: in split mode (#169) the code checkout has no config.yaml, and the bwrap'd worker runs with a
+# cleared environment, so anything that loads trader.config there kills it and disables every custom feature.
+# A meta-path hook rather than hiding config.yaml, so it holds in both layouts and catches transitive imports.
+NO_CONFIG_WORKER = """
+import runpy, sys
+class NoConfig:
+    def find_spec(self, name, path=None, target=None):
+        if name == "trader.config" or name.startswith("trader.config."):
+            raise ImportError("trader.config imported in the feature worker")
+sys.meta_path.insert(0, NoConfig())
+try:
+    runpy.run_module("trader.features.worker", run_name="__main__", alter_sys=True)
+finally:
+    print(sorted(m for m in sys.modules if m.startswith("trader")), file=sys.stderr)
+"""
+
+
+def test_worker_never_imports_trader_config(tmp_path, session):
+    import json
+
+    from trader.features.barcodec import encode_bars
+
+    custom = tmp_path / "custom"
+    custom.mkdir()
+    (custom / "good.py").write_text(GOOD)
+    s = session()
+    enc = encode_bars(s)
+    reqs = [{"id": 1, "nonce": "a", "op": "load", "dir": str(custom), "samples": [[enc, enc, enc]]},
+            {"id": 2, "nonce": "b", "op": "compute", "names": ["sb_last_range_pct"], "bars": encode_bars(s.iloc[:61]),
+             "prev": enc, "spy": enc, "mso": 60, "mtc": 330}]
+    r = subprocess.run([sys.executable, "-I", "-c", NO_CONFIG_WORKER], input="".join(json.dumps(q) + "\n" for q in reqs),
+                       capture_output=True, text=True, timeout=120, env={}, cwd=tmp_path)
+    assert r.returncode == 0, r.stderr
+    load, comp = (json.loads(line) for line in r.stdout.splitlines())
+    assert load["features"] == ["sb_last_range_pct"] and not load["errors"], load
+    b = s.iloc[60]
+    assert comp["values"]["sb_last_range_pct"] == pytest.approx((b.high / b.low - 1) * 100), comp
+    assert "trader.config" not in r.stderr and "trader.features.harness" in r.stderr  # the hook saw the imports
+
+
+def test_bar_codec_is_shared(session):
+    from trader.features import barcodec, sandbox
+
+    assert sandbox.encode_bars is barcodec.encode_bars and sandbox.decode_bars is barcodec.decode_bars
+    assert barcodec.decode_bars(barcodec.encode_bars(session().iloc[:0])).empty
+    assert barcodec.decode_bars(barcodec.encode_bars(None)).empty
+
+
+@pytest.mark.parametrize("unit", ["ns", "us", "ms", "s"])
+@pytest.mark.parametrize("tz", ["America/New_York", "UTC"])
+def test_bar_codec_round_trips_any_index_unit(session, unit, tz):
+    """#181: the wire carries epoch ns whatever the index's unit (pandas 3 bars are usually us), and the
+    decoded index is the same instants in New York time."""
+    from trader.features.barcodec import decode_bars, encode_bars
+
+    s = session().iloc[:30]
+    s.index = s.index.tz_convert(tz).as_unit(unit)
+    enc = encode_bars(s)
+    assert enc["t"][0] == pd.Timestamp("2026-09-21 09:30", tz="America/New_York").value  # ns since the epoch
+    back = decode_bars(enc)
+    assert str(back.index.tz) == "America/New_York" and back.index.unit == "ns"
+    assert back.index.equals(s.index.tz_convert("America/New_York"))  # same instants, any unit
+    assert (back.index.hour[0], back.index.minute[-1]) == (9, 59)
+    assert (back.to_numpy() == s.astype(float).to_numpy()).all()
+
+
+CLOCK = '''
+from trader.features import feature
+
+@feature("sb_last_bar_clock", source="custom")
+def clock(bars, ctx):
+    """Last bar's NY time as hour + minute/100; NaN before 2000, so the gate rejects wrong timestamps."""
+    t = bars.index[-1]
+    return float(t.hour + t.minute / 100) if t.year > 2000 else float("nan")
+
+@feature("sb_ctx_clock", source="custom")
+def ctx_clock(bars, ctx):
+    """Last SPY bar's minute, and the previous session's first bar's day of month."""
+    return float(ctx.spy.index[-1].minute * 100 + ctx.prev_day.index[0].day)
+'''
+
+
+@needs_bwrap
+@pytest.mark.parametrize("unit", ["us", "ns"])
+def test_custom_features_see_real_timestamps(tmp_path, session, unit):
+    """#181 end to end: the gate's samples and every compute frame (bars, prev_day, spy) reach the worker
+    with the right clock, for the us indexes the live stream and alpaca-py build as well as ns."""
+    d = tmp_path / "custom"
+    d.mkdir()
+    (d / "clock.py").write_text(CLOCK)
+    s, prev = session(), session(day=__import__("datetime").date(2026, 9, 18))
+    s.index, prev.index = s.index.as_unit(unit), prev.index.as_unit(unit)
+    sb = FeatureSandbox(d)
+    sb.start([(s, prev, s)])
+    try:
+        assert sb.names == {"sb_last_bar_clock", "sb_ctx_clock"} and not sb.broken, sb.errors
+        out = sb.compute(["sb_last_bar_clock", "sb_ctx_clock"], s.iloc[:91], F.FeatureContext(prev, s.iloc[:76], 90, 300))
+        assert out["sb_last_bar_clock"] == pytest.approx(11.00)  # bar 90 opens at 11:00 NY
+        assert out["sb_ctx_clock"] == pytest.approx(45 * 100 + 18)  # SPY's bar 75 is 10:45; prev day the 18th
+    finally:
+        sb.close()
+
+
 @pytest.mark.parametrize("src", [
     "import trader.housekeeping",
     "import os",
@@ -321,7 +426,10 @@ def test_stdout_writes_cannot_corrupt_the_protocol(tmp_path, session):
     injection is covered by test_out_of_sequence_reply_fails_closed."""
     d = tmp_path / "custom"
     d.mkdir()
-    (d / "noisy.py").write_text(GOOD.replace('b = bars.iloc[-1]', 'bars.info()\n    b = bars.iloc[-1]'))
+    # An empty frame's info() still writes several lines to stdout, at ~0.25 ms a call: far enough under the
+    # gate's 5 ms limit that machine load can't fail the gate (a full bars.info() sat right at it).
+    (d / "noisy.py").write_text(GOOD.replace('b = bars.iloc[-1]', 'pd.DataFrame().info()\n    b = bars.iloc[-1]')
+                                .replace("import numpy as np", "import numpy as np\nimport pandas as pd"))
     s = session()
     sb = FeatureSandbox(d)
     sb.start([(s, s, s)])

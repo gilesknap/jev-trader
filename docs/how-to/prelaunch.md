@@ -1,8 +1,8 @@
 # Run the pre-launch dry run
 
 Before the experiment starts, push real orders through every execution path on paper, so a bug
-shows up while nothing counts. The pack is `deploy/prelaunch/classifiers.yaml`: `control_orb`,
-five `test_*` classifiers and a universe-wide baseline probe that never orders.
+shows up while nothing counts. The pack is `templates/data/strategist/state/classifiers.yaml`:
+`control_orb`, five `test_*` classifiers and a universe-wide baseline probe that never orders.
 
 The `test_*` classifiers aren't strategies. Each deliberately enters on its own symbol (AAPL,
 MSFT, XLF, XLI or XLV) so that every path runs: Jev entry and exit calls, market and limit
@@ -20,7 +20,7 @@ flatten. The go-live gate and the live scoreboard ignore trades before
    ```bash
    sudo -iu trader
    cd /srv/trading/strategist && git pull
-   cp deploy/prelaunch/classifiers.yaml state/classifiers.yaml
+   cp templates/data/strategist/state/classifiers.yaml state/classifiers.yaml
    sed -i 's/^date: .*/date: YYYY-MM-DD/' state/classifiers.yaml   # the next session's date
    uv run trader validate                                          # must end "classifiers OK"
    git commit -am "Pre-launch plumbing pack" && git push

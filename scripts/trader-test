@@ -1,0 +1,28 @@
+#!/bin/sh
+# Run pytest on a proposal clone with trader's venv (#169 section 14 item 4). Usage, from the clone's
+# root:  trader-test [pytest args]   e.g.  trader-test -q tests/test_engine.py
+# Installed as ~trader/.local/bin/trader-test by 2-strategist.sh (split layout).
+#
+# trader's venv is an editable install of the DEPLOYED code (/srv/trading/main/src), so a plain
+# `trader-python -m pytest` in a clone would test the deployed trader, not the clone's. When
+# ./src/trader exists, this puts the clone's src first on PYTHONPATH, which Python searches before
+# the venv's .pth entry. The paths the strategist's unit exports for the deployed layout
+# (TRADER_CODE_ROOT, TRADER_DATA_ROOT, TRADER_STRATEGIST_ROOT, TRADER_RUNTIME, ...) are dropped, so
+# the clone's code finds its own tree, its conftest falls back to the clone's data template, and the
+# tests can't write into the live strategist checkout. To test against a real data checkout, opt in
+# with TRADER_TEST_DATA_ROOT, which is passed through.
+#
+# Known limit: the feature sandbox's worker runs `python -I` (isolated: PYTHONPATH is ignored), so
+# end-to-end sandbox tests in a clone still import the deployed trader inside the sandbox.
+# Dependencies come from the deployed uv.lock: a proposal that changes dependencies can't be
+# tested this way.
+VENV="$HOME/.local/share/trader/venv"
+unset TRADER_CODE_ROOT TRADER_DATA_ROOT TRADER_STRATEGIST_ROOT TRADER_RUNTIME TRADER_REPLAY_DIR TRADER_SECRETS \
+      TRADER_STRATEGIST_STAMP TRADER_CONFIG
+if [ -d ./src/trader ]; then
+    PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+    export PYTHONPATH
+else
+    echo "trader-test: no ./src/trader here, so this tests the DEPLOYED trader; run it from a clone's root" >&2
+fi
+exec "$VENV/bin/python" -m pytest "$@"

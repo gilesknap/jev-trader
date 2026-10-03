@@ -24,7 +24,7 @@ Items marked **TODO** weren't verified when this was written; check them as you 
      ```
    - Don't use GitHub's "Use this template" button. It copies the files into a new history that shares no commits with the starter, so every later `git merge upstream/main` sees unrelated histories and conflicts on everything. Don't fork it either: a fork of a public repository can't be made private. Later updates come in by a merge: see "Taking updates from the starter" below.
 
-   The starter is already reset for a new owner: `journal/` and `logs/` are empty, `state/` is fresh (`strategy.md`, an empty `watchlist.md`, and the pre-launch pack from `deploy/prelaunch/classifiers.yaml` as `state/classifiers.yaml`), and `config.yaml` holds placeholders.
+   The starter is already reset for a new owner: `journal/` and `logs/` are empty, `state/` is fresh (`strategy.md`, an empty `watchlist.md`, and the pre-launch pack from `templates/data/strategist/state/classifiers.yaml` as `state/classifiers.yaml`), and `config.yaml` holds placeholders.
 2. Edit `config.yaml` at the repo root. It holds everything specific to one deployment. Read the comments in the file itself for what each key does: that file, not this guide, is the reference. The keys you must change:
    - `owner.name` and `owner.github_repo` (`you/your-repo`, your private repo): the setup scripts clone from it.
    - `dashboard.users`: your Tailscale login(s). **Empty means nobody can open the dashboard.**
@@ -41,7 +41,7 @@ Items marked **TODO** weren't verified when this was written; check them as you 
    A malformed `config.yaml` (an unknown key, a bad date, an unquoted time) stops every `trader` command with a message naming the file, so a typo can't slip through quietly.
 3. Start the experiment fresh:
    - For now, set `experiment.start_date` to any date comfortably after your install (a few weeks out). You'll set the real one in step 8, when you run the pre-launch pack. The go-live gate and the scoreboard ignore everything before it.
-   - **Only if you started from someone's full copy rather than the starter:** empty `journal/` and `logs/` (keep the `.gitkeep` files): `logs/` holds the previous owner's `trades.csv`, equity and cashflow files, `probe_report.json` and decision logs, which would otherwise be read as your history. Then reset `state/`: `strategy.md` to a short "Phase: pre-launch, observe starts <date>" note, `watchlist.md` to empty, and `classifiers.yaml` to `control_orb` only (copy it from `deploy/prelaunch/classifiers.yaml` and delete the other rules, or use the whole pack for step 8).
+   - **Only if you started from someone's full copy rather than the starter:** empty `journal/` and `logs/` (keep the `.gitkeep` files): `logs/` holds the previous owner's `trades.csv`, equity and cashflow files, `probe_report.json` and decision logs, which would otherwise be read as your history. Then reset `state/`: `strategy.md` to a short "Phase: pre-launch, observe starts <date>" note, `watchlist.md` to empty, and `classifiers.yaml` to `control_orb` only (copy it from `templates/data/strategist/state/classifiers.yaml` and delete the other rules, or use the whole pack for step 8).
    - Leave `config/universe.yaml` and `config/mode.yaml` (`paper`) as they are unless you mean to change them.
 4. Create the `strategist` branch from `main` and push it. The strategist commits only there.
 5. Create a label called `needs-human` (Issues → Labels). The strategist uses it when it needs something from you.
@@ -281,7 +281,7 @@ Before the experiment starts, push real orders through every execution path on p
    ```bash
    sudo -iu trader
    cd /srv/trading/strategist && git pull
-   cp deploy/prelaunch/classifiers.yaml state/classifiers.yaml
+   cp templates/data/strategist/state/classifiers.yaml state/classifiers.yaml
    sed -i 's/^date: .*/date: YYYY-MM-DD/' state/classifiers.yaml   # the next session's date
    uv run trader validate                                          # must end "classifiers OK"
    git commit -am "Pre-launch plumbing pack" && git push

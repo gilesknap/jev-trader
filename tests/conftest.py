@@ -1,12 +1,65 @@
+"""Shared fixtures, and the choice of data the suite runs against (#169).
+
+Which data root the tests use, decided here before anything imports `trader` (config.yaml is
+loaded at import):
+1. TRADER_TEST_DATA_ROOT, if set: a developer's own data checkout (config.yaml, config/mode.yaml,
+   state/...), used as both TRADER_DATA_ROOT and TRADER_STRATEGIST_ROOT.
+2. An already-set TRADER_DATA_ROOT (e.g. trading-deploy testing candidate code against candidate
+   config), left alone.
+3. Otherwise, if this tree has no config.yaml of its own (the public code repo), a session copy of
+   templates/data/main and templates/data/strategist, with the deploy files rendered into it.
+4. Otherwise (a monorepo checkout with its own config.yaml, as deployed today), nothing changes.
+"""
+
+import atexit
 import datetime as dt
+import os
+import shutil
+import tempfile
+from pathlib import Path
 
-import numpy as np
-import pandas as pd
-import pytest
+ROOT = Path(__file__).resolve().parents[1]
+TEMPLATE_DATA = ROOT / "templates" / "data"
 
-from trader import golive
-from trader import scoreboard as SB
-from trader.data import ET
+
+def _use_template_data() -> Path | None:
+    """Point TRADER_DATA_ROOT/TRADER_STRATEGIST_ROOT at test data when this tree has none. Returns the
+    session copy of the template, or None when the environment or the tree already supplies data."""
+    if os.environ.get("TRADER_TEST_DATA_ROOT"):
+        data = str(Path(os.environ["TRADER_TEST_DATA_ROOT"]).absolute())
+        os.environ["TRADER_DATA_ROOT"] = data
+        os.environ["TRADER_STRATEGIST_ROOT"] = data
+        return None
+    if os.environ.get("TRADER_DATA_ROOT") or (ROOT / "config.yaml").exists():
+        return None
+    tmp = Path(tempfile.mkdtemp(prefix="trader-test-data-"))
+    atexit.register(shutil.rmtree, tmp, ignore_errors=True)
+    data = tmp / "data"
+    # One directory for both, as in a single data checkout: config and strategy side by side.
+    shutil.copytree(TEMPLATE_DATA / "main", data)
+    shutil.copytree(TEMPLATE_DATA / "strategist", data, dirs_exist_ok=True)
+    os.environ["TRADER_DATA_ROOT"] = str(data)
+    os.environ["TRADER_STRATEGIST_ROOT"] = str(data)
+    return data
+
+
+TEST_DATA_ROOT = _use_template_data()
+
+# Only now may trader be imported.
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+import pytest  # noqa: E402
+
+from trader import config as trader_config  # noqa: E402
+
+if TEST_DATA_ROOT is not None:  # render the deploy files a data checkout carries beside config.yaml
+    for _rel, _text in trader_config.render_deploy(ROOT, TEST_DATA_ROOT).items():
+        (TEST_DATA_ROOT / _rel).parent.mkdir(parents=True, exist_ok=True)
+        (TEST_DATA_ROOT / _rel).write_text(_text)
+
+from trader import golive  # noqa: E402
+from trader import scoreboard as SB  # noqa: E402
+from trader.data import ET  # noqa: E402
 
 # The tests write trades and sessions in October 2026, so they run against a fixed experiment start rather
 # than whatever config.yaml says (a new deployment sets its own date, often in the future). Every consumer

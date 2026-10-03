@@ -1,6 +1,8 @@
 # PRE-LAUNCH PACK: plumbing tests to run on paper for 1-2 trading days before the experiment
-# starts (see docs/tutorials/installation.md, "Pre-launch"). Copy it to state/classifiers.yaml on the strategist
-# branch, set `date:` below to the first session it's for, and run `uv run trader validate`.
+# starts (see docs/tutorials/installation.md, "Pre-launch"). It is the code repo's
+# templates/data/strategist/state/classifiers.yaml, so a new data repo starts with it as
+# state/classifiers.yaml on the strategist branch. Set `date:` below to the first session it's
+# for, and run `uv run trader validate`.
 # The runner drops every test_* rule on and after experiment.start_date, and `trader validate`
 # refuses them from that date; remove them before then anyway, and leave control_orb and
 # the probe running.

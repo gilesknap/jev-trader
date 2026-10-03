@@ -1,4 +1,5 @@
 import textwrap
+from pathlib import Path
 
 import pytest
 import yaml
@@ -25,8 +26,14 @@ def write(tmp_path, text):
     return p
 
 
-def test_repo_classifiers_file_is_valid():
-    specs = load_specs(config.CLASSIFIERS_FILE, set(F.REGISTRY), set(config.universe()))
+PRELAUNCH_PACK = Path(__file__).resolve().parents[1] / "templates/data/strategist/state/classifiers.yaml"
+
+
+@pytest.mark.parametrize("path", sorted({PRELAUNCH_PACK, config.CLASSIFIERS_FILE}), ids=str)
+def test_repo_classifiers_file_is_valid(path):
+    """The pre-launch pack every new data repo starts with, and the classifiers file the suite runs
+    against (the same file when the tests use the template data; see conftest.py)."""
+    specs = load_specs(path, set(F.REGISTRY), set(config.universe()))
     assert any(s.control for s in specs)
 
 

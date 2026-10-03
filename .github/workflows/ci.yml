@@ -1,0 +1,29 @@
+name: CI
+
+# Runs the test suite on pull requests and pushes to main.
+# Only in a public repository (like docs.yml): the private copy is tested by trading-deploy before
+# every deploy, against the operator's own config. A code checkout without config.yaml (the public
+# repo) runs the tests against templates/data (see tests/conftest.py). No test needs secrets.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: uv sync --frozen --extra dev
+      - name: Test
+        run: uv run --frozen --extra dev pytest -q

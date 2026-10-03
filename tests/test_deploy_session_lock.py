@@ -122,3 +122,115 @@ def test_lock_is_held_only_around_the_switch():
     switch = at("lock_switch ||", main)
     assert switch < at("git reset -q --hard", main) < at("uv sync -q --frozen --extra dev\n", switch) \
         < at("daemon-reload", switch) < at("unlock_switch", switch) < at("restart trader-dashboard", switch)
+
+
+# ---- the strategist-run interlock (#169 6.1, items 19-20): in the same block, so sliced the same way ----
+
+STRATEGIST_DEFAULT = "/home/trader/.local/state/trader/strategist.lock"
+needs_non_root = pytest.mark.skipif(os.geteuid() == 0, reason="root reads files whatever their mode")
+
+
+def interlock(tmp_path, strategist_lock, body):
+    """The block with the strategist lock pointed at a temp path."""
+    script = deploy_functions(tmp_path / "session.lock") + f"STRATEGIST_LOCK={shlex.quote(str(strategist_lock))}\n" + body
+    return subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=20)
+
+
+def hold(path, marker):
+    """A strategist run as the wrapper takes it: flock -n -o on the lock for the whole run."""
+    return subprocess.Popen(["flock", "-n", "-o", str(path), "sh", "-c", f"touch {shlex.quote(str(marker))}; sleep 30"],
+                            start_new_session=True)
+
+
+def test_interlock_default_path_is_the_wrappers_lock():
+    start = SCRIPT.index("# --- session lock")
+    block = SCRIPT[start:SCRIPT.index("# --- end session lock ---", start)]
+    assert f'STRATEGIST_LOCK="${{TRADER_STRATEGIST_LOCK:-{STRATEGIST_DEFAULT}}}"' in block
+    wrapper = (ROOT / "scripts" / "strategist.sh").read_text()
+    assert 'LOGDIR="${XDG_STATE_HOME:-$HOME/.local/state}/trader"' in wrapper and '"$LOGDIR/strategist.lock"' in wrapper
+
+
+def test_interlock_missing_lock_file_means_no_run(tmp_path):
+    assert interlock(tmp_path, tmp_path / "state" / "trader" / "strategist.lock", "lock_strategist").returncode == 0
+    assert interlock(tmp_path, tmp_path / "strategist.lock", "lock_strategist").returncode == 0
+
+
+def test_interlock_free_lock_is_taken_and_blocks_a_run_until_released(tmp_path):
+    lock = tmp_path / "strategist.lock"
+    lock.touch(mode=0o640)
+    ran = tmp_path / "ran"
+    body = (f"lock_strategist\n"
+            f"flock -n {shlex.quote(str(lock))} touch {shlex.quote(str(ran))} || echo run-skipped\n"
+            f"unlock_strategist\n"
+            f"flock -n {shlex.quote(str(lock))} touch {shlex.quote(str(ran))}\n")
+    r = interlock(tmp_path, lock, body)
+    assert r.returncode == 0, r.stderr
+    assert "run-skipped" in r.stdout and ran.exists()
+
+
+def test_interlock_refuses_while_a_run_holds_the_lock(tmp_path):
+    lock = tmp_path / "strategist.lock"
+    lock.touch()
+    started = tmp_path / "started"
+    p = hold(lock, started)
+    try:
+        assert wait_for(started)
+        r = interlock(tmp_path, lock, "lock_strategist")
+        assert r.returncode != 0 and "a strategist run is live" in r.stderr and "nothing was changed" in r.stderr
+    finally:
+        os.killpg(p.pid, signal.SIGKILL)
+        p.wait()
+    assert interlock(tmp_path, lock, "lock_strategist").returncode == 0  # a dead run leaves nothing stale
+
+
+@needs_non_root
+def test_interlock_fails_closed_on_an_unreadable_lock_file(tmp_path):
+    lock = tmp_path / "strategist.lock"
+    lock.touch(mode=0o600)
+    lock.chmod(0)
+    r = interlock(tmp_path, lock, "lock_strategist")
+    assert r.returncode != 0 and "can't tell whether a strategist run is live" in r.stderr
+    assert "Grant runner read access" in r.stderr
+
+
+@needs_non_root
+def test_interlock_fails_closed_when_a_directory_on_the_way_is_closed(tmp_path):
+    home = tmp_path / "home"
+    (home / "state").mkdir(parents=True)
+    (home / "state" / "strategist.lock").touch()
+    home.chmod(0o600)  # readable listing, but not searchable: the file's existence can't be known
+    try:
+        r = interlock(tmp_path, home / "state" / "strategist.lock", "lock_strategist")
+        assert r.returncode != 0 and "can't reach it" in r.stderr
+        home.chmod(0)
+        r = interlock(tmp_path, home / "missing-too" / "strategist.lock", "lock_strategist")
+        assert r.returncode != 0, "an unsearchable home must not pass for a missing lock"
+    finally:
+        home.chmod(0o700)
+
+
+def test_interlock_refuses_a_symlink_or_non_file(tmp_path):
+    target = tmp_path / "session.lock"
+    target.touch()
+    link = tmp_path / "strategist.lock"
+    link.symlink_to(target)
+    r = interlock(tmp_path, link, "lock_strategist")
+    assert r.returncode != 0 and "isn't a regular file" in r.stderr
+    d = tmp_path / "dir.lock"
+    d.mkdir()
+    assert interlock(tmp_path, d, "lock_strategist").returncode != 0
+
+
+def test_unlock_strategist_is_a_noop_when_nothing_was_taken(tmp_path):
+    assert interlock(tmp_path, tmp_path / "absent.lock", "lock_strategist\nunlock_strategist\nunlock_strategist").returncode == 0
+
+
+def test_strategist_lock_is_taken_only_around_the_switch_and_only_in_the_two_repo_layout():
+    main = SCRIPT.index("# --- end two-repo helpers ---")
+    body = SCRIPT[main:]
+    take = body.index("lock_strategist || {")
+    assert body.index("uv run --frozen pytest") < take < body.index("lock_switch ||") < body.index("git reset -q --hard")
+    assert body.rfind("if (( SPLIT )); then", 0, take) > body.rfind("fi\n", 0, take), "the switch-time take is split-only"
+    assert body.index("unlock_switch") < body.index("if (( SPLIT )); then unlock_strategist; fi")
+    early = body.index("if lock_strategist; then unlock_strategist")
+    assert body.index("if (( SPLIT )); then") < early < body.index("git fetch")

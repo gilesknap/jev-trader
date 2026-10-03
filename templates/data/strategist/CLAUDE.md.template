@@ -1,0 +1,10 @@
+# Strategist data repo
+
+This is the strategist's **data repo** (the `strategist` branch of a private data repo): `state/`,
+`journal/`, `logs/`, `features/custom/` and `proposals/`. It holds no code.
+
+The strategist's charter (its mission, guardrails, file rules and tools) lives with the deployed
+code, in `/srv/trading/main/CLAUDE.md`. Headless strategist runs receive it in their system prompt.
+
+Interactive sessions where the human is building or maintaining the system are not strategist
+runs: follow the human.

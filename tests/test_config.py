@@ -14,10 +14,13 @@ from trader import config, golive
 from trader import scoreboard as SB
 
 ROOT = Path(__file__).resolve().parents[1]  # the tree under test, even if TRADER_CODE_ROOT points elsewhere
+# The data under test (#169): this tree's own config.yaml and rendered files in a monorepo checkout; else
+# the data root conftest.py chose (a copy of templates/data, or TRADER_TEST_DATA_ROOT/TRADER_DATA_ROOT).
+DATA = config.DATA_ROOT if os.environ.get("TRADER_DATA_ROOT") else ROOT
 
 
 def _write(tmp_path, mutate):
-    raw = yaml.safe_load((ROOT / "config.yaml").read_text())
+    raw = yaml.safe_load((DATA / "config.yaml").read_text())
     mutate(raw)
     p = tmp_path / "config.yaml"
     p.write_text(yaml.safe_dump(raw))
@@ -26,7 +29,7 @@ def _write(tmp_path, mutate):
 
 @pytest.mark.config_start_date
 def test_the_checked_in_config_loads_and_feeds_the_code():
-    s = config.load_settings(ROOT / "config.yaml")
+    s = config.load_settings(DATA / "config.yaml")
     assert isinstance(s.experiment.start_date, dt.date)
     assert golive.START_DATE == s.experiment.start_date == SB.EXPERIMENT_START
     assert s.schedule.tz.key == s.schedule.local_tz
@@ -85,14 +88,14 @@ def test_dashboard_users_come_from_config_env_overrides_and_empty_means_nobody(t
 def test_generated_deploy_files_match_config():
     """The deploy runs the tests first, so a unit, timer or services.env that disagrees with
     config.yaml can never be deployed. Fix: `uv run trader config render-deploy`."""
-    for path, text in config.render_deploy(ROOT, ROOT).items():
-        assert (ROOT / path).read_text() == text, f"{path} is out of date: run `uv run trader config render-deploy`"
+    for path, text in config.render_deploy(ROOT, DATA).items():
+        assert (DATA / path).read_text() == text, f"{path} is out of date: run `uv run trader config render-deploy`"
         assert "{{" not in text and "}}" not in text
 
 
 def test_generated_files_carry_the_settings():
-    files = config.render_deploy(ROOT, ROOT)
-    s = config.load_settings(ROOT / "config.yaml")
+    files = config.render_deploy(ROOT, DATA)
+    s = config.load_settings(DATA / "config.yaml")
     assert f"OnCalendar=Mon..Fri {s.schedule.runner_start} {s.schedule.local_tz}" in files["deploy/systemd/trader-runner.timer"]
     assert f"TRADER_DASHBOARD_USERS={','.join(s.dashboard.users)}" in files["deploy/systemd/trader.env"]
     for k in config.STRATEGIST_KINDS:
@@ -103,7 +106,7 @@ def test_generated_files_carry_the_settings():
 
 @pytest.mark.skipif(not shutil.which("systemd-analyze"), reason="needs systemd-analyze")
 def test_strategist_calendars_are_valid_systemd_specs():
-    s = config.load_settings(ROOT / "config.yaml")
+    s = config.load_settings(DATA / "config.yaml")
     for k in config.STRATEGIST_KINDS:
         spec = f"{getattr(s.schedule.strategist, k)} {s.schedule.local_tz}"
         r = subprocess.run(["systemd-analyze", "calendar", spec], capture_output=True, text=True)
@@ -132,7 +135,7 @@ def test_render_refuses_unknown_keys_sections_and_line_breaks(monkeypatch):
 def test_cli_get_and_render_check(tmp_path):
     r = subprocess.run([sys.executable, "-m", "trader.cli", "config", "get", "owner.github_repo"],
                        capture_output=True, text=True, cwd=ROOT)
-    assert r.returncode == 0 and r.stdout.strip() == config.load_settings(ROOT / "config.yaml").owner.github_repo
+    assert r.returncode == 0 and r.stdout.strip() == config.load_settings(DATA / "config.yaml").owner.github_repo
     r = subprocess.run([sys.executable, "-m", "trader.cli", "config", "render-deploy", "--check"],
                        capture_output=True, text=True, cwd=ROOT)
     assert r.returncode == 0, r.stderr
@@ -142,9 +145,11 @@ def test_cli_get_and_render_check(tmp_path):
                                           ("owner", "name"), ("experiment", "start_date")])
 def test_setup_scripts_read_the_same_values(section, key):
     """deploy/setup/cfg.sh parses config.yaml without Python: it must agree with the loader."""
+    if DATA != ROOT and "TRADER_DATA_ROOT" not in (ROOT / "deploy" / "setup" / "cfg.sh").read_text():
+        pytest.skip("this cfg.sh reads only the checkout's own config.yaml, and this tree has none")
     r = subprocess.run(["bash", "-c", f'. deploy/setup/cfg.sh && cfg {section} {key}'],
                        capture_output=True, text=True, cwd=ROOT, check=True)
-    assert r.stdout.strip() == str(config.setting(f"{section}.{key}", config.load_settings(ROOT / "config.yaml")))
+    assert r.stdout.strip() == str(config.setting(f"{section}.{key}", config.load_settings(DATA / "config.yaml")))
 
 
 def test_setup_helper_fails_on_a_missing_key():

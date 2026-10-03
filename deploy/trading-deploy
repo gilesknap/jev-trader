@@ -7,6 +7,17 @@
 # needs a typed "yes". Hidden-character and binary refusals and test-before-switch always apply.
 # It never replaces code under a running session: it refuses while the runner is up (12:50 London
 # on weekdays until it exits after the US close), and locks only around the switch itself.
+#
+# Two-repo layout (#169), active only when /srv/trading/config is a checkout: the code is
+# /srv/trading/main and the human-owned deployment data (config.yaml, config/mode.yaml, the
+# rendered timer and env) is a runner-owned checkout of the data repo's main at /srv/trading/config.
+# Both are fetched, checked and switched together. The data diff is always shown in full and
+# needs the typed "yes", even when it came through signed PRs: the strategist's token can merge
+# its own PRs on the data repo. The candidate code is tested against the candidate data, its
+# rendered files must match, and the strategist's live specs are validated (a warning only).
+# The switch also refuses while a strategist run is live (it holds its run lock). Without
+# a checkout there (setup leaves the directory empty), everything below behaves as the
+# single-repo deploy always has.
 set -euo pipefail
 umask 027
 DRY=0; [[ "${1:-}" == "--dry-run" ]] && DRY=1
@@ -14,7 +25,14 @@ DRY=0; [[ "${1:-}" == "--dry-run" ]] && DRY=1
 [[ -t 0 || $DRY == 1 ]] || { echo "interactive only: a human must run this" >&2; exit 1; }
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 export PATH="/usr/local/bin:/usr/bin:/bin"
-cd /srv/trading/main
+export GIT_PAGER=cat  # #170: git must never page under a pty; the review diff goes through less -R on purpose
+CODE_DIR=/srv/trading/main
+CONFIG_DIR="${TRADER_DEPLOY_CONFIG_DIR:-/srv/trading/config}"  # a checkout here selects the two-repo layout
+STRATEGIST_DIR=/srv/trading/strategist
+RUNTIME_DIR=/srv/trading/runtime
+TRADER_UNITS=/home/trader/.config/systemd/user  # trader's installed strategist units (compared if readable)
+PLAN_TRADER="$CODE_DIR/.venv/bin/trader"  # the DEPLOYED code and key judge which commits are merged PRs
+cd "$CODE_DIR"
 # --- session lock (tests/test_deploy_session_lock.py runs these functions) ---
 # trader-runner.service holds LOCK shared (flock -s) for its whole session. A deploy never waits
 # on a session: it takes LOCK exclusive and non-blocking only for the switch, and a runner that
@@ -38,116 +56,349 @@ lock_switch() {  # exclusive, never blocking; held on fd 9 until unlock_switch (
     runner_idle
 }
 unlock_switch() { flock -u 9; exec 9>&-; }  # -u releases it even if a child kept a copy of fd 9
+# Strategist-run interlock (two-repo layout only, #169 6.1): the strategist wrapper holds
+# STRATEGIST_LOCK exclusive (flock -n) for each whole run, and in that layout it runs the deployed
+# code and its own venv built from it. Before the switch the deploy takes the same lock exclusive
+# and non-blocking on a read-only descriptor (fd 8) and holds it until the switch is done, so a run
+# can't be live during it (one that starts meanwhile skips, as it does behind another run).
+# A missing lock file means no run has ever taken it. Anything runner can't see or open fails
+# closed: "unreadable" must never pass for "no run".
+STRATEGIST_LOCK="${TRADER_STRATEGIST_LOCK:-/home/trader/.local/state/trader/strategist.lock}"
+STRATEGIST_LOCKED=0
+path_state() {  # prints missing | present | blocked (some directory on the way can't be searched)
+    local p=$1 d
+    d=$(dirname -- "$p")
+    if [[ -d $d && -x $d ]]; then
+        if [[ -e $p || -L $p ]]; then echo present; else echo missing; fi
+        return 0
+    fi
+    case $(path_state "$d") in
+        missing) echo missing ;;  # a missing directory: the file can't exist either
+        *) echo blocked ;;        # it exists but runner can't look inside it
+    esac
+}
+lock_strategist() {  # held on fd 8 until unlock_strategist (or exit)
+    local why=""
+    case $(path_state "$STRATEGIST_LOCK") in
+        missing) return 0 ;;
+        blocked) why="runner can't reach it (a directory on the way can't be searched)" ;;
+        *) if [[ -L $STRATEGIST_LOCK || ! -f $STRATEGIST_LOCK ]]; then why="it isn't a regular file"
+           elif [[ ! -r $STRATEGIST_LOCK ]]; then why="runner can't read it"
+           elif ! exec 8<"$STRATEGIST_LOCK"; then why="runner can't open it"
+           fi ;;
+    esac
+    if [[ -n $why ]]; then
+        echo "REFUSING: can't tell whether a strategist run is live: $why ($STRATEGIST_LOCK); nothing was changed." >&2
+        echo "Grant runner read access to the lock file and the directories above it (deploy/setup adds an ACL), then deploy again." >&2
+        return 1
+    fi
+    if ! flock -n -x 8; then
+        exec 8<&-
+        echo "REFUSING: a strategist run is live (it holds $STRATEGIST_LOCK); nothing was changed." >&2
+        echo "Runs take up to about half an hour: deploy again once it has finished." >&2
+        return 1
+    fi
+    STRATEGIST_LOCKED=1
+}
+unlock_strategist() {
+    (( STRATEGIST_LOCKED )) || return 0
+    flock -u 8; exec 8<&-; STRATEGIST_LOCKED=0
+}
 # --- end session lock ---
+# --- two-repo helpers (tests/test_trading_deploy_split.py runs these functions) ---
+split_layout() {  # 0: two-repo layout, 1: single repo, 2: CONFIG_DIR holds something else (refuse)
+    # A checkout at CONFIG_DIR selects the two-repo deploy. Setup creates the directory empty on every
+    # host (deploy/setup/1-host.sh), so a missing or empty directory is the single-repo layout. Anything
+    # else there (a symlink, a file, a half-made checkout) is a mistake the human should see, not a guess.
+    [[ -e $CONFIG_DIR || -L $CONFIG_DIR ]] || return 1
+    if [[ ! -L $CONFIG_DIR && -d $CONFIG_DIR/.git && ! -L $CONFIG_DIR/.git ]]; then return 0; fi
+    local entries
+    entries=$(ls -A -- "$CONFIG_DIR" 2>/dev/null) || entries="(unreadable)"  # unreadable is never "empty"
+    if [[ ! -L $CONFIG_DIR && -d $CONFIG_DIR && -z $entries ]]; then return 1; fi
+    echo "REFUSING: $CONFIG_DIR is neither empty nor a git checkout of the data repo's main; nothing was changed." >&2
+    echo "A checkout there selects the two-repo deploy: clone the data repo into it, or empty it for a single-repo deploy." >&2
+    return 2
+}
+review=()  # (repo base tip) triples whose diff the human reads before the typed yes
+inspect_repo() {  # DIR BASE TARGET PLAINFILE LABEL FULL: show, refuse or plan one repo's change
+    local dir=$1 base=$2 target=$3 plain=$4 label=$5 full=$6 planout rc kind sha rest commit f n binaries=""
+    local found=()
+    echo "=== ${label}files changed since last deploy ($(git -C "$dir" rev-parse --short "$base") -> ${target:0:7}) ==="
+    git -C "$dir" diff --stat "$base" "$target"
+    echo
+    # Diffs go through files (quitting the pager early can't abort the script), with attribute/
+    # driver tricks disabled so nothing can hide as "binary" or be rewritten by a textconv.
+    git -C "$dir" --no-pager diff --patch --summary --text --no-ext-diff --no-textconv "$base" "$target" > "$plain"
+    # Refuse diffs that could visually hide code: terminal control characters (colour/conceal
+    # escapes) and invisible or direction-changing Unicode (Trojan Source). Each check tests the
+    # file directly with grep -q (never a pipeline's status, which pipefail/SIGPIPE can flip).
+    local CTRL='[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]'
+    local UNI='[\x{061C}\x{200B}-\x{200F}\x{2028}-\x{202E}\x{2060}-\x{2069}\x{FEFF}\x{E0000}-\x{E007F}]'
+    if LC_ALL=C grep -qaP "$CTRL" "$plain"; then
+        echo "REFUSING: the ${label}diff contains terminal control characters:" >&2
+        { LC_ALL=C grep -naP "$CTRL" "$plain" | cat -v | head -20; } >&2 || true
+        exit 1
+    fi
+    if LC_ALL=C.UTF-8 grep -qP "$UNI" "$plain"; then
+        echo "REFUSING: the ${label}diff contains invisible or bidi Unicode characters:" >&2
+        { LC_ALL=C.UTF-8 grep -nP "$UNI" "$plain" | cat -v | head -20; } >&2 || true
+        exit 1
+    fi
+    # Binary = contains NUL bytes, judged by content (not .gitattributes, which a commit could set),
+    # for every added/modified/renamed/type-changed file. grep -c reads to EOF, so no SIGPIPE.
+    while IFS= read -r -d '' f; do  # NUL-separated: non-ASCII paths aren't quoted
+        n=$(git -C "$dir" cat-file -p "$target:$f" | LC_ALL=C grep -acP '\x00' || true)
+        (( ${n:-0} > 0 )) && binaries+="$f"$'\n'
+    done < <(git -C "$dir" diff --no-renames --name-only -z --diff-filter=d "$base" "$target")
+    if [[ -n "$binaries" ]]; then
+        echo "REFUSING: binary files changed${label:+ in the ${label% }} and can't be reviewed here:" >&2
+        printf '%s' "$binaries" >&2
+        exit 1
+    fi
+    # Which commits came through a merged PR? Asked of the deployed code and key, never the candidate's.
+    planout=$("$PLAN_TRADER" deploy-plan --repo "$dir" --base "$base" --target "$target" 2>&1) && rc=0 || rc=$?
+    case $rc in
+        0) echo "=== ${label}merged pull requests (GitHub-signed merge commits; review happened in each PR) ==="
+           echo "$planout" | sed 's/^PR /  /' ;;
+        3) echo "=== ${label}commits since last deploy ==="
+           echo "$planout" | sed 's/^PR /  PR     /; s/^REVIEW /  REVIEW /'
+           while read -r kind sha rest; do
+               [[ $kind == REVIEW ]] || continue
+               commit=$(git -C "$dir" rev-parse "$sha^{commit}")
+               if [[ $commit == "$target" ]] && ! git -C "$dir" merge-base --is-ancestor "$base" "$target"; then
+                   found+=("$dir" "$base" "$target")  # rewritten (or unrelated) history: everything
+               else
+                   found+=("$dir" "$commit^1" "$commit")
+               fi
+           done <<< "$planout"
+           (( ${#found[@]} )) || found=("$dir" "$base" "$target") ;;  # "needs review" but nothing parsed: review it all
+        *) echo "could not check which commits are merged PRs (exit $rc): ${planout:0:300}"
+           echo "falling back to reviewing the full diff"
+           found=("$dir" "$base" "$target") ;;
+    esac
+    if (( full )); then  # #169 item 14: data main is read in full whatever the plan says
+        echo "the ${label}diff is always reviewed in full (the strategist's token can merge PRs there)"
+        found=("$dir" "$base" "$target")
+    fi
+    review+=("${found[@]}")
+    echo
+}
+# Unit files and where each comes from (#169 item 6): the static units (every .service and timer)
+# from the code, except the timer that is rendered from the owner's config.yaml, which comes from
+# the data checkout. services.env is never touched.
+DATA_UNITS=(trader-runner.timer)
+UNIT_SRC=()
+unit_sources() {  # CODE DATA: fill UNIT_SRC; fail, naming it, if a unit is missing from either side
+    local code=$1 data=$2 f name u ok
+    UNIT_SRC=()
+    for f in "$code"/deploy/systemd/*.service "$code"/deploy/systemd/*.timer; do
+        [[ -f $f ]] || continue
+        name=$(basename -- "$f") ok=1
+        for u in "${DATA_UNITS[@]}"; do [[ $name == "$u" ]] && ok=0; done
+        (( ok )) && UNIT_SRC+=("$f")
+    done
+    if ! compgen -G "$code/deploy/systemd/*.service" > /dev/null; then
+        echo "REFUSING: the code has no deploy/systemd/*.service units; nothing was changed." >&2
+        return 1
+    fi
+    for u in "${DATA_UNITS[@]}"; do
+        if [[ ! -f $data/deploy/systemd/$u ]]; then
+            echo "REFUSING: the data repo's main has no deploy/systemd/$u (render it with trader config render-deploy); nothing was changed." >&2
+            return 1
+        fi
+        UNIT_SRC+=("$data/deploy/systemd/$u")
+    done
+}
+check_candidate_data() {  # CODE DATA: the candidate code against the candidate data; refuse on a problem
+    local code=$1 data=$2 out
+    if [[ ! -f $data/config/mode.yaml ]]; then  # #169 item 11: never a silent "auto"
+        echo "REFUSING: the data repo's main has no config/mode.yaml (mode: auto | paper | live); nothing was changed." >&2
+        return 1
+    fi
+    if ! out=$(cd "$code" && TRADER_CODE_ROOT="$code" TRADER_DATA_ROOT="$data" \
+               ./.venv/bin/trader config render-deploy --check --data-root "$data" 2>&1); then
+        echo "REFUSING: the data repo's rendered deploy files don't match its config.yaml under the new code; nothing was changed:" >&2
+        printf '%s\n' "$out" >&2
+        echo "Re-render them with the new code against your data checkout (trader config render-deploy --data-root <it>), merge that into the data repo's main, then deploy again." >&2
+        return 1
+    fi
+    echo "rendered deploy files match the data repo's config.yaml under the new code"
+}
+validate_strategist() {  # CODE DATA: the strategist's live specs and features under the new code; WARN only
+    local code=$1 data=$2 out
+    if out=$(cd "$code" && TRADER_CODE_ROOT="$code" TRADER_DATA_ROOT="$data" TRADER_STRATEGIST_ROOT="$STRATEGIST_DIR" \
+             TRADER_RUNTIME="$RUNTIME_DIR" TRADER_SECRETS="$HOME/.config/trading/env" \
+             ./.venv/bin/trader validate --file "$STRATEGIST_DIR/state/classifiers.yaml" 2>&1); then
+        echo "the strategist's live classifiers and custom features validate under the new code"
+    else
+        echo "WARNING: the strategist's live classifiers.yaml or custom features FAIL validation under the new code."
+        echo "Deploying anyway is allowed (the strategist branch isn't reviewed input), but nothing they cover may trade"
+        echo "at the next session until the strategist fixes them. trader validate said:"
+        printf '%s\n' "$out" | tail -n 40 | sed 's/^/  /'
+    fi
+}
+strategist_units_hint() {  # CODE DATA OLD_CODE OLD_DATA: say when trader should reinstall its units
+    local code=$1 data=$2 old_code=$3 old_data=$4 f rel repo old installed changed=()
+    for f in "$code"/deploy/systemd-trader/*.service "$data"/deploy/systemd-trader/*.timer; do
+        [[ -f $f ]] || continue
+        if [[ $f == "$code"/* ]]; then repo=$code old=$old_code rel=${f#"$code"/}
+        else repo=$data old=$old_data rel=${f#"$data"/}; fi
+        installed="$TRADER_UNITS/$(basename -- "$f")"
+        if [[ -r $installed ]]; then
+            cmp -s "$f" "$installed" || changed+=("$(basename -- "$f")")
+        elif ! git -C "$repo" diff --quiet "$old" HEAD -- "$rel" 2>/dev/null; then
+            changed+=("$(basename -- "$f")")  # can't read trader's copy: report what this deploy changed
+        fi
+    done
+    (( ${#changed[@]} )) || return 0
+    echo "NOTE: the strategist's units changed or differ from trader's installed copies (${changed[*]})."
+    echo "      As trader, reinstall them: bash $CODE_DIR/deploy/setup/2-strategist.sh"
+}
+# --- end two-repo helpers ---
 (( DRY )) || runner_idle || exit 1  # fail fast, before the review and the tests
+SPLIT=0; layout=0; split_layout || layout=$?
+case $layout in 0) SPLIT=1 ;; 1) ;; *) exit 1 ;; esac
+if (( SPLIT )); then  # fail fast on the strategist interlock too (a dry run only reports it)
+    if lock_strategist; then unlock_strategist
+    elif (( DRY )); then echo "dry run: the strategist interlock would refuse now (see above)"
+    else exit 1; fi
+fi
 git fetch -q origin main
 TARGET=$(git rev-parse origin/main)  # pinned now: the reviewed diff and the deployed commit are the same
-if [[ "$(git rev-parse HEAD)" == "$TARGET" ]]; then
+OLD_CODE=$(git rev-parse HEAD)
+if (( SPLIT )); then
+    git -C "$CONFIG_DIR" fetch -q origin main
+    TARGET_DATA=$(git -C "$CONFIG_DIR" rev-parse origin/main)  # pinned likewise
+    OLD_DATA=$(git -C "$CONFIG_DIR" rev-parse HEAD)
+    if [[ $OLD_CODE == "$TARGET" && $OLD_DATA == "$TARGET_DATA" ]]; then
+        echo "already at origin/main in both repos (code ${OLD_CODE:0:7}, data ${OLD_DATA:0:7}); nothing to deploy"; exit 0
+    fi
+elif [[ "$(git rev-parse HEAD)" == "$TARGET" ]]; then
     echo "already at origin/main ($(git rev-parse --short HEAD)); nothing to deploy"; exit 0
 fi
-echo "=== files changed since last deploy ($(git rev-parse --short HEAD) -> ${TARGET:0:7}) ==="
-git diff --stat HEAD "$TARGET"
-echo
-# Diffs go through files (quitting the pager early can't abort the script), with attribute/
-# driver tricks disabled so nothing can hide as "binary" or be rewritten by a textconv.
-tmp=$(mktemp); plain=$(mktemp); trap 'rm -f "$tmp" "$plain"' EXIT
-DIFF=(diff --patch --summary --text --no-ext-diff --no-textconv HEAD "$TARGET")
-git --no-pager "${DIFF[@]}" > "$plain"
-# Refuse diffs that could visually hide code: terminal control characters (colour/conceal
-# escapes) and invisible or direction-changing Unicode (Trojan Source). Each check tests the
-# file directly with grep -q (never a pipeline's status, which pipefail/SIGPIPE can flip).
-CTRL='[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]'
-UNI='[\x{061C}\x{200B}-\x{200F}\x{2028}-\x{202E}\x{2060}-\x{2069}\x{FEFF}\x{E0000}-\x{E007F}]'
-if LC_ALL=C grep -qaP "$CTRL" "$plain"; then
-    echo "REFUSING: the diff contains terminal control characters:" >&2
-    { LC_ALL=C grep -naP "$CTRL" "$plain" | cat -v | head -20; } >&2 || true
-    exit 1
+tmp=$(mktemp); plain=$(mktemp); plain_data=$(mktemp); trap 'rm -f "$tmp" "$plain" "$plain_data"' EXIT
+if (( SPLIT )); then
+    if [[ $OLD_CODE != "$TARGET" ]]; then inspect_repo "$CODE_DIR" HEAD "$TARGET" "$plain" "code repo " 0; fi
+    if [[ $OLD_DATA != "$TARGET_DATA" ]]; then inspect_repo "$CONFIG_DIR" HEAD "$TARGET_DATA" "$plain_data" "data repo " 1; fi
+else
+    inspect_repo "$CODE_DIR" HEAD "$TARGET" "$plain" "" 0
 fi
-if LC_ALL=C.UTF-8 grep -qP "$UNI" "$plain"; then
-    echo "REFUSING: the diff contains invisible or bidi Unicode characters:" >&2
-    { LC_ALL=C.UTF-8 grep -nP "$UNI" "$plain" | cat -v | head -20; } >&2 || true
-    exit 1
-fi
-# Binary = contains NUL bytes, judged by content (not .gitattributes, which a commit could set),
-# for every added/modified/renamed/type-changed file. grep -c reads to EOF, so no SIGPIPE.
-binaries=""
-while IFS= read -r -d '' f; do  # NUL-separated: non-ASCII paths aren't quoted
-    n=$(git cat-file -p "$TARGET:$f" | LC_ALL=C grep -acP '\x00' || true)
-    (( ${n:-0} > 0 )) && binaries+="$f"$'\n'
-done < <(git diff --no-renames --name-only -z --diff-filter=d HEAD "$TARGET")
-if [[ -n "$binaries" ]]; then
-    echo "REFUSING: binary files changed and can't be reviewed here:" >&2
-    printf '%s' "$binaries" >&2
-    exit 1
-fi
-# Which commits came through a merged PR? Asked of the deployed code and key, never the candidate's.
-planout=$(./.venv/bin/trader deploy-plan --base HEAD --target "$TARGET" 2>&1) && rc=0 || rc=$?
-review=()  # (base tip) pairs to show
-case $rc in
-    0) echo "=== merged pull requests (GitHub-signed merge commits; review happened in each PR) ==="
-       echo "$planout" | sed 's/^PR /  /' ;;
-    3) echo "=== commits since last deploy ==="
-       echo "$planout" | sed 's/^PR /  PR     /; s/^REVIEW /  REVIEW /'
-       while read -r kind sha _; do
-           [[ $kind == REVIEW ]] || continue
-           full=$(git rev-parse "$sha^{commit}")
-           if [[ $full == "$TARGET" ]] && ! git merge-base --is-ancestor HEAD "$TARGET"; then
-               review+=(HEAD "$TARGET")  # rewritten history: everything
-           else
-               review+=("$full^1" "$full")
-           fi
-       done <<< "$planout"
-       (( ${#review[@]} )) || review=(HEAD "$TARGET") ;;  # "needs review" but nothing parsed: review it all
-    *) echo "could not check which commits are merged PRs (exit $rc): ${planout:0:300}"
-       echo "falling back to reviewing the full diff"
-       review=(HEAD "$TARGET") ;;
-esac
-echo
+what=${TARGET:0:7}
+(( SPLIT )) && what="code ${TARGET:0:7} + data ${TARGET_DATA:0:7}"
 if (( DRY )); then
-    (( ${#review[@]} )) && echo "dry run: $(( ${#review[@]} / 2 )) diff(s) would need review and a typed yes" \
-        || echo "dry run: would deploy ${TARGET:0:7} without a diff review (after the tests pass)"
+    (( ${#review[@]} )) && echo "dry run: $(( ${#review[@]} / 3 )) diff(s) would need review and a typed yes" \
+        || echo "dry run: would deploy $what without a diff review (after the tests pass)"
     exit 0
 fi
 if (( ${#review[@]} )); then
     : > "$tmp"
-    for ((i = 0; i < ${#review[@]}; i += 2)); do
-        git --no-pager diff --patch --summary --text --no-ext-diff --no-textconv --color=always \
-            "${review[i]}" "${review[i+1]}" >> "$tmp"
+    for ((i = 0; i < ${#review[@]}; i += 3)); do
+        (( SPLIT )) && printf '===== %s: %s..%s =====\n' "${review[i]}" \
+            "$(git -C "${review[i]}" rev-parse --short "${review[i+1]}")" \
+            "$(git -C "${review[i]}" rev-parse --short "${review[i+2]}")" >> "$tmp"
+        git -C "${review[i]}" --no-pager diff --patch --summary --text --no-ext-diff --no-textconv --color=always \
+            "${review[i+1]}" "${review[i+2]}" >> "$tmp"
     done
-    long=$(awk 'length > 400' "$plain" | wc -l)
+    long=$(awk 'length > 400' "$plain" "$plain_data" | wc -l)
     (( long > 0 )) && echo "NOTE: $long diff line(s) longer than 400 characters; scroll right in the pager to read them fully."
-    echo "=== diff of what did NOT come through a merged PR (it will be executed, served or read by the runner) ==="
+    if (( SPLIT )); then
+        echo "=== diff of what did NOT come through a merged PR, and all of data main (it will be executed, served or read by the runner) ==="
+    else
+        echo "=== diff of what did NOT come through a merged PR (it will be executed, served or read by the runner) ==="
+    fi
     less -R "$tmp"
-    read -r -p "Deploy ${TARGET:0:7} to the runner? Type yes: " ok
+    read -r -p "Deploy $what to the runner? Type yes: " ok
     [[ "$ok" == yes ]] || { echo "aborted"; exit 1; }
 fi
 # Test the candidate in a throwaway worktree with its own venv BEFORE touching the live copy:
 # if the tests fail, /srv/trading/main is unchanged and the runner keeps its current code.
+# In the two-repo layout the candidate data is a second throwaway worktree, and the tests and
+# checks read it through TRADER_DATA_ROOT.
 cand=$(mktemp -d -p /var/tmp)  # not /tmp: may be a small tmpfs, and the venv is large
+dcand=""
+switching=0  # 1 from taking the switch lock until the units are reloaded
 cleanup() {  # each step independent: set -e must not skip the rest of the cleanup
-    rm -f "$tmp" "$plain" || true
+    local rc=$?
+    if (( switching && rc != 0 )); then partial_switch_help "$rc"; fi
+    rm -f "$tmp" "$plain" "$plain_data" || true
     git worktree remove --force "$cand" 2>/dev/null || rm -rf "$cand" || true
     git worktree prune || true
+    if [[ -n $dcand ]]; then
+        git -C "$CONFIG_DIR" worktree remove --force "$dcand" 2>/dev/null || rm -rf "$dcand" || true
+        git -C "$CONFIG_DIR" worktree prune || true
+    fi
 }
 trap cleanup EXIT
 git worktree add -q --detach "$cand" "$TARGET"
-echo "testing ${TARGET:0:7} in a temporary checkout..."
-if ! (cd "$cand" && uv sync -q --frozen --extra dev && uv run --frozen pytest -q tests); then
-    echo "TESTS FAILED: nothing deployed; the runner keeps $(git rev-parse --short HEAD)" >&2
+if (( SPLIT )); then
+    dcand=$(mktemp -d -p /var/tmp)
+    git -C "$CONFIG_DIR" worktree add -q --detach "$dcand" "$TARGET_DATA"
+fi
+# shellcheck disable=SC2329  # called from cleanup, the EXIT trap
+partial_switch_help() {  # RC: a step of the switch failed, so the checkouts may be half way
+    {
+        echo "PARTIAL SWITCH: a step of the switch failed (exit $1); the runner's checkouts may be half deployed."
+        echo "Either run trading-deploy again (the same target, tested again), or roll back, as runner:"
+        echo "  git -C $CODE_DIR reset -q --hard $OLD_CODE && (cd $CODE_DIR && uv sync -q --frozen --extra dev)"
+        if (( SPLIT )); then echo "  git -C $CONFIG_DIR reset -q --hard $OLD_DATA"; fi
+        if (( SPLIT )); then
+            echo "  cp $CODE_DIR/deploy/systemd/*.service $CODE_DIR/deploy/systemd/trader-watchdog.timer $CONFIG_DIR/deploy/systemd/trader-runner.timer ~/.config/systemd/user/"
+        else
+            echo "  cp $CODE_DIR/deploy/systemd/*.service $CODE_DIR/deploy/systemd/*.timer ~/.config/systemd/user/"
+        fi
+        echo "  systemctl --user daemon-reload"
+    } >&2
+}
+echo "testing $what in a temporary checkout..."
+if ! (cd "$cand" && { (( ! SPLIT )) || export TRADER_DATA_ROOT="$dcand"; } \
+        && uv sync -q --frozen --extra dev && uv run --frozen pytest -q tests); then
+    if (( SPLIT )); then
+        echo "TESTS FAILED: nothing deployed; the runner keeps code ${OLD_CODE:0:7} + data ${OLD_DATA:0:7}" >&2
+    else
+        echo "TESTS FAILED: nothing deployed; the runner keeps $(git rev-parse --short HEAD)" >&2
+    fi
     exit 1
 fi
-# The switch. A session that started during the review or the tests wins: refuse, change nothing.
-lock_switch || { echo "the tests passed, but deploy ${TARGET:0:7} again after the session" >&2; exit 1; }
+if (( SPLIT )); then
+    check_candidate_data "$cand" "$dcand" || exit 1
+    unit_sources "$cand" "$dcand" || exit 1  # every unit present before the switch, not halfway through it
+    validate_strategist "$cand" "$dcand"
+fi
+# The switch. A session (or, two-repo, a strategist run) that started during the review or the
+# tests wins: refuse, change nothing.
+if (( SPLIT )); then
+    lock_strategist || { echo "the tests passed, but deploy $what again after the strategist run" >&2; exit 1; }
+fi
+lock_switch || { echo "the tests passed, but deploy $what again after the session" >&2; exit 1; }
+switching=1
 git reset -q --hard "$TARGET"
 git clean -qfd
 chmod -R g-w,o-rwx /srv/trading/main
+if (( SPLIT )); then
+    git -C "$CONFIG_DIR" reset -q --hard "$TARGET_DATA"
+    git -C "$CONFIG_DIR" clean -qfd
+    chmod -R g-w,o-rwx "$CONFIG_DIR"
+fi
 uv sync -q --frozen --extra dev
-cp deploy/systemd/*.service deploy/systemd/*.timer ~/.config/systemd/user/   # services.env is left alone
+if (( SPLIT )); then
+    unit_sources "$CODE_DIR" "$CONFIG_DIR"
+    cp -- "${UNIT_SRC[@]}" ~/.config/systemd/user/   # services.env is left alone
+else
+    cp deploy/systemd/*.service deploy/systemd/*.timer ~/.config/systemd/user/   # services.env is left alone
+fi
 systemctl --user daemon-reload
+switching=0
 unlock_switch
+if (( SPLIT )); then unlock_strategist; fi
 systemctl --user restart trader-dashboard.service  # a session here is at most waiting for the open
 systemctl --user try-restart trader-dashboard-ssh.service  # only if this host runs it
-echo "deployed $(git rev-parse --short HEAD); the runner picks it up at the next session start"
-[[ "$(git diff --name-only HEAD@{1} HEAD -- deploy/trading-deploy)" ]] && \
+if (( SPLIT )); then
+    echo "deployed code $(git rev-parse --short HEAD) + data $(git -C "$CONFIG_DIR" rev-parse --short HEAD); the runner picks them up at the next session start"
+    echo "previous: code ${OLD_CODE:0:7}, data ${OLD_DATA:0:7}"
+    strategist_units_hint "$CODE_DIR" "$CONFIG_DIR" "$OLD_CODE" "$OLD_DATA"
+else
+    echo "deployed $(git rev-parse --short HEAD); the runner picks it up at the next session start"
+fi
+[[ "$(git diff --name-only "$OLD_CODE" HEAD -- deploy/trading-deploy)" ]] && \
     echo "NOTE: trading-deploy itself changed — reinstall: sudo install -m 755 /srv/trading/main/deploy/trading-deploy /usr/local/bin/"
 exit 0

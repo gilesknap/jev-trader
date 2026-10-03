@@ -1,0 +1,14 @@
+# Secrets and the wrapper's local files (#169 section 3.2).
+.env
+.last_run
+.last_postclose
+strategist-alerts.log
+.run.lock
+replays/
+# Decision logs stay on disk (90 days) for the strategist, but out of git history (disk budget).
+logs/decisions/*.jsonl.gz
+# Left behind by tools run in this checkout.
+runtime/
+__pycache__/
+.pytest_cache/
+.venv/

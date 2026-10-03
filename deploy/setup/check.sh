@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 # Verify the whole installation (as admin):  sudo bash /srv/trading/main/deploy/setup/check.sh
 # Read-only apart from creating/removing a temp file to prove write permissions are denied.
+# The split layout's checks (#169) run only when /srv/trading/config is a checkout of the data
+# repo's main; without it every check is the monorepo's.
 set -uo pipefail
 [[ $EUID -eq 0 ]] || { echo "run with sudo" >&2; exit 1; }
+# shellcheck source=deploy/setup/lib.sh
+. "$(dirname "$0")/lib.sh"
+SPLIT=""; split_layout && SPLIT=1
+C=$CONFIG_CHECKOUT
 fails=0
 ok()   { printf '  \e[32mPASS\e[0m %s\n' "$1"; }
 bad()  { printf '  \e[31mFAIL\e[0m %s\n' "$1"; fails=$((fails + 1)); }
@@ -75,15 +81,48 @@ nchk "sandbox hides runner secrets"               "as_runner bwrap --ro-bind /us
 
 echo "Strategist"
 chk  "trader lingers (strategist timers run without login)" "loginctl show-user trader -p Linger | grep -q yes"
+TIMERS=/srv/trading/main/deploy/systemd-trader; TFROM=main
+[[ -n $SPLIT ]] && { TIMERS=$C/deploy/systemd-trader; TFROM=config; }   # rendered into the data repo
 for k in premarket postclose weekly housekeeping; do
     chk  "strategist $k timer active"               "as_trader_sd systemctl --user is-active trader-strategist-$k.timer"
-    chk  "strategist $k timer matches main"         "diff -q /home/trader/.config/systemd/user/trader-strategist-$k.timer /srv/trading/main/deploy/systemd-trader/trader-strategist-$k.timer"
+    chk  "strategist $k timer matches $TFROM"       "diff -q /home/trader/.config/systemd/user/trader-strategist-$k.timer $TIMERS/trader-strategist-$k.timer"
 done
 chk  "strategist service unit matches main"       "diff -q /home/trader/.config/systemd/user/trader-strategist@.service /srv/trading/main/deploy/systemd-trader/trader-strategist@.service"
 nchk "no leftover strategist crontab"             "crontab -l -u trader 2>/dev/null | grep -q strategist.sh"
 chk  "claude CLI available to trader"             "as_trader bash -lc 'command -v claude || [[ -x ~/.local/bin/claude ]]'"
 chk  "strategist on branch strategist"            "[[ \$(git -C /srv/trading/strategist -c safe.directory='*' branch --show-current) == strategist ]]"
+# An OAuth login is the operator's own identity: it reaches every repo they can, and bypasses
+# the public repo's ruleset. The strategist's token must be a fine-grained PAT scoped to the data
+# repo (#169 section 14 item 8). Only the prefix is tested; the token is never printed.
+chk  "trader's gh token is a fine-grained PAT"   "as_trader gh auth token 2>/dev/null | grep -q '^github_pat_'"
 
-echo "Mode: $(grep -E '^mode:' /srv/trading/main/config/mode.yaml 2>/dev/null || echo unknown)"
-echo "Deployed: $(git -C /srv/trading/main -c safe.directory='*' log --oneline -1 2>/dev/null)"
+if [[ -n $SPLIT ]]; then
+    echo "Split layout (#169)"
+    chk  "config checkout is runner:trading"          "[[ \$(stat -c %U:%G $C) == runner:trading ]]"
+    nchk "trader cannot write config"                 "as_trader touch $C/.w || as_trader touch $C/config/.w"
+    nchk "config tree has no group or other write"    "find $C ! -type l -perm /g=w,o=w | grep -q ."
+    rm -f "$C/.w" "$C/config/.w"
+    chk  "config checkout holds config/mode.yaml"     "[[ -f $C/config/mode.yaml ]]"
+    chk  "trader's venv imports trader from main/src" "as_trader /home/trader/.local/share/trader/venv/bin/python -I -c 'import sys, trader; sys.exit(not trader.__file__.startswith(\"/srv/trading/main/src/\"))'"
+    chk  "trader shim and helpers installed"          "as_trader bash -c '[[ -x ~/.local/bin/trader && -x ~/.local/bin/trader-python && -x ~/.local/bin/trader-test ]]'"
+    chk  "strategist unit runs from main"             "grep -qE '^ExecStart=/srv/trading/main/' /home/trader/.config/systemd/user/trader-strategist@.service"
+    chk  "trader's Claude settings deny GitHub WebFetch" "python3 -c 'import json, sys; sys.exit(\"WebFetch(domain:github.com)\" not in json.load(open(sys.argv[1]))[\"permissions\"][\"deny\"])' /home/trader/.claude/settings.json"
+    nchk "runner cannot read trader's ~/.claude"      "as_runner ls /home/trader/.claude"
+    chk  "runner services.env names the config checkout" "grep -qx 'TRADER_DATA_ROOT=$C' /home/runner/.config/trading/services.env"
+    nchk "trader's ~/.claude/CLAUDE.md imports no CLAUDE.md" "claude_md_imports_charter /home/trader/.claude/CLAUDE.md"
+    # Claude Code loads CLAUDE.md from parent directories too; /srv/trading is root-owned.
+    nchk "no /srv/trading/CLAUDE.md"                  "[[ -e /srv/trading/CLAUDE.md ]]"
+    chk  "runner can reach the strategist run lock"   "as_runner test -x /home/trader/.local/state/trader"
+    L=/home/trader/.local/state/trader/strategist.lock
+    chk  "runner can read the lock (if any)"          "[[ ! -e $L ]] || as_runner test -r $L"
+fi
+
+if [[ -n $SPLIT ]]; then
+    echo "Mode: $(grep -E '^mode:' "$C/config/mode.yaml" 2>/dev/null || echo unknown)"
+    echo "Deployed: code $(git -C /srv/trading/main -c safe.directory='*' log --oneline -1 2>/dev/null)"
+    echo "          config $(git -C "$C" -c safe.directory='*' log --oneline -1 2>/dev/null)"
+else
+    echo "Mode: $(grep -E '^mode:' /srv/trading/main/config/mode.yaml 2>/dev/null || echo unknown)"
+    echo "Deployed: $(git -C /srv/trading/main -c safe.directory='*' log --oneline -1 2>/dev/null)"
+fi
 if (( fails )); then echo "$fails check(s) FAILED"; exit 1; else echo "all checks passed"; fi

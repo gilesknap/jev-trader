@@ -50,7 +50,7 @@ class Worker:
     def handle(self, req: dict) -> dict:
         from trader import features as F
         from trader.features import harness
-        from trader.features.sandbox import decode_bars
+        from trader.features.barcodec import decode_bars  # config-free: never import sandbox here
 
         try:
             if req["op"] == "load":
