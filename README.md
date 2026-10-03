@@ -13,6 +13,39 @@ it beats doing nothing.
 > [money safety](https://gilesknap.github.io/jev-trader/explanations/money-safety.html) works,
 > and keep the live account small.
 
+## Why it's interesting
+
+- **It invents its own strategies.** The strategist reads its results every evening, forms
+  hypotheses, backtests them and writes the next day's classifiers. It labels each idea `novel`
+  or `conventional`. A scoreboard ranks those families against a fixed control strategy and
+  buy-and-hold SPY, after slippage, and won't call anything an edge until the evidence clears
+  luck.
+- **The safety lives in code, not in prompts.** Position limits, stops, the daily kill switch,
+  settled-cash accounting and the go-live gate are enforced by a daemon the strategist can't
+  edit. The strategist's own code runs in a sandbox.
+- **It runs itself, and you can still steer it.** Pre-market, post-close and weekly runs happen
+  on timers. You read a weekly retrospective, veto go-live if you disagree, and steer the
+  strategist by talking it through in an ordinary Claude Code session that ends in a pull
+  request.
+
+## What it costs
+
+Very little. The strategist runs on a **$20/month Claude subscription**. The thousands of Jev
+calls a day cost **under $1 a week** through OpenRouter. **Alpaca charges no commission** on US
+stocks and ETFs, and its free IEX feed supplies the market data. Add a small Linux VPS and
+whatever you choose to trade with.
+
+## What it trades
+
+The current scope is deliberately narrow: **long only, intraday** (every position is flat
+before the close), on about 30 liquid US ETFs and mega-cap stocks, in a cash account. No
+shorting, no margin, no options or other derivatives, no crypto. That keeps the risk easy to
+reason about and the results easy to attribute. None of it is fundamental to the design,
+though: the universe is a config file, and the guardrails and broker adapter are ordinary code.
+A fork can widen the scope as far as its owner is comfortable with.
+
+## How it's laid out
+
 The code runs on one Linux host with three accounts: an admin (you), `trader` (the strategist,
 paper keys only) and `runner` (the trading daemon, live keys, no sudo). This public repository
 holds only code. Each owner keeps their settings and the strategist's memory in a **private data
