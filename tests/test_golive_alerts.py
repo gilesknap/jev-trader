@@ -212,3 +212,79 @@ def test_a_hold_between_send_and_clear_is_never_overwritten(env):
     golive.after_session(notify, session=DAYS[20])
     st = golive.load_state()
     assert st["status"] == "vetoed" and golive.UNSENT not in st
+
+
+# ---- the close-of-day alert while go-live is due but held back -------------------------
+
+
+def close(session, equity=None):
+    """after_session for `session`; returns (its alerts, the saved state)."""
+    sent = []
+    golive.after_session(lambda level, msg: sent.append(msg), session=session, live_equity=equity)
+    return sent, golive.load_state()
+
+
+def test_a_halted_live_book_holds_the_countdown_at_zero_and_says_so(env, tmp_path):
+    book, _ = env
+    due(book)
+    live_risk(tmp_path, {"halted": True})
+    for day in DAYS[20:22]:  # the morning said "staying on paper": every close agrees
+        assert golive.resolve_mode(lambda *a: None, lambda: 1000.0, session=day) == "paper"
+        sent, st = close(day, lambda: 1000.0)
+        assert st["status"] == "armed" and st["sessions_left"] == 0
+        assert len(sent) == 1 and "the live book is halted" in sent[0] and "`trader clear-halt live`" in sent[0]
+        assert "switches to LIVE" not in sent[0]
+    live_risk(tmp_path, {"halted": False})
+    sent, st = close(DAYS[22], lambda: 1000.0)
+    assert st["sessions_left"] == 0 and len(sent) == 1 and "switches to LIVE at the next session" in sent[0]
+    assert golive.resolve_mode(lambda *a: None, lambda: 1000.0, session=DAYS[23]) == "live"
+
+
+def test_an_unreadable_live_risk_state_is_named_at_the_close(env, tmp_path):
+    book, _ = env
+    due(book)
+    live_risk(tmp_path, "{not json")
+    sent, st = close(DAYS[20], lambda: pytest.fail("no equity lookup"))
+    assert st["sessions_left"] == 0 and len(sent) == 1
+    assert "risk.json can't be read" in sent[0] and "reads cleanly" in sent[0] and "switches to LIVE" not in sent[0]
+
+
+def test_an_unfunded_account_is_named_at_the_close(env):
+    book, _ = env
+    due(book)
+    assert golive.resolve_mode(lambda *a: None, lambda: 40.0, session=DAYS[20]) == "paper"
+    sent, st = close(DAYS[20], lambda: 40.0)
+    assert st["status"] == "armed" and st["sessions_left"] == 0
+    assert len(sent) == 1 and "$40.00 (need $100)" in sent[0] and "Fund it" in sent[0]
+    assert "switches to LIVE" not in sent[0]
+    sent, _ = close(DAYS[21], lambda: None)  # no live key: as unfunded, like resolve_mode
+    assert "$0.00 (need $100)" in sent[0]
+
+
+def test_a_failing_equity_lookup_at_the_close_never_raises(env):
+    book, _ = env
+    due(book)
+
+    def boom():
+        raise ConnectionError("down")
+
+    sent, st = close(DAYS[20], boom)
+    assert st["status"] == "armed" and st["sessions_left"] == 0 and st["last_session"] == DAYS[20].isoformat()
+    assert len(sent) == 1 and "lookup failed (down)" in sent[0] and "switches to LIVE" not in sent[0]
+
+
+def test_the_last_veto_session_names_a_halt_instead_of_promising_live(env, tmp_path):
+    book, _ = env
+    i = arm(book, None, sessions_done=golive.VETO_SESSIONS - 1)
+    live_risk(tmp_path, {"halted": True})
+    sent, st = close(DAYS[i], lambda: 1000.0)
+    assert st["sessions_left"] == 0 and len(sent) == 1
+    assert "the live book is halted" in sent[0] and "switches to LIVE" not in sent[0]
+
+
+def test_mid_window_closes_never_look_up_the_live_account(env, tmp_path):
+    book, _ = env
+    i = arm(book, None, sessions_done=1)
+    live_risk(tmp_path, {"halted": True})  # not due yet: the countdown alert is unchanged
+    sent, st = close(DAYS[i], lambda: pytest.fail("no equity lookup"))
+    assert st["sessions_left"] == golive.VETO_SESSIONS - 2 and len(sent) == 1 and "session(s) left" in sent[0]
