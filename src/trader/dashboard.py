@@ -158,7 +158,10 @@ SKIP_REASONS = {  # the engine's skip_* outcomes, as the dashboard says them
     "paused": "Jev calls paused after errors",
     "no_time": "no time left in the minute",
     "book_blocked": "account blocked (kill switch, STOP or unverified start)",
-    "symbol_busy": "another rule had the stock",
+    "symbol_busy": "the account already held or was buying the stock",
+    "order_resting": "its limit order was waiting to fill",
+    "unresolved": "its position's exit was being looked up",
+    "position_gone": "its position had closed",
     "no_bars": "no price bars",
     "outside_window": "outside its time window",
 }

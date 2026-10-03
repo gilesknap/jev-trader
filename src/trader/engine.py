@@ -571,7 +571,7 @@ class Engine:
             book = self.books[cs.spec.book_key]
             for sym, saved in data.get("states", {}).get(cs.spec.id, {}).items():
                 st = cs.symbols.get(sym)
-                if st is None:
+                if st is None or not isinstance(saved, dict):
                     continue
                 counts = saved.get("counts")  # display only: a damaged tally is dropped, never fatal
                 if isinstance(counts, dict):
@@ -899,8 +899,8 @@ class Engine:
                 st.count("skip_feed_stale")
                 continue  # no new entries on stale data; exits and stops still run
             if not (self._probes_available(now) if spec.probe else self._decisions_available(now)):
-                paused = self.probes_paused_until if spec.probe else self.decisions_paused_until
-                st.count("skip_paused" if paused is not None and now < paused else "skip_no_time")
+                pauses = (self.decisions_paused_until, self.probes_paused_until if spec.probe else None)
+                st.count("skip_paused" if any(p is not None and now < p for p in pauses) else "skip_no_time")
                 continue  # not marked evaluated, so it's asked again next tick
             st.last_eval = now
             st.count("checks")
@@ -918,7 +918,7 @@ class Engine:
                     st.count("skip_book_blocked")
                     continue
                 if sym in book.entries or sym in book.pending:
-                    st.count("skip_symbol_busy")  # another rule holds it in this book
+                    st.count("skip_symbol_busy")  # the book already holds or is buying it
                     continue
                 if not self._trigger_passes(spec, st, sb, ctx, now):
                     continue
@@ -936,9 +936,11 @@ class Engine:
             elif st.status == "holding":
                 e = book.entries.get(sym)
                 if e is None or e.classifier != spec.id:
+                    st.count("skip_position_gone")
                     cs.on_exit(sym)
                     continue
                 if sym in book.unresolved:
+                    st.count("skip_unresolved")
                     continue  # gone at the broker, its exit still being looked up (#131): nothing to sell
                 feats = F.compute(spec.features, sb, ctx)
                 px = float(sb.close.iloc[-1])
@@ -954,6 +956,8 @@ class Engine:
                 st.count("asked_exit" if choice is not None else "jev_error")
                 if choice is not None and probs.get("EXIT", 0) >= spec.exit.threshold:
                     self._exit(book, sym, e, px, now, "classifier EXIT")
+            else:  # pending: its limit entry is resting at the broker
+                st.count("skip_order_resting")
 
     # ---- decisions and orders --------------------------------------------------
 
@@ -975,6 +979,7 @@ class Engine:
             return True
         st.last_choice = "no-trigger"
         st.count("no_trigger")
+
         def shown(v):
             return round(float(v), 4) if isinstance(v, (int, float)) and math.isfinite(v) else None
 

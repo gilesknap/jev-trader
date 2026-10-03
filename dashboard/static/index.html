@@ -108,6 +108,7 @@ details.fold > .inner { padding: 0 16px 14px; }
 .table-wrap { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
 th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--rule); white-space: nowrap; vertical-align: baseline; }
+td.wrap { white-space: normal; min-width: 24em; max-width: 40em; }
 th { color: var(--ink2); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; font-stretch: 85%; }
 td.num, th.num { text-align: right; }
 td.num { font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
@@ -711,7 +712,7 @@ function render(d) {
           `<span class="pmeta">${[...p].sort((a, b) => b[1] - a[1]).map(([k, v], i) => i ? `${esc(k)} ${Math.round(v * 100)}%` : `<b>${esc(k)} ${Math.round(v * 100)}%</b>`).join(" · ")}</span>`; } },
     { h: "asked at", v: r => r.x.last_eval || "–", num: 1 }, { h: "note", v: r => r.x.note || "" },
     // Why Jev was or wasn't asked: the engine's counts for today, summarised by the server.
-    { h: "today so far", raw: 1, v: r => r.probe || !r.x.why ? "" : `<span class="pmeta" title="${esc(Object.entries(r.x.counts || {}).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(", "))}">${esc(r.x.why)}</span>` },
+    { h: "today so far", raw: 1, cls: () => "wrap", v: r => r.probe || !r.x.why ? "" : `<span class="pmeta" title="${esc(Object.entries(r.x.counts || {}).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(", "))}">${esc(r.x.why)}</span>` },
   ], rows, r => r.first ? "grp" : "", "No rules loaded yet. The runner loads them shortly before the open.");
 
   // The server sends every fill from today (a replay: its last day) and a bounded tail before them, newest first.
