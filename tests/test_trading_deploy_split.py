@@ -103,7 +103,7 @@ def test_git_never_pages(tmp_path):
 
 # ---------------------------------------------------------------- unit sources (#169 item 6)
 
-UNIT_SOURCE = {  # every unit file the code ships today, and where the two-repo deploy installs it from
+UNIT_SOURCE = {  # every unit file a deploy installs, and where the two-repo deploy installs it from
     "trader-dashboard.service": "code",
     "trader-dashboard-ssh.service": "code",
     "trader-runner.service": "code",
@@ -115,7 +115,23 @@ UNIT_SOURCE = {  # every unit file the code ships today, and where the two-repo 
 
 def test_unit_source_table_covers_every_unit_the_code_ships():
     shipped = {p.name for p in (ROOT / "deploy" / "systemd").iterdir() if p.suffix in (".service", ".timer")}
-    assert shipped == set(UNIT_SOURCE), "a unit was added or removed: say where it is installed from"
+    from_code = {name for name, src in UNIT_SOURCE.items() if src == "code"}
+    assert shipped == from_code, "a unit was added or removed: say where it is installed from"
+
+
+@pytest.mark.skipif((ROOT / "config.yaml").exists(), reason="a monorepo checkout carries its own data")
+def test_the_code_ships_no_deployment_data():
+    """Rendered files and config live only in each owner's data repo (and templates/data/), never in the code."""
+    for rel in ("config.yaml", "config/mode.yaml", "state", "deploy/systemd/trader.env",
+                *(f"deploy/systemd/{n}" for n, src in UNIT_SOURCE.items() if src == "data")):
+        assert not (ROOT / rel).exists(), f"{rel} belongs in the data repo"
+    assert not list((ROOT / "deploy" / "systemd-trader").glob("*.timer"))
+    if (ROOT / ".git").exists():  # and git ignores a rendered copy by exact name, never the static watchdog timer
+        ignored = subprocess.run(["git", "-C", str(ROOT), "check-ignore", "--no-index", "deploy/systemd/trader-runner.timer",
+                                  "deploy/systemd/trader.env", "deploy/systemd-trader/trader-strategist-weekly.timer",
+                                  "deploy/systemd/trader-watchdog.timer"], capture_output=True, text=True).stdout.split()
+        assert ignored == ["deploy/systemd/trader-runner.timer", "deploy/systemd/trader.env",
+                           "deploy/systemd-trader/trader-strategist-weekly.timer"]
 
 
 def test_each_unit_comes_from_its_named_source_and_services_env_never(tmp_path):
@@ -206,7 +222,8 @@ class Rig:
         self.lock = tmp / "trader-home" / "strategist.lock"
         self.scratch = tmp / "scratch"
         self.scratch.mkdir()
-        self.code, self.code_origin = self.repo("code", CODE_FILES)
+        # The single-repo layout is a monorepo: its code checkout carries the config too.
+        self.code, self.code_origin = self.repo("code", CODE_FILES if split else CODE_FILES | {"config.yaml": "owner: x\n"})
         (self.code / ".venv" / "bin").mkdir(parents=True)
         shutil.copy(self.bin / "trader", self.code / ".venv" / "bin" / "trader")
         self.config = tmp / "config"
@@ -298,12 +315,22 @@ def test_single_repo_deploy_is_unchanged_and_never_enters_two_repo_code(mono):
     log = mono.logged()
     assert "config render-deploy" not in log and "trader validate" not in log
     assert all("TRADER_DATA_ROOT= " in ln for ln in log.splitlines() if ln.startswith("uv "))
-    assert f"deploy-plan --repo {mono.code} --base HEAD --target {target}" in log
+    assert f"deploy-plan --repo {mono.code} --base HEAD --target {target} | TRADER_DATA_ROOT= |" in log
     # every unit from the code, the code's own runner timer included, as before
     for name in UNIT_SOURCE:
         assert (mono.units / name).read_text() == f"code {name} v1\n"
     assert not (mono.units / "trader.env").exists()
     assert r.stdout.rstrip().endswith("the runner picks it up at the next session start")
+
+
+def test_single_repo_refuses_code_without_config(mono):
+    """The public code repo deployed without a data checkout: no config.yaml, no runner timer."""
+    git(mono.code_origin, "rm", "-q", "config.yaml")
+    target = mono.push(mono.code_origin, {"src/app.py": "VERSION = 2\n"})
+    for args in ((), ("--dry-run",)):
+        r = mono.run(*args)
+        assert r.returncode == 1 and "has no config.yaml" in r.stderr and "nothing was changed" in r.stderr
+    assert git(mono.code, "rev-parse", "HEAD") != target and mono.logged() == ""
 
 
 def test_single_repo_review_and_typed_yes_as_before(mono):
@@ -367,6 +394,9 @@ def test_two_repo_deploy_switches_both_and_installs_each_unit_from_its_source(sp
     assert f"TRADER_STRATEGIST_ROOT={split.strat}" in v and f"TRADER_RUNTIME={split.runtime}" in v
     assert v.endswith(f"TRADER_SECRETS={split.home}/.config/trading/env")
     assert any(ln.startswith(f"trader deploy-plan --repo {split.config} ") for ln in log)
+    # the deployed code reads the deployed config (it loads config.yaml at import); the code has none
+    plans = [ln for ln in log if ln.startswith("trader deploy-plan")]
+    assert len(plans) == 2 and all(f"TRADER_DATA_ROOT={split.config} |" in ln for ln in plans)
     # throwaway worktrees gone, both checkouts closed to group writes and others
     assert len(git(split.config, "worktree", "list").splitlines()) == 1
     assert len(git(split.code, "worktree", "list").splitlines()) == 1
