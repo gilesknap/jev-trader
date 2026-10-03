@@ -1,0 +1,17 @@
+# Changes here will be overwritten by Copier
+_commit: 5.4.0-12-gf566e134
+_src_path: https://github.com/DiamondLightSource/python-copier-template
+author_email: gilesknap@users.noreply.github.com
+author_name: Giles Knap
+description: 'Autonomous Opus day-trading experiment: strategist + Jev classifier
+    runner'
+distribution_name: trader
+docker: false
+docs_type: sphinx
+git_platform: github.com
+github_org: gilesknap
+package_name: trader
+pypi: false
+repo_name: jev-trader
+strict_typing: false
+type_checker: pyright
