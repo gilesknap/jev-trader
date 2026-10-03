@@ -205,7 +205,7 @@ def test_run_session_survives_an_unreadable_account_and_history(tmp_path, monkey
     with pytest.raises(_Reached):
         runner.run_session("stub")
     assert any("couldn't read equity" in a for a in alerts)
-    assert any("recent history" in a for a in alerts) and any("today's bars so far" in a for a in alerts)
+    assert any("recent history" in a for a in alerts)  # today's bars are caught up at the first tick, after this
     status = json.loads((tmp_path / "status.json").read_text())
     assert status["books"]["paper"]["equity"] is None
 
