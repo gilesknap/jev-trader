@@ -64,7 +64,7 @@ def append(rows: list[dict], path: Path | None = None, lock: bool = True) -> int
     buf = io.StringIO()
     w = csv.DictWriter(buf, COLS, restval="", extrasaction="ignore", lineterminator="\n")
     w.writerows(rows)
-    fd = os.open(path, os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o666)
+    fd = os.open(path, os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o644)
     try:
         if not stat.S_ISREG(os.fstat(fd).st_mode):
             raise OSError(f"{path} is not a regular file")
