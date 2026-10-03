@@ -633,6 +633,12 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
         notify("info" if msg.startswith("[sim:") else level, msg)
 
     engine = Engine(specs, books, decider, universe, config.RUNTIME_DIR, alert=engine_alert)
+    try:  # the trial ledger is research bookkeeping: never a reason not to trade
+        from trader import trials
+
+        trials.note_shadow_starts(specs, engine.provenance.specs, open_.date(), stub=decider_name == "stub")
+    except Exception as e:
+        notify("info", f"trial ledger: could not record today's new specs: {e!r}")
 
     # Settled cash at startup, before anything sells: sale proceeds (orphan closes too) settle T+1, mustn't fund buys.
     settled_at_open = {}

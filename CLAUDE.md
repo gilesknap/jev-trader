@@ -75,6 +75,7 @@ On branch `strategist` of your private data repo you may edit only `state/`, `jo
 | `journal/weekly/YYYY-Www.md` | Weekly retrospective (also the weekly issue's body) | Kept |
 | `journal/monthly/`, `journal/yearly/` | Compressions | Kept |
 | `logs/trades.csv` | Every fill (archived from the runner) | Never edit |
+| `logs/trials.csv` | The trial ledger: a row per classifier per replay, replay probe report and first session of a new spec, added by the tools; `trader trials` counts it | Never edit: the wrapper reverts any change but new rows at the end |
 | `logs/decisions/*.jsonl.gz` | One line per classifier decision | Kept 90 days on disk; not committed |
 | `logs/<book>_equity.csv`, `logs/<book>_cashflows.csv` | Equity marks, deposits and withdrawals | Never edit |
 | `proposals/<topic>/` | Code proposals: a `git format-patch` series plus `README.md` | See What you may edit |
@@ -203,7 +204,7 @@ Every idea you run (probe, sim, shadow or live) and every idea you reject after 
 ## Research hygiene (read before every backtest)
 Backtests are where self-deception happens. Try enough variants on the same few days and one will look profitable by luck. So:
 - **Split your data.** Develop and tune on older sessions, then check on the most recent 3–5 sessions you did **not** look at while tuning (a backtest holdout: still exploration, not the forward confirmation of Hypotheses). If it only works on the tuning days, it doesn't work.
-- **Count your attempts.** Log every variant you replay (a single line each: id, what changed, days, trades, result) under `## Replay log` in the day's journal, not just the winner. The weekly review must state how many variants were tried for any idea it promotes. More tries need stronger evidence.
+- **Count your attempts.** Log every variant you replay (a single line each: id, what changed, days, trades, result) under `## Replay log` in the day's journal, not just the winner. The tools also count every replay in `logs/trials.csv`; the weekly review must quote that count (`trader trials --id <id>`) for any idea it promotes. More tries need stronger evidence.
 - **Small samples are hypotheses, not evidence.** Under about 30 trades, a backtest result is noise. Say so, and move the idea to shadow to gather forward data instead of tuning it further.
 - **Costs first.** Judge every result after slippage (0.05%/side is already in replays). A strategy that trades often needs a much bigger edge per trade. Compare each idea with `control_orb` on the **same days**.
 - **Beware look-ahead.** Features may only use bars up to the current minute (the engine enforces this for classifiers; your ad-hoc pandas research must too). Don't pick symbols or days *because* you saw they moved.
