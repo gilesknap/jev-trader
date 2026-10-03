@@ -11,6 +11,7 @@ import csv
 import dataclasses
 import datetime as dt
 import gzip
+import io
 import json
 import math
 import time
@@ -28,6 +29,8 @@ from trader.classifier import ClassifierSpec, ClassifierState
 from trader.data import ET
 from trader.jev import DecisionError
 from trader.nav import NavBook
+from trader.provenance import COLS as PROVENANCE_COLS
+from trader.provenance import Provenance
 
 DECISION_COOLDOWN = dt.timedelta(minutes=5)  # pause all decision calls after a failure
 TICK_DECISION_BUDGET_S = 35.0  # wall-clock seconds per tick for decision calls
@@ -43,7 +46,8 @@ START_UNVERIFIED_NOTE = "no new entries: start equity unreadable"
 # times (once a tick) before its exit is recorded at a guessed price (#131).
 EXIT_LOOKUP_TRIES = 10
 
-TRADE_COLS = ["time", "book", "classifier", "symbol", "side", "qty", "price", "notional", "reason", "pnl", "pnl_pct"]
+TRADE_COLS = ["time", "book", "classifier", "symbol", "side", "qty", "price", "notional", "reason", "pnl", "pnl_pct",
+              *PROVENANCE_COLS]  # provenance last: a file written before it is upgraded in place (Book)
 Alert = Callable[[str, str], None]  # (level: "urgent"|"info", message)
 
 
@@ -90,6 +94,7 @@ class Entry:
     # far. A leg reported again, by a retry or after a restart, is booked once (see _unbooked).
     sold: dict = field(default_factory=dict)
     cost: float = 0.0  # what every share bought cost (0: orig_qty x price), for pnl_pct
+    spec_hash: str = ""  # the spec it opened under: its sell rows' cohort, even after a restart on an edited spec
 
     def exits_since(self) -> dt.datetime:
         """Where to look for this position's exit fills in the broker's order history."""
@@ -199,9 +204,12 @@ class Book:
     # Tracked positions gone from the broker whose exit fill couldn't be read (#131): symbol ->
     # (failed lookups, closed while the runner was down). Never sold, looked up again each tick.
     unresolved: dict = field(default_factory=dict)
+    # Model, code and spec hashes stamped on trade rows; set by the Engine that trades this book.
+    provenance: Provenance = field(default_factory=Provenance)
 
     def __post_init__(self):
         self.dir.mkdir(parents=True, exist_ok=True)
+        self._upgrade_trades()
         self.nav = NavBook.load(self.dir / "nav.json")
         risk = self._read_risk()
         if risk.get("halted"):
@@ -243,12 +251,40 @@ class Book:
         except (OSError, ValueError):
             return False
 
-    def append_trade(self, row: dict) -> None:
+    def _trades_header(self) -> list[str]:
         p = self.dir / "trades.csv"
-        new = not p.exists()
+        if not p.exists():
+            return []
+        with p.open(newline="") as f:
+            return next(csv.reader(f), [])
+
+    def _upgrade_trades(self) -> None:
+        """A trades.csv written before the provenance columns gets them (blank on old rows), so
+        new rows can carry them. Best-effort and atomic: if it fails, rows are written under the
+        file's old header without those columns (see append_trade)."""
+        try:
+            cols = self._trades_header()
+            if not cols or cols == TRADE_COLS or cols != TRADE_COLS[:len(cols)]:
+                return
+            p = self.dir / "trades.csv"
+            with p.open(newline="") as f:
+                rows = list(csv.DictReader(f))
+            out = io.StringIO()
+            w = csv.DictWriter(out, TRADE_COLS, restval="", extrasaction="ignore")
+            w.writeheader()
+            w.writerows(rows)
+            _atomic_write(p, out.getvalue())
+        except (OSError, ValueError, csv.Error):
+            pass
+
+    def append_trade(self, row: dict) -> None:
+        """Appended under the file's own header, so a file whose upgrade failed stays readable."""
+        row = self.provenance.trade(row["classifier"]) | row  # a sell keeps its entry's spec_hash
+        p = self.dir / "trades.csv"
+        cols = self._trades_header()
         with p.open("a", newline="") as f:
-            w = csv.DictWriter(f, TRADE_COLS)
-            if new:
+            w = csv.DictWriter(f, cols or TRADE_COLS, restval="", extrasaction="ignore")
+            if not cols:
                 w.writeheader()
             w.writerow(row)
 
@@ -279,6 +315,7 @@ class Book:
             "symbol": sym, "side": "sell", "qty": f"{e.qty:.6f}", "price": f"{px:.4f}",
             "notional": f"{e.qty * px:.2f}", "reason": reason + (" (price estimated)" if estimated else ""),
             "pnl": f"{pnl:.2f}", "pnl_pct": "" if estimated else f"{pnl / e.cost * 100:.3f}",
+            "spec_hash": e.spec_hash,
         })
         return pnl
 
@@ -303,6 +340,7 @@ class Book:
             "symbol": sym, "side": "sell_part", "qty": f"{q:.6f}", "price": f"{px:.4f}",
             "notional": f"{q * px:.2f}", "reason": reason + (" (price estimated)" if est else ""),
             "pnl": f"{leg:.2f}", "pnl_pct": "" if est else f"{(px / e.price - 1) * 100:.3f}",
+            "spec_hash": e.spec_hash,
         })
 
     def restore_realised(self, day: dt.date) -> float:
@@ -375,6 +413,9 @@ class Engine:
         self.flattened_at: dt.datetime | None = None  # the last minute flatten_for_close ran
         self._last_alert: dict[str, float] = {}
         self.prev_day: dict[str, pd.DataFrame] = {}
+        self.provenance = Provenance.build(specs, decider)  # stamped on decision and trade rows
+        for b in self.unique_books():
+            b.provenance = self.provenance
         run_dir.mkdir(parents=True, exist_ok=True)
 
     def _alert_every(self, key: str, level: str, msg: str, seconds: float = 600) -> None:
@@ -1011,6 +1052,7 @@ class Engine:
 
     def _log_decision(self, row: dict) -> None:
         if self._decisions_fh:
+            row = row | self.provenance.decision(row.get("c"))
             self._decisions_fh.write(json.dumps(row, separators=(",", ":")) + "\n")
             self._decisions_fh.flush()
 
@@ -1171,7 +1213,7 @@ class Engine:
                       trail_pct=params.get("trail_pct"), max_hold_min=params.get("max_hold_min"),
                       scale_at=fill.price * (1 + sp / 100) if sp else None,
                       scale_fraction=params.get("scale_fraction", 0.0), scale_breakeven=params.get("scale_breakeven", False),
-                      price_estimated=estimated)
+                      price_estimated=estimated, spec_hash=book.provenance.specs.get(classifier, ""))
         book.entries[sym] = entry
         book.save_entries()
         if place_stop:
@@ -1306,7 +1348,7 @@ class Engine:
         b.append_trade({
             "time": now.isoformat(timespec="minutes"), "book": b.name, "classifier": e.classifier, "symbol": sym,
             "side": "buy", "qty": f"{delta:.6f}", "price": f"{px:.4f}", "notional": f"{delta * px:.2f}",
-            "reason": "ENTER (late fill)", "pnl": "", "pnl_pct": "",
+            "reason": "ENTER (late fill)", "pnl": "", "pnl_pct": "", "spec_hash": e.spec_hash,
         })
         if place_stop:
             self._resize_server_stop(b, sym, e, now)
