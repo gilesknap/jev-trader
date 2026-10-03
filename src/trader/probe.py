@@ -184,7 +184,7 @@ def _increment(deltas: list[float]) -> dict:
     n = len(deltas)
     m = float(np.mean(deltas)) if n else None
     sd = float(np.std(deltas, ddof=1)) if n > 1 else 0.0
-    half = float(t95(n - 1) * sd / math.sqrt(n)) if n >= MIN_DAYS_FOR_T and sd > 0 else None
+    half = float(t95(n - 1) * sd / math.sqrt(n)) if n >= MIN_DAYS_FOR_T and sd > 1e-9 else None  # identical deltas: fp dust
     if n < MIN_DAYS_FOR_T:
         verdict = f"inconclusive: too few days ({n})"
     elif half is None:
