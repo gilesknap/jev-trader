@@ -26,7 +26,7 @@ def _gate_samples(source: str = "alpaca"):
     from trader.replay import load_sessions
 
     secrets = config.load_secrets()
-    end = dt.date.today() - dt.timedelta(days=1)
+    end = config.ny_today() - dt.timedelta(days=1)
     # Count sessions, not calendar days: a run of holidays (or a data gap) can leave a short
     # window with too few sessions, and an empty sample set would reject every custom feature.
     for lookback in (7, 21, 60):
@@ -87,7 +87,7 @@ def cmd_validate(a):
         from trader.golive import START_DATE
 
         plumbing = [s.id for s in specs if s.id.startswith("test_")]
-        if plumbing and dt.date.today() >= START_DATE:  # the runner drops these: say so before it happens
+        if plumbing and config.ny_today() >= START_DATE:  # the runner drops these: say so before it happens
             raise ValueError(f"the test_ prefix is reserved for pre-launch plumbing and the runner ignores it "
                              f"from {START_DATE}: rename or remove {plumbing}")
         print(f"classifiers OK: {[s.id for s in specs]}")
@@ -110,7 +110,7 @@ def cmd_replay(a):
     if a.only:
         specs = [s for s in specs if s.id in a.only.split(",")]
     run_dir = config.REPLAY_DIR / run_id
-    end = dt.date.fromisoformat(a.end) if a.end else dt.date.today() - dt.timedelta(days=1)
+    end = dt.date.fromisoformat(a.end) if a.end else config.ny_today() - dt.timedelta(days=1)
     start = dt.date.fromisoformat(a.start) if a.start else end - dt.timedelta(days=a.days)
     summary = replay(
         specs, start, end, _decider(a.decider, secrets), set(config.universe()), run_dir,
@@ -132,7 +132,7 @@ def cmd_probe_report(a):
     else:
         dirs = [config.RUNTIME_DIR / "decisions", config.STRATEGIST_ROOT / "logs" / "decisions"]
     end = dt.date.fromisoformat(a.end) if a.end else None
-    start = dt.date.fromisoformat(a.start) if a.start else (None if a.replay else (end or dt.date.today()) - dt.timedelta(days=a.days))
+    start = dt.date.fromisoformat(a.start) if a.start else (None if a.replay else (end or config.ny_today()) - dt.timedelta(days=a.days))
     only = set(a.only.split(",")) if a.only else None
     rows = probe.load_rows(probe.decision_files(dirs, start, end), only)
     if rows.empty:
