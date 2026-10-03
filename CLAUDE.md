@@ -187,7 +187,7 @@ Backtests are where self-deception happens. Try enough variants on the same few 
 - **Losing replays are findings.** Record what didn't work and why in the journal and `watchlist.md`, so future runs don't retry it blindly.
 
 ## Data caveats
-- Live bars come from **IEX** (about 2–3% of volume). Backtests use SIP (all volume). Volume-based features differ in level between them, so prefer ratios within a session.
+- Live bars come from **IEX** (about 2–3% of volume). Backtests use SIP (all volume). Raw volume differs in level between them, so prefer ratios. `ctx.prev_day`'s volume always comes from the same feed as today's bars (IEX live, SIP in replays) while its prices are SIP's, so a ratio of today's volume to the prior session's (`rel_volume_15m`) means the same live and in replay. Never divide today's volume by anything from another feed.
 - Paper fills are optimistic, so always apply the slippage haircut when judging.
 - A sell logged with `(price estimated)` and no `pnl_pct` is a round trip with a price the runner couldn't get: its entry, its exit, or a position that closed while the runner was down (recorded at its stop). It counts towards nothing (gate, promotion, scoreboard); leave it out of your statistics too.
 - Cash account: proceeds settle T+1. Re-using unsettled cash for a round trip can cause good-faith violations, and sizing uses settled cash only.
