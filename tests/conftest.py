@@ -107,6 +107,18 @@ def pinned_start_date(request, monkeypatch):
 
 
 TEST_STRATEGIST_ALERTS = _session_tmp("trader-test-alerts-") / "strategist-alerts.log"
+# The default fallback (in the strategist root), before any test patches it: the outcome the fixture
+# below guards, checked at the end of the session.
+REAL_STRATEGIST_ALERTS = trader_config.STRATEGIST_ALERTS
+_REAL_ALERTS_EXISTED = REAL_STRATEGIST_ALERTS.exists()
+
+
+def pytest_sessionfinish(session, exitstatus):
+    if not _REAL_ALERTS_EXISTED and REAL_STRATEGIST_ALERTS.exists():
+        tw = session.config.get_terminal_writer()
+        tw.line()
+        tw.line(f"FAIL: the suite created the strategist root's alerts log {REAL_STRATEGIST_ALERTS}", red=True)
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
 @pytest.fixture(autouse=True)

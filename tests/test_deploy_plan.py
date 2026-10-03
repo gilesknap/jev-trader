@@ -119,3 +119,30 @@ def test_shipped_key_is_githubs(keys):
                           "--import", str(KEY_FILE)],
                          capture_output=True, text=True).stdout
     assert WEB_FLOW_FINGERPRINTS <= {line.split(":")[9] for line in out.splitlines() if line.startswith("fpr")}
+
+
+@pytest.mark.skipif(not shutil.which("gpgconf"), reason="gpgconf not installed")
+def test_plan_leaves_no_gpg_agent_or_socket_dir(tmp_path, keys, monkeypatch):
+    import tempfile
+
+    from trader import deploy
+
+    homes, socketdirs = [], []
+
+    class Recording(tempfile.TemporaryDirectory):
+        def __enter__(self):
+            homes.append(super().__enter__())
+            # Asked now, not after: asking creates the directory (as plan()'s gpg import would).
+            socketdirs.append(sh("gpgconf", "--homedir", homes[-1], "--list-dirs", "socketdir"))
+            return homes[-1]
+
+    monkeypatch.setattr(deploy.tempfile, "TemporaryDirectory", Recording)
+    r = Repo(tmp_path, keys[0])
+    base = r.git("rev-parse", "HEAD")
+    r.pr(5, "Add a thing", keys[1]["github"])
+    assert run(r, base, keys).code == 0 and len(homes) == 1
+    assert not os.path.exists(socketdirs[0]), f"plan() left its gpg socket dir {socketdirs[0]}"
+    if not shutil.which("pgrep"):
+        return
+    agents = subprocess.run(["pgrep", "-f", f"gpg-agent.*{homes[0]}"], capture_output=True, text=True).stdout
+    assert not agents.strip(), "plan() left a gpg-agent running"

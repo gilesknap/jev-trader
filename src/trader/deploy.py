@@ -16,6 +16,8 @@ from __future__ import annotations
 import re
 import subprocess
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -46,6 +48,22 @@ class Plan:
 
 def _git(repo: Path, *args: str, env: dict | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, env=env)
+
+
+@contextmanager
+def _gnupg_home() -> Iterator[str]:
+    """A throwaway GNUPGHOME. The key import autostarts a gpg-agent for it, with its sockets in a
+    per-homedir directory under /run/user/<uid>/gnupg: both are removed on the way out, or every
+    plan would leak them."""
+    with tempfile.TemporaryDirectory() as home:
+        try:
+            yield home
+        finally:
+            for args in (("--kill", "gpg-agent"), ("--remove-socketdir",)):
+                try:
+                    subprocess.run(["gpgconf", "--homedir", home, *args], capture_output=True, timeout=10)
+                except (OSError, subprocess.TimeoutExpired):
+                    pass  # cleanup only: never fail a deploy plan over it
 
 
 def _signer(repo: Path, sha: str, gnupghome: str) -> str | None:
@@ -87,7 +105,7 @@ def plan(repo: Path, base: str, target: str, key_file: Path = KEY_FILE,
     if not key_file.exists():
         p.error = f"missing {key_file}"
         return p
-    with tempfile.TemporaryDirectory() as home:
+    with _gnupg_home() as home:
         imp = subprocess.run(["gpg", "--homedir", home, "--batch", "--quiet", "--import", str(key_file)],
                              capture_output=True, text=True)
         if imp.returncode != 0:
