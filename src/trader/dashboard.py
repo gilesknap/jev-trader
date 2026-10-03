@@ -11,6 +11,7 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import json
+import math
 import os
 import re
 import shutil
@@ -143,6 +144,26 @@ def _equity_points(rows: list[dict]) -> list:
     cutoff = (dt.date.fromisoformat(pts[-1][0][:10]) - dt.timedelta(days=DETAIL_DAYS - 1)).isoformat()
     out = [p for i, p in enumerate(pts) if p[0][:10] >= cutoff or i + 1 == len(pts) or pts[i + 1][0][:10] != p[0][:10]]
     return _downsample(out)
+
+
+def _spy_marks(rows: list[dict]) -> dict[str, float]:
+    """{time: SPY's last price} from spy_marks.csv, for the performance chart's intraday SPY line:
+    marks from the last DETAIL_DAYS calendar days only (the longer ranges plot daily closes from
+    benchmark.csv). Blank, unpriced and malformed rows are skipped, so the chart falls back to the
+    daily benchmark at those marks."""
+    out = {}
+    for r in rows:
+        try:
+            t, v = str(r["time"]), float(r["spy"])
+            dt.date.fromisoformat(t[:10])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if math.isfinite(v) and v > 0:
+            out[t] = v
+    if not out:
+        return {}
+    cutoff = (dt.date.fromisoformat(max(out)[:10]) - dt.timedelta(days=DETAIL_DAYS - 1)).isoformat()
+    return {t: v for t, v in out.items() if t[:10] >= cutoff}
 
 
 TRADES_TAIL = 40  # earlier fills sent after the latest day's, so a busy day never pushes its own fills off
@@ -478,6 +499,7 @@ def data(source: str = "live"):
         "status_age_s": _age_seconds(base / "status.json"),
         "summary": _json(base / "summary.json"),
         "benchmark": _csv(base / "benchmark.csv"),
+        "spy_marks": _spy_marks(_csv(base / "spy_marks.csv")),
         "books": books,
         "trades": trades,
         "trades_omitted": omitted,

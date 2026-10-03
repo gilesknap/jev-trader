@@ -51,6 +51,9 @@ EXIT_LOOKUP_TRIES = 10
 # Book.blocked for the live book on a paper day (runner.wind_down_live_book): it trades nothing and
 # everything it holds is closed at the first tick.
 WIND_DOWN = "wind-down"
+# Calendar days of intraday SPY marks (spy_marks.csv) kept: the performance chart's intraday
+# ranges go back 7 days, and its longer ranges plot daily closes from benchmark.csv.
+SPY_MARK_DAYS = 10
 
 TRADE_COLS = [
     "time",
@@ -859,6 +862,7 @@ class Engine:
                 "wins": b.wins_today,
                 "nav": round(b.nav.nav_per_unit, 5),
             }
+        self._mark_spy(now, prune=True)
         self._record_benchmark()
         if self._decisions_fh:
             self._decisions_fh.close()
@@ -891,6 +895,33 @@ class Engine:
             tmp.replace(p)
         except Exception as e:
             self.alert("info", f"could not record the SPY benchmark for {self.day}: {e!r}")
+
+    def _mark_spy(self, now: dt.datetime, prune: bool = False) -> None:
+        """SPY's last price beside each equity mark, stamped like it, so the performance chart's
+        SPY line moves during the day (benchmark.csv holds only each day's open and close). One
+        file per run directory, not per book: every book marks at the same minutes. Blank before
+        today's first SPY bar. `prune` (at the close) drops marks older than SPY_MARK_DAYS.
+        Display only, so it never raises."""
+        p = self.run_dir / "spy_marks.csv"
+        try:
+            new = not p.exists()
+            with p.open("a") as f:
+                if new:
+                    f.write("time,spy\n")
+                spy = f"{self._spy_day[1]:.4f}" if self._spy_day else ""
+                f.write(f"{now.isoformat(timespec='minutes')},{spy}\n")
+            if prune and self.day is not None:
+                cutoff = (self.day - dt.timedelta(days=SPY_MARK_DAYS - 1)).isoformat()
+                lines = p.read_text().splitlines()
+                keep = [line for line in lines[1:] if line[:10] >= cutoff]
+                if len(keep) < len(lines) - 1:
+                    tmp = p.with_suffix(".tmp")
+                    tmp.write_text("\n".join([lines[0], *keep]) + "\n")
+                    tmp.replace(p)
+        except Exception as e:
+            self._alert_every(
+                "spy-mark", "info", f"could not record SPY's intraday mark: {e!r}", seconds=86400
+            )  # display-only, like benchmark.csv: once a day is enough
 
     # ---- per-minute tick --------------------------------------------------------
 
@@ -933,6 +964,7 @@ class Engine:
                     b.append_equity(now, b.broker.equity())
                 except Exception as ex:
                     self._alert_every(f"equity-mark:{b.name}", "urgent", f"[{b.name}] equity mark failed: {ex!r}")
+            self._mark_spy(now)
         self.write_status(now, minutes_to_close)
         if failed and not G.flatten_due(minutes_to_close):
             raise failed[0]  # counted by the runner; in the flatten window it was alerted above
