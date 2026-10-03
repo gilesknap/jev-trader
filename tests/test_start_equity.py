@@ -3,10 +3,12 @@ still work, no new entries until equity is known, and the kill switch and halt n
 
 import datetime as dt
 import json
+from typing import Any
 
 import pandas as pd
 import pytest
 
+from conftest import broker_of
 from test_engine import Always, spec
 from trader import config, golive, runner
 from trader import engine as E
@@ -25,7 +27,8 @@ class Flaky(SimBroker):
 
     def __init__(self, cash, down=True):
         super().__init__(cash)
-        self.down, self.client = down, None
+        self.down = down
+        self.client: Any = None
 
     def equity(self):
         if self.down:
@@ -104,7 +107,7 @@ def test_held_position_still_exits_and_flattens_when_equity_is_unreadable(tmp_pa
     ticks(eng, bars, 1, 390)
     t = trades(tmp_path)
     assert list(t.side) == ["sell"] and t.reason.iloc[0] == reason
-    assert not book.entries and not book.broker.positions
+    assert not book.entries and not broker_of(book, SimBroker).positions
 
 
 def test_recovery_with_nothing_held_takes_the_read_as_baseline_and_resumes(tmp_path, session):
@@ -169,7 +172,7 @@ def test_restart_with_a_good_baseline_does_not_block_when_only_the_mark_fails(tm
     day = bars.index[0].date()
     book, eng, _ = make(tmp_path, down=False)
     eng.start_day(day, {})
-    book.broker.down = True
+    broker_of(book, Flaky).down = True
     book2 = Book("sim", book.broker, tmp_path / "sim")
     eng2 = Engine([spec()], {"live": book2, "shadow": book2}, Always(), {"SPY"}, tmp_path)
     eng2.start_day(day, {})  # restarted: settled cash and the NAV mark both unreadable
@@ -244,7 +247,7 @@ def test_exact_waiting_for_settled_cash_never_judges_the_kill_against_the_stand_
     assert book.blocked is None and book.start_unverified == "exact"
     assert json.loads((d / "risk.json").read_text()).get("blocked_today") is None
     assert "buy" not in set(trades(tmp_path).side)
-    book.broker.cash_down = False
+    broker_of(book, CashFlaky).cash_down = False
     ticks(eng, bars, 30, 60)
     assert book.start_unverified is None and book.day_start_equity == 250.0
     assert (trades(tmp_path).side == "buy").any()

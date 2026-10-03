@@ -6,6 +6,7 @@ import subprocess
 import sys
 import textwrap
 from pathlib import Path
+from typing import Any, cast
 
 import pandas as pd
 import pytest
@@ -342,7 +343,7 @@ def test_bar_codec_is_shared(session):
 
     assert sandbox.encode_bars is barcodec.encode_bars and sandbox.decode_bars is barcodec.decode_bars
     assert barcodec.decode_bars(barcodec.encode_bars(session().iloc[:0])).empty
-    assert barcodec.decode_bars(barcodec.encode_bars(None)).empty
+    assert barcodec.decode_bars(barcodec.encode_bars(cast(Any, None))).empty
 
 
 @pytest.mark.parametrize("unit", ["ns", "us", "ms", "s"])
@@ -357,9 +358,11 @@ def test_bar_codec_round_trips_any_index_unit(session, unit, tz):
     enc = encode_bars(s)
     assert enc["t"][0] == pd.Timestamp("2026-09-21 09:30", tz="America/New_York").value  # ns since the epoch
     back = decode_bars(enc)
-    assert str(back.index.tz) == "America/New_York" and back.index.unit == "ns"
-    assert back.index.equals(s.index.tz_convert("America/New_York"))  # same instants, any unit
-    assert (back.index.hour[0], back.index.minute[-1]) == (9, 59)
+    idx = back.index
+    assert isinstance(idx, pd.DatetimeIndex)
+    assert str(idx.tz) == "America/New_York" and idx.unit == "ns"
+    assert idx.equals(pd.DatetimeIndex(s.index).tz_convert("America/New_York"))  # same instants, any unit
+    assert (idx.hour[0], idx.minute[-1]) == (9, 59)
     assert (back.to_numpy() == s.astype(float).to_numpy()).all()
 
 
@@ -547,7 +550,7 @@ def test_out_of_sequence_reply_fails_closed(tmp_path):
         def wait(self, timeout=None):
             return -9
 
-    sb._proc = P()
+    sb._proc = cast(Any, P())
     s = __import__("conftest").make_session()
     out = sb.compute(["x"], s, F.FeatureContext(s, s, 60, 330))
     assert out["x"] != out["x"] and sb.broken
@@ -572,7 +575,7 @@ def test_reply_with_right_id_but_wrong_nonce_fails_closed(tmp_path):
         def wait(self, timeout=None):
             return -9
 
-    sb._proc = P()
+    sb._proc = cast(Any, P())
     s = __import__("conftest").make_session()
     out = sb.compute(["x"], s, F.FeatureContext(s, s, 60, 330))
-    assert out["x"] != out["x"] and "nonce" in sb.broken
+    assert out["x"] != out["x"] and "nonce" in (sb.broken or "")

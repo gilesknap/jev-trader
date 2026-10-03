@@ -78,11 +78,11 @@ def _env(home: Path, **env) -> dict:
     return {k: v for k, v in (base | {"HOME": str(home)} | CODE_ENV | env).items() if v is not None}
 
 
-def _run(args: list[str], home: Path, cwd: Path = ROOT, **env) -> subprocess.CompletedProcess:
+def _run(args: list[str], home: Path, cwd: Path | str = ROOT, **env) -> subprocess.CompletedProcess:
     return subprocess.run([sys.executable, *args], capture_output=True, text=True, cwd=cwd, env=_env(home, **env))
 
 
-def _paths(home: Path, cwd: Path = ROOT, **env) -> dict:
+def _paths(home: Path, cwd: Path | str = ROOT, **env) -> dict:
     r = _run(["-c", SHOW], home, cwd, **env)
     assert r.returncode == 0, r.stderr
     return json.loads(r.stdout)

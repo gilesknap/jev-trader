@@ -42,9 +42,11 @@ def round_trip(day, cid, pnl_pct, notional=50.0, sym="SPY", spec_hash=""):
 def test_bad_family_never_invalidates_the_file_but_is_reported():
     """A label must not stop trading: the model accepts anything, `family_problem` reports it."""
     assert spec(family=None).family_label == "unlabelled"
-    assert "family must be one of" in spec(family=None).family_problem()
+    assert "family must be one of" in (spec(family=None).family_problem() or "")
     assert spec(family="Novel").family_label == "unlabelled" and spec(family="Novel").family_problem()
-    assert "control classifiers have no family" in spec(id="control_x", control=True, family="novel").family_problem()
+    assert "control classifiers have no family" in (
+        spec(id="control_x", control=True, family="novel").family_problem() or ""
+    )
     assert spec(family="novel").family_label == "novel" and spec(family="novel").family_problem() is None
     assert spec(id="control_x", control=True, family=None).family_label == "control"
 
@@ -67,12 +69,14 @@ classifiers:
 
 def test_spec_hash_unchanged_by_this_change():
     """Pinned to the hash computed on main before `family` existed: deploying must not restart records."""
-    s = ClassifierSpec(
-        id="t",
-        symbols=["SPY"],
-        features=["ret_1m_pct"],
-        entry={"instructions": "?", "criteria": {"ENTER": "a", "WAIT": "b"}},
-        exit={"instructions": "?", "criteria": {"HOLD": "a", "EXIT": "b"}},
+    s = ClassifierSpec.model_validate(
+        dict(
+            id="t",
+            symbols=["SPY"],
+            features=["ret_1m_pct"],
+            entry={"instructions": "?", "criteria": {"ENTER": "a", "WAIT": "b"}},
+            exit={"instructions": "?", "criteria": {"HOLD": "a", "EXIT": "b"}},
+        )
     )
     assert golive.spec_hash(s) == "0ae294b57e0b26b4"
     assert golive.spec_hash(s.model_copy(update={"family": "novel"})) == "0ae294b57e0b26b4"
@@ -473,7 +477,9 @@ def test_classifier_spec_schema_example_in_charter_validates():
     from trader import config
 
     text = (config.CODE_ROOT / "CLAUDE.md").read_text()
-    block = re.search(r"```yaml\n(date:.*?)```", text, re.S).group(1)
+    m = re.search(r"```yaml\n(date:.*?)```", text, re.S)
+    assert m is not None
+    block = m.group(1)
     import yaml
 
     raw = yaml.safe_load(block)

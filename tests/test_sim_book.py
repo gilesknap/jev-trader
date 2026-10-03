@@ -5,7 +5,7 @@ import json
 import pandas as pd
 import pytest
 
-from conftest import pin_start_date
+from conftest import broker_of, pin_start_date
 from test_engine import Always, spec
 from trader import runner
 from trader.broker import PersistentSimBroker, SimBroker, sim_start_cash
@@ -64,7 +64,7 @@ def test_sim_account_survives_a_restart_and_carries_cash_over(tmp_path, session)
     assert "SPY" in b1.entries
     b2 = runner.sim_books(specs, tmp_path / "sim")["sim:sim_a"]
     assert set(b2.broker.get_positions()) == {"SPY"} and set(b2.entries) == {"SPY"}
-    assert b2.broker.cash == pytest.approx(b1.broker.cash)
+    assert broker_of(b2, SimBroker).cash == pytest.approx(broker_of(b1, SimBroker).cash)
     b2.broker.sell_all("SPY", 101.0, close, "x")
     b3 = runner.sim_books(specs, tmp_path / "sim")["sim:sim_a"]
     assert not b3.broker.get_positions() and b3.broker.equity() > sim_start_cash()  # the gain carried over
@@ -185,7 +185,7 @@ def test_unreadable_sim_account_is_quarantined_not_fatal(tmp_path):
     books = runner.sim_books(
         [spec(id="sim_a", mode="sim")], tmp_path / "sim", lambda lvl, m: alerts.append(m), tmp_path / "q"
     )
-    assert books["sim:sim_a"].broker.cash == sim_start_cash()  # a fresh account
+    assert broker_of(books["sim:sim_a"], SimBroker).cash == sim_start_cash()  # a fresh account
     assert len(list((tmp_path / "q").iterdir())) == 1 and "unreadable" in alerts[0]
 
 
@@ -224,7 +224,7 @@ def test_a_sim_account_sells_a_target_at_the_bar_close_never_the_next_open(tmp_p
     bars.iloc[11, bars.columns.get_loc("open")] = 99.0  # a future price the account must not see
     book = Book("sim:t", PersistentSimBroker(tmp_path / "acct.json"), tmp_path / "sim")
     _run(tmp_path, bars, [spec()], {"live": book, "shadow": book})
-    assert book.broker.next_open == {}
+    assert broker_of(book, SimBroker).next_open == {}
     t = _trades(tmp_path / "sim")
     sell = t[t.side == "sell"].iloc[0]
     assert sell.reason == "target" and sell.time.startswith("2026-09-21T09:41")

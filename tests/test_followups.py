@@ -86,15 +86,18 @@ def test_sell_all_rechecks_a_lagging_positions_endpoint(monkeypatch):
     seen = iter([{"SPY": 1.0}, {}])  # still listed right after the fill, gone a moment later
     c.get_all_positions = lambda: [NS(symbol=s, qty=q, avg_entry_price=100.0) for s, q in next(seen).items()]
     fill = broker(c).sell_all("SPY", 100.0, None, "x")
+    assert fill is not None
     assert fill.qty == 1.0 and fill.price == 99.0
 
 
-def test_exit_fill_since_blends_every_filled_sell():
+def test_exit_fill_since_blends_every_filled_sell(monkeypatch):
     c = FakeClient()
-    c.get_orders = lambda req: [
+    orders = [
         NS(filled_qty="0.2", filled_avg_price="101"),
         NS(filled_qty="0.3", filled_avg_price="106"),
         NS(filled_qty="0", filled_avg_price=None),
     ]
+    monkeypatch.setattr(c, "get_orders", lambda req: orders, raising=False)
     f = broker(c).exit_fill_since("SPY", dt.datetime(2026, 10, 6, 10, tzinfo=ET), None)
+    assert f is not None
     assert abs(f.qty - 0.5) < 1e-12 and abs(f.price - 104.0) < 1e-9

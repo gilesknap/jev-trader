@@ -61,7 +61,7 @@ def test_same_day_restart_with_the_calendar_down_reuses_the_saved_half_day(tmp_p
     first = runner._session_for_run(Calendar(close=dt.time(13, 0)))  # the morning start: a half day
     down = Calendar(down=True)
     again = runner._session_for_run(down)  # a mid-session restart during an outage
-    assert again == first and again[1].hour == 13 and again[1].tzinfo is not None
+    assert again is not None and again == first and again[1].hour == 13 and again[1].tzinfo is not None
     assert down.calls == runner.CALENDAR_TRIES
     assert len(alerts) == 1 and "reusing today's saved session times" in alerts[0] and "13:00" in alerts[0]
 
@@ -133,7 +133,7 @@ def test_run_session_restarted_mid_session_runs_on_the_saved_times(tmp_path, mon
 
     def broker(*a, **k):
         b = SimBroker(250.0)
-        b.client = Calendar(down=True)
+        monkeypatch.setattr(b, "client", Calendar(down=True), raising=False)  # runner reads the calendar from it
         return b
 
     class Stream:

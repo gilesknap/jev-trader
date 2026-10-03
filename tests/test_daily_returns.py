@@ -52,8 +52,15 @@ def trades(day, n, notional, held_min=30):
     return out
 
 
+def _daily(*a, **kw) -> dict:
+    """SB.daily, for data that has days (it returns None only for none)."""
+    d = SB.daily(*a, **kw)
+    assert d is not None
+    return d
+
+
 def test_series_return_drawdown_and_spy():
-    d = SB.daily(equity(), BENCH, trades(DAYS[0], 1, 50))
+    d = _daily(equity(), BENCH, trades(DAYS[0], 1, 50))
     assert [round(r["return_pct"], 4) for r in d["rows"]] == [
         1.0,
         round((0.99 / 1.01 - 1) * 100, 4),
@@ -73,8 +80,8 @@ def test_series_return_drawdown_and_spy():
 
 def test_unequal_trades_same_daily_returns_compare_equal():
     """Many big trades or one small one: with the same daily NAV the objective scores them the same."""
-    busy = SB.daily(equity(), BENCH, trades(DAYS[0], 5, 100) + trades(DAYS[1], 3, 40) + trades(DAYS[2], 4, 80))
-    quiet = SB.daily(equity(), BENCH, trades(DAYS[1], 1, 10))
+    busy = _daily(equity(), BENCH, trades(DAYS[0], 5, 100) + trades(DAYS[1], 3, 40) + trades(DAYS[2], 4, 80))
+    quiet = _daily(equity(), BENCH, trades(DAYS[1], 1, 10))
     for k in ("total_pct", "mean_pct", "sd_pct", "max_drawdown_pct", "days"):
         assert busy["book"][k] == quiet["book"][k]
     assert busy["vs_spy"] == quiet["vs_spy"]
@@ -83,12 +90,12 @@ def test_unequal_trades_same_daily_returns_compare_equal():
 
 def test_a_deposit_is_not_a_gain():
     flat = [1.0] * 4
-    d = SB.daily(equity(flat, equities=[250, 250, 500, 500]), BENCH)
+    d = _daily(equity(flat, equities=[250, 250, 500, 500]), BENCH)
     assert d["book"]["total_pct"] == pytest.approx(0.0) and d["book"]["max_drawdown_pct"] == 0.0
 
 
 def test_from_date_keeps_whole_sessions():
-    d = SB.daily(equity(), BENCH, from_date=DAYS[1])
+    d = _daily(equity(), BENCH, from_date=DAYS[1])
     assert [r["day"] for r in d["rows"]] == DAYS[1:]
     assert d["rows"][0]["return_pct"] == pytest.approx((0.99 / 1.01 - 1) * 100, abs=1e-4)
     assert SB.daily([], BENCH) is None and SB.daily(equity(), BENCH, from_date="2027-01-01") is None
@@ -104,7 +111,7 @@ def test_verdict_after_enough_sessions():
         spy *= 1.0005 - 0.001 * (k % 2)
         eq.append({"time": f"{d}T16:00-04:00", "equity": str(250 * nav), "nav": str(nav)})
         bench.append({"date": d, "spy_open": "100", "spy_close": str(100 * spy)})  # only day 1's open is used
-    v = SB.daily(eq, bench)["vs_spy"]
+    v = _daily(eq, bench)["vs_spy"]
     assert v["days"] == len(days) and v["verdict"] == "ahead of SPY: 95% interval above zero"
 
 
@@ -142,7 +149,7 @@ def test_a_paper_rebase_between_sessions_is_not_a_return():
         for d, marks in zip(DAYS, ([1.0, 1.0], [1.0, 0.96], [1.0, 1.0]), strict=True)
         for t, v in zip(("09:30", "16:00"), marks, strict=True)
     ]
-    d = SB.daily(rows, BENCH)
+    d = _daily(rows, BENCH)
     assert [r["return_pct"] for r in d["rows"]] == [0.0, -4.0, 0.0]
     assert d["book"]["total_pct"] == pytest.approx(-4.0)
 
@@ -150,14 +157,14 @@ def test_a_paper_rebase_between_sessions_is_not_a_return():
 def test_spy_starts_at_the_first_paired_sessions_open():
     """Earlier benchmark rows (before the experiment) never put an overnight gap into day one."""
     bench = [{"date": "2026-10-02", "spy_open": "94", "spy_close": "95"}] + BENCH
-    d = SB.daily(equity(), bench)
+    d = _daily(equity(), bench)
     assert d["rows"][0]["spy_pct"] == 1.0 and d["spy"]["total_pct"] == pytest.approx(2.0)
 
 
 def test_mixed_naive_and_aware_times_dont_break_the_board():
     rows = trades(DAYS[0], 1, 50)
     rows[1]["time"] = rows[1]["time"][:16]  # the sell lost its offset
-    assert SB.daily(equity(), BENCH, rows)["rows"][0]["exposure_pct"] == 0.0
+    assert _daily(equity(), BENCH, rows)["rows"][0]["exposure_pct"] == 0.0
 
 
 def test_cli_rejects_a_bad_since(capsys):

@@ -4,6 +4,7 @@ import datetime as dt
 
 import pandas as pd
 
+from conftest import broker_of
 from test_engine import spec
 from trader import engine as E
 from trader.broker import SimBroker
@@ -63,7 +64,7 @@ def test_slow_decider_does_not_delay_exit_enforcement(tmp_path, session, monkeyp
     # hand the engine an open position, then let the price fall through its stop
     t0 = bars.index[10].to_pydatetime()
     book.broker.buy_notional("SPY", 50, 100.0, t0, "x")
-    book.entries["SPY"] = E.Entry("t", book.broker.positions["SPY"].qty, 100.0, 99.5, 101.0, t0)
+    book.entries["SPY"] = E.Entry("t", broker_of(book, SimBroker).positions["SPY"].qty, 100.0, 99.5, 101.0, t0)
     close = dt.datetime.combine(day, dt.time(16), ET)
     for ts in bars.index[11:]:
         now = (ts + pd.Timedelta(minutes=1)).to_pydatetime()
@@ -81,7 +82,7 @@ def test_stop_hit_in_a_skipped_minute_is_caught(tmp_path, session):
     eng.start_day(day, {})
     t0 = bars.index[10].to_pydatetime()
     book.broker.buy_notional("SPY", 50, 100.0, t0, "x")
-    book.entries["SPY"] = E.Entry("t", book.broker.positions["SPY"].qty, 100.0, 99.5, 101.0, t0)
+    book.entries["SPY"] = E.Entry("t", broker_of(book, SimBroker).positions["SPY"].qty, 100.0, 99.5, 101.0, t0)
     close = dt.datetime.combine(day, dt.time(16), ET)
     for ts in [bars.index[11], bars.index[14], bars.index[20]]:  # the tick for the dip bar never happens
         now = (ts + pd.Timedelta(minutes=1)).to_pydatetime()
@@ -94,11 +95,11 @@ class FailOnce(SimBroker):
         super().__init__(cash)
         self.failed = False
 
-    def sell_all(self, symbol, ref, now, cid, stop_id=None):
+    def sell_all(self, symbol, ref_price, now, client_id, stop_id=None):
         if not self.failed:
             self.failed = True
             raise RuntimeError("503")
-        return super().sell_all(symbol, ref, now, cid, stop_id)
+        return super().sell_all(symbol, ref_price, now, client_id, stop_id)
 
 
 def test_failed_stop_exit_is_retried_even_after_price_recovers(tmp_path, session):
@@ -109,10 +110,10 @@ def test_failed_stop_exit_is_retried_even_after_price_recovers(tmp_path, session
     day = bars.index[0].date()
     eng.start_day(day, {})
     t0 = bars.index[10].to_pydatetime()
-    SimBroker.buy_notional(book.broker, "SPY", 50, 100.0, t0, "x")
-    book.entries["SPY"] = E.Entry("t", book.broker.positions["SPY"].qty, 100.0, 99.5, 101.0, t0)
+    SimBroker.buy_notional(broker_of(book, FailOnce), "SPY", 50, 100.0, t0, "x")
+    book.entries["SPY"] = E.Entry("t", broker_of(book, SimBroker).positions["SPY"].qty, 100.0, 99.5, 101.0, t0)
     close = dt.datetime.combine(day, dt.time(16), ET)
     for ts in bars.index[11:20]:
         now = (ts + pd.Timedelta(minutes=1)).to_pydatetime()
         eng.tick(now, {"SPY": bars.loc[:ts]}, (close - now).total_seconds() / 60)
-    assert book.broker.failed and "SPY" not in book.entries  # retried on the next tick
+    assert broker_of(book, FailOnce).failed and "SPY" not in book.entries  # retried on the next tick

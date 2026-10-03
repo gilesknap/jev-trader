@@ -1,10 +1,12 @@
+from typing import Any
+
 import pytest
 
 from trader import guardrails as G
 
 
 def acct(**kw):
-    base = dict(
+    base: dict[str, Any] = dict(
         equity=250.0,
         cash=250.0,
         open_symbols=set(),
@@ -16,7 +18,7 @@ def acct(**kw):
 
 
 def order(**kw):
-    base = dict(symbol="SPY", notional=50.0, ref_price=600.0, stop_price=597.0, take_profit_price=606.0)
+    base: dict[str, Any] = dict(symbol="SPY", notional=50.0, ref_price=600.0, stop_price=597.0, take_profit_price=606.0)
     return G.EntryOrder(**(base | kw))
 
 

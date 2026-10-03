@@ -6,6 +6,7 @@ import time
 
 import pandas as pd
 
+from conftest import broker_of
 from test_engine import Always, spec
 from trader import engine as E
 from trader import runner as R
@@ -68,7 +69,7 @@ def paper_engine(tmp_path, held="XLV", specs=(), decider=None):
     eng.start_day(DAY, {})
     t0 = at(9, 40)
     book.broker.buy_notional(held, 100, 100.0, t0, "x")
-    book.entries[held] = E.Entry("t", book.broker.positions[held].qty, 100.0, 99.5, 101.0, t0)
+    book.entries[held] = E.Entry("t", broker_of(book, SimBroker).positions[held].qty, 100.0, 99.5, 101.0, t0)
     return eng, book
 
 
@@ -220,7 +221,7 @@ def test_a_stream_that_never_delivered_spy_stays_stale_when_spy_is_polled(tmp_pa
     eng = Engine([spec(mode="shadow")], {"live": live, "shadow": shadow}, d, {"SPY"}, tmp_path)
     eng.start_day(DAY, {})
     live.broker.buy_notional("SPY", 100, 100.0, at(9, 40), "x")
-    live.entries["SPY"] = E.Entry("t", live.broker.positions["SPY"].qty, 100.0, 90.0, 110.0, at(9, 40))
+    live.entries["SPY"] = E.Entry("t", broker_of(live, SimBroker).positions["SPY"].qty, 100.0, 90.0, 110.0, at(9, 40))
     msgs = []
     eng.alert = lambda level, msg: msgs.append(msg)
     fetch = Fetch({"SPY": spy})

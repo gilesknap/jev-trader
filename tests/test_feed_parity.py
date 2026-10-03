@@ -109,7 +109,7 @@ def test_iex_gaps_count_as_no_volume_and_a_missing_symbol_or_session_is_nan():
     p = split_sessions(sip)[PREV]
     sparse = split_sessions(iex)[PREV].drop(p.index[10:20])
     # The live stream and alpaca-py index in microseconds; history in nanoseconds: still aligned.
-    sparse.index = sparse.index.as_unit("us")
+    sparse.index = pd.DatetimeIndex(sparse.index).as_unit("us")
     sparse = pd.concat([sparse, sparse.iloc[[0]]])  # a repeated minute: the last copy counts, once
     prev = prior_sessions(
         {"AAA": {PREV: p}, "BBB": {PREV: p}, "CCC": {PREV: p}},

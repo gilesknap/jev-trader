@@ -2,6 +2,7 @@
 
 import datetime as dt
 import json
+from collections.abc import Callable
 from types import SimpleNamespace as NS
 
 import pandas as pd
@@ -26,7 +27,9 @@ class Lost(Scripted):
     def __init__(self):
         super().__init__()
         self.error: Exception | None = ConnectionError("read timeout")
-        self.accepted, self.on_submit, self.lookup_error = True, None, None
+        self.accepted = True
+        self.on_submit: Callable[[Lost], object] | None = None
+        self.lookup_error: Exception | None = None
         self.sent: list[str] = []
         self.cids: dict[str, str] = {}  # client order id -> the broker's order id
         self.lookups = 0
@@ -37,6 +40,7 @@ class Lost(Scripted):
             self.cids[client_id] = "o1"
         if self.on_submit:
             self.on_submit(self)
+        assert self.error is not None  # only called while the submit fails
         raise self.error
 
     def buy_notional(self, symbol, notional, ref_price, now, client_id):
@@ -383,7 +387,8 @@ def test_an_exited_orders_remainder_counts_nothing_but_its_late_shares_do(tmp_pa
 class Client(FakeClient):
     def __init__(self):
         super().__init__()
-        self.by_cid, self.submit_error = {}, None
+        self.by_cid: dict = {}
+        self.submit_error: Exception | None = None
 
     def submit_order(self, req):
         if self.submit_error:

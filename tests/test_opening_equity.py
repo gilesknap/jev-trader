@@ -7,6 +7,7 @@ import datetime as dt
 import pandas as pd
 import pytest
 
+from conftest import broker_of
 from test_engine import Always, spec
 from test_start_equity import hold, make, ticks
 from trader import engine as E
@@ -54,7 +55,7 @@ def test_gate_counts_a_loss_before_the_first_five_minute_mark(tmp_path, session)
     book = Book("paper", Scripted(1000.0), tmp_path / "paper")
     eng = Engine([spec()], {"live": book, "shadow": book}, Always("WAIT"), {"SPY"}, tmp_path)
     eng.start_day(DAY, {})
-    book.broker.eq = 940.0  # down 6% in the first minutes (e.g. a gap through a stop)
+    broker_of(book, Scripted).eq = 940.0  # down 6% in the first minutes (e.g. a gap through a stop)
     drive(eng, bars, 0, 30)
     eng.end_day(dt.datetime.combine(DAY, dt.time(16), ET))
     r = rows(tmp_path / "paper")

@@ -26,7 +26,7 @@ tutorial uses `../my-data`), and check your diff before you push.
   and `uv run ruff check --fix`, or all the checks CI runs: `uv run pre-commit run --all-files`
   (`.pre-commit-config.yaml`: ruff, YAML, file endings, gitleaks). `uv run pre-commit install`
   runs them on every commit. `uv run tox -p` runs the lint, type checking (pyright in `standard`
-  mode, over `src/`), tests and docs together.
+  mode), tests and docs together.
 - If you changed the docs, build them with warnings as errors:
   `uv run --group docs sphinx-build -W --keep-going docs build/html`.
 - Keep changes to the guardrails (`src/trader/guardrails.py`, `src/trader/allocator.py`) and the

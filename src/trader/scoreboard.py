@@ -20,6 +20,7 @@ from __future__ import annotations
 import datetime as dt
 import math
 import statistics
+from collections.abc import Mapping
 from typing import overload
 
 from trader.golive import MIN_TRADES, SLIPPAGE_PER_SIDE_PCT, start_date
@@ -284,7 +285,7 @@ def daily(
 
 def build(
     rows: list[dict],
-    families: dict[str, str | None],
+    families: Mapping[str, str | None],
     current: set[str],
     start_equity: float | None,
     since: dict[str, str] | None = None,

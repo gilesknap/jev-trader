@@ -175,9 +175,14 @@ def test_exposures_count_pending_reservations_and_untracked_positions(tmp_path):
         "XOM": Position("XOM", 2.0, 30.0),
     }
     got = {x.symbol: x for x in Engine._exposures(book, positions)}
-    assert got["QQQ"] == Exposure("QQQ", 100.0, pytest.approx(2.0))
+    assert (got["QQQ"].symbol, got["QQQ"].notional, got["QQQ"].stop_loss) == ("QQQ", 100.0, pytest.approx(2.0))
     assert got["NVDA"] == Exposure("NVDA", 100.0, 5.0)  # the whole reservation, not the part filled
-    assert got["XOM"] == Exposure("XOM", 60.0, pytest.approx(60.0 * MAX_STOP_DISTANCE))  # no stop: worst allowed
+    xom = got["XOM"]
+    assert (xom.symbol, xom.notional, xom.stop_loss) == (
+        "XOM",
+        60.0,
+        pytest.approx(60.0 * MAX_STOP_DISTANCE),
+    )  # no stop: worst allowed
     book.pending["NVDA"].filled_cost = 30.0  # part-filled (#116): that part is also an Entry now
     assert {x.symbol: x for x in Engine._exposures(book, positions)}["NVDA"] == Exposure("NVDA", 70.0, 3.5)
     book.pending["NVDA"].filled_cost = 120.0  # filled above the reservation: never negative

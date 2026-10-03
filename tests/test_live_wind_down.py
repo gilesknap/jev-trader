@@ -85,6 +85,7 @@ def test_live_positions_on_a_paper_day_wind_down(live_env, monkeypatch):
     _, alerts, alert = live_env
     monkeypatch.setattr(runner, "AlpacaBroker", lambda *a, **k: FakeLive(["XLV"]))
     b = runner.wind_down_live_book(SECRETS, alert)
+    assert b is not None
     assert b.name == "live" and b.blocked == WIND_DOWN
     assert len(alerts) == 1 and alerts[0][0] == "urgent" and "['XLV']" in alerts[0][1]
 
@@ -107,12 +108,14 @@ def test_tracked_entries_or_an_unreadable_account_wind_down_too(live_env, monkey
         )
     )
     monkeypatch.setattr(runner, "AlpacaBroker", lambda *a, **k: FakeLive())  # gone at the broker: still reconciled
-    assert runner.wind_down_live_book(SECRETS, alert).blocked == WIND_DOWN
+    b = runner.wind_down_live_book(SECRETS, alert)
+    assert b is not None and b.blocked == WIND_DOWN
     assert any("still tracks ['SPY']" in m for _, m in alerts)
     (live_dir / "entries.json").unlink()
     alerts.clear()
     monkeypatch.setattr(runner, "AlpacaBroker", lambda *a, **k: FakeLive(fail=True))
-    assert runner.wind_down_live_book(SECRETS, alert).blocked == WIND_DOWN
+    b = runner.wind_down_live_book(SECRETS, alert)
+    assert b is not None and b.blocked == WIND_DOWN
     assert any("couldn't be read" in m for _, m in alerts)
 
 
@@ -121,7 +124,8 @@ def test_a_halted_live_book_stays_halted(live_env, monkeypatch):
     live_dir.mkdir(parents=True)
     (live_dir / "risk.json").write_text(json.dumps({"halted": True}))
     monkeypatch.setattr(runner, "AlpacaBroker", lambda *a, **k: FakeLive(["XLV"]))
-    assert runner.wind_down_live_book(SECRETS, alert).blocked == "halt"
+    b = runner.wind_down_live_book(SECRETS, alert)
+    assert b is not None and b.blocked == "halt"
 
 
 def test_an_unopenable_live_book_alerts_and_never_raises(live_env, monkeypatch):
@@ -137,6 +141,7 @@ def test_unreadable_tracking_files_are_set_aside_and_everything_closes_as_untrac
     (live_dir / "entries.json").write_text("{torn")
     monkeypatch.setattr(runner, "AlpacaBroker", lambda *a, **k: FakeLive(["XLV"]))
     b = runner.wind_down_live_book(SECRETS, alert)
+    assert b is not None
     assert b.blocked == WIND_DOWN and not b.entries and not (live_dir / "entries.json").exists()
     assert [p.name.split(".corrupt-")[0] for p in live_dir.glob("*.corrupt-*")] == ["entries.json"]
     assert any("set aside" in m for _, m in alerts) and any("still holds ['XLV']" in m for _, m in alerts)
@@ -262,6 +267,7 @@ def test_only_the_unloadable_tracking_file_is_set_aside(live_env, monkeypatch):
     (live_dir / "pending.json").write_text("{}")
     monkeypatch.setattr(runner, "AlpacaBroker", lambda *a, **k: FakeLive())
     b = runner.wind_down_live_book(SECRETS, alert)
+    assert b is not None
     assert b.blocked == WIND_DOWN and (live_dir / "pending.json").exists()
     assert [p.name.split(".corrupt-")[0] for p in live_dir.glob("*.corrupt-*")] == ["entries.json"]
     assert any("holds no positions now" in m for _, m in alerts)

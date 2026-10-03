@@ -38,7 +38,7 @@ def spec(**kw):
         target_pct=1.0,
         max_trades=1,
     )
-    return ClassifierSpec(**(base | kw))
+    return ClassifierSpec.model_validate(base | kw)
 
 
 def run(tmp_path, bars, specs, decider, cash=250.0):

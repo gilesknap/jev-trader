@@ -199,10 +199,10 @@ def test_partial_limit_fill_at_expiry_keeps_the_filled_part(tmp_path, session):
         def update_bars(self, bars):
             pass
 
-        def order_state(self, oid):
+        def order_state(self, order_id):
             return OrderState("partially_filled", 0.1, 99.95)
 
-        def cancel_order(self, oid):
+        def cancel_order(self, order_id):
             self.positions["SPY"] = __import__("trader.broker", fromlist=["Position"]).Position("SPY", 0.1, 99.95)
             return OrderState("canceled", 0.1, 99.95)
 
@@ -312,34 +312,38 @@ def test_unset_toolkit_fields_leave_existing_spec_identity_unchanged():
 # ---- Alpaca order paths ------------------------------------------------------------------
 
 
-def test_alpaca_move_stop_falls_back_to_cancel_and_replace():
+def test_alpaca_move_stop_falls_back_to_cancel_and_replace(monkeypatch):
     c = FakeClient()
     c.orders["s1"] = {"status": "new", "filled_qty": 0}
 
     def no_replace(oid, req):
         raise RuntimeError("fractional orders can't be replaced")
 
-    c.replace_order_by_id = no_replace
-    c.submit_order = lambda req: NS(id="s2")
+    monkeypatch.setattr(c, "replace_order_by_id", no_replace, raising=False)
+    monkeypatch.setattr(c, "submit_order", lambda req: NS(id="s2"), raising=False)
     assert broker(c).move_stop("s1", "SPY", 0.5, 101.0, "x") == "s2" and ("cancel", "s1") in c.calls
 
 
-def test_alpaca_move_stop_keeps_the_old_id_if_it_fired():
+def test_alpaca_move_stop_keeps_the_old_id_if_it_fired(monkeypatch):
     c = FakeClient()
     c.orders["s1"] = {"status": "filled", "filled_qty": 0.5, "price": 100.4}
-    c.replace_order_by_id = lambda oid, req: (_ for _ in ()).throw(RuntimeError("filled"))
+    monkeypatch.setattr(
+        c, "replace_order_by_id", lambda oid, req: (_ for _ in ()).throw(RuntimeError("filled")), raising=False
+    )
     assert broker(c).move_stop("s1", "SPY", 0.5, 101.0, "x") == "s1"
 
 
-def test_alpaca_scale_out_cancels_the_stop_first_and_defers_if_it_fired():
+def test_alpaca_scale_out_cancels_the_stop_first_and_defers_if_it_fired(monkeypatch):
     c = FakeClient()
     c.orders["s1"] = {"status": "filled", "filled_qty": 0.5, "price": 99.5}
-    c.submit_order = lambda req: pytest.fail("must not sell when the stop already fired")
+    monkeypatch.setattr(
+        c, "submit_order", lambda req: pytest.fail("must not sell when the stop already fired"), raising=False
+    )
     assert broker(c).sell_qty("SPY", 0.25, 100.0, None, "x", "s1") is None and ("cancel", "s1") in c.calls
 
 
 def test_startup_keeps_todays_limit_fill_and_drops_stale_limits(tmp_path):
-    from trader.broker import Position
+    from trader.broker import OrderState, Position
     from trader.engine import Pending
     from trader.runner import reconcile_at_startup
 
@@ -347,8 +351,9 @@ def test_startup_keeps_todays_limit_fill_and_drops_stale_limits(tmp_path):
         def cancel_orders(self, symbols):
             self.cancelled = set(symbols)
 
-        def cancel_order(self, oid):
-            self.cancelled_ids = getattr(self, "cancelled_ids", []) + [oid]
+        def cancel_order(self, order_id):
+            self.cancelled_ids = getattr(self, "cancelled_ids", []) + [order_id]
+            return OrderState("canceled")  # the startup reconcile doesn't read it
 
     br = Recon(250.0)
     br.positions = {"SPY": Position("SPY", 0.5, 99.95)}  # today's limit filled while the runner was down
@@ -396,8 +401,8 @@ def test_limit_fill_reported_before_its_price_opens_at_the_limit(tmp_path, sessi
     from trader.broker import OrderState
 
     class NoPriceYet(SimBroker):
-        def order_state(self, oid):
-            st = super().order_state(oid)
+        def order_state(self, order_id):
+            st = super().order_state(order_id)
             return OrderState(st.status, st.filled_qty, 0.0) if st.status == "filled" else st
 
     path = [100.0] * 10 + [99.9] * 380
@@ -414,7 +419,7 @@ def test_filled_but_no_qty_reported_keeps_the_order_pending(tmp_path, session):
         def update_bars(self, bars):
             pass
 
-        def order_state(self, oid):
+        def order_state(self, order_id):
             return OrderState("filled", 0.0, 0.0)
 
     bars = session(path=[100.0] * 390)
@@ -431,7 +436,7 @@ def test_cancel_not_final_keeps_the_order_and_its_cash(tmp_path, session):
     from trader.broker import OrderState
 
     class SlowCancel(SimBroker):
-        def cancel_order(self, oid):
+        def cancel_order(self, order_id):
             return OrderState("pending_cancel")
 
     bars = session(path=[100.0] * 390)
@@ -488,13 +493,16 @@ def test_sim_limit_needs_a_trade_strictly_below(tmp_path, session):
     assert "SPY" in book.pending and not book.entries
 
 
-def test_exit_found_in_order_history_keeps_its_own_fill_time():
+def test_exit_found_in_order_history_keeps_its_own_fill_time(monkeypatch):
     c = FakeClient()
     at = dt.datetime(2026, 10, 5, 19, 58, tzinfo=dt.UTC)  # 15:58 ET on the previous session
-    c.get_orders = lambda req: [NS(filled_qty="0.5", filled_avg_price="101", filled_at=at)]
+    monkeypatch.setattr(
+        c, "get_orders", lambda req: [NS(filled_qty="0.5", filled_avg_price="101", filled_at=at)], raising=False
+    )
     f = broker(c).exit_fill_since(
         "SPY", dt.datetime(2026, 10, 5, 10, tzinfo=ET), dt.datetime(2026, 10, 6, 9, 25, tzinfo=ET)
     )
+    assert f is not None
     assert f.time == at and f.time.isoformat().startswith("2026-10-05T15:58")
 
 
@@ -516,7 +524,7 @@ def test_flatten_keeps_a_limit_whose_cancel_is_not_final(tmp_path, session):
     from trader.broker import OrderState
 
     class SlowCancel(SimBroker):
-        def cancel_order(self, oid):
+        def cancel_order(self, order_id):
             return OrderState("pending_cancel")
 
     bars = session(path=[100.0] * 390)

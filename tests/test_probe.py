@@ -27,7 +27,7 @@ def probe_spec(**kw):
         features=["ret_1m_pct"],
         entry={"instructions": "?", "criteria": {"ENTER": "a", "STAND_DOWN": "b"}},
     )
-    return ClassifierSpec(**(base | kw))
+    return ClassifierSpec.model_validate(base | kw)
 
 
 def run(tmp_path, bars, specs, decider):
@@ -48,7 +48,7 @@ def run(tmp_path, bars, specs, decider):
 def test_probe_needs_no_exit_but_others_do():
     assert probe_spec().exit is None
     with pytest.raises(ValueError, match="exit question is required"):
-        ClassifierSpec(**probe_spec().model_dump(exclude={"exit"}) | {"mode": "shadow"})
+        ClassifierSpec.model_validate(probe_spec().model_dump(exclude={"exit"}) | {"mode": "shadow"})
     with pytest.raises(ValueError, match="can't be probes"):
         probe_spec(id="control_x", control=True, family=None)
 
@@ -160,10 +160,12 @@ def test_engine_logs_score_end_to_end(tmp_path, session):
 def test_bins_are_labelled_by_their_values_and_keep_rare_confident_rows():
     y = pd.Series(np.r_[np.zeros(95), np.ones(5)])
     bins = probe._bins(pd.Series([0.1] * 95 + [0.9] * 5), y)
+    assert bins is not None
     assert [(b["p_enter_min"], b["p_enter_max"], b["n"]) for b in bins] == [(0.1, 0.1, 95), (0.9, 0.9, 5)]
     assert bins[1]["mean_gross_bps"] == 100.0
     p = pd.Series(np.linspace(0, 1, 100))
     bins = probe._bins(p, p)
+    assert bins is not None
     assert len(bins) == 5 and all(b["p_enter_min"] <= b["p_enter_max"] for b in bins)
     assert bins[0]["p_enter_min"] == 0.0 and bins[-1]["p_enter_max"] == 1.0
 

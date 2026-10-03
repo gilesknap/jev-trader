@@ -159,7 +159,9 @@ def test_runner_session_and_replay_share_the_parsing(monkeypatch):
     row = SimpleNamespace(
         date=today, open=dt.datetime.combine(today, dt.time(9, 30)), close=dt.datetime.combine(today, dt.time(13))
     )
-    open_, close = runner._session_today(rows_of([row]))
+    got = runner._session_today(rows_of([row]))
+    assert got is not None
+    open_, close = got
     assert (open_, close) == (
         fetch_calendar(rows_of([row]), today, today).session(today).open,
         fetch_calendar(rows_of([row]), today, today).session(today).close,
@@ -191,7 +193,7 @@ def test_probe_horizons_stop_at_an_early_close_flatten_and_say_so():
         [{"day": HALF.isoformat(), "t": t, "c": "p", "s": "SPY", "p_enter": 0.5} for t in ("10:01", "12:30", "12:50")]
     )
     out = probe.forward_returns(rows, {"SPY": HALF_CAL.trim({HALF: bars})}, [15, 60], HALF_CAL)
-    at = lambda hhmm: float(bars.close[bars.index.strftime("%H:%M") == hhmm].iloc[0])
+    at = lambda hhmm: float(bars.close[pd.DatetimeIndex(bars.index).strftime("%H:%M") == hhmm].iloc[0])
     assert out.fwd_15[0] == pytest.approx((at("10:15") / at("10:00") - 1) * 100) and not out.cut_15[0]
     assert out.fwd_60[1] == pytest.approx((at("12:44") / at("12:29") - 1) * 100) and out.cut_60[1]
     assert not out.cut_15[1]
