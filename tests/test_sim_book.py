@@ -5,9 +5,10 @@ import json
 import pandas as pd
 import pytest
 
+from conftest import pin_start_date
 from test_engine import Always, spec
 from trader import runner
-from trader.broker import SIM_START_CASH, PersistentSimBroker, SimBroker
+from trader.broker import PersistentSimBroker, SimBroker, sim_start_cash
 from trader.data import ET
 from trader.engine import Book, Engine
 
@@ -66,7 +67,7 @@ def test_sim_account_survives_a_restart_and_carries_cash_over(tmp_path, session)
     assert b2.broker.cash == pytest.approx(b1.broker.cash)
     b2.broker.sell_all("SPY", 101.0, close, "x")
     b3 = runner.sim_books(specs, tmp_path / "sim")["sim:sim_a"]
-    assert not b3.broker.get_positions() and b3.broker.equity() > SIM_START_CASH  # the gain carried over
+    assert not b3.broker.get_positions() and b3.broker.equity() > sim_start_cash()  # the gain carried over
 
 
 def test_persistent_sim_broker_keeps_todays_orders_only(tmp_path):
@@ -134,7 +135,6 @@ def test_dashboard_shows_sim_as_one_book(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
 
     from trader import dashboard
-    from trader import scoreboard as SB
 
     rt = tmp_path / "runtime"
     cols = "time,book,classifier,symbol,side,qty,price,notional,reason,pnl,pnl_pct"
@@ -164,7 +164,7 @@ def test_dashboard_shows_sim_as_one_book(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(dashboard.config, "RUNTIME_DIR", rt)
     monkeypatch.setattr(dashboard, "USERS", {"me@example.com"})
-    monkeypatch.setattr(SB, "EXPERIMENT_START", dt.date(2026, 1, 1))
+    pin_start_date(monkeypatch, dt.date(2026, 1, 1))
     c = TestClient(dashboard.app, headers={"Tailscale-User-Login": "me@example.com"})
     d = c.get("/api/data").json()
     assert set(d["books"]) == {"paper", "sim"} and d["books"]["sim"]["accounts"] == 2
@@ -185,7 +185,7 @@ def test_unreadable_sim_account_is_quarantined_not_fatal(tmp_path):
     books = runner.sim_books(
         [spec(id="sim_a", mode="sim")], tmp_path / "sim", lambda lvl, m: alerts.append(m), tmp_path / "q"
     )
-    assert books["sim:sim_a"].broker.cash == SIM_START_CASH  # a fresh account
+    assert books["sim:sim_a"].broker.cash == sim_start_cash()  # a fresh account
     assert len(list((tmp_path / "q").iterdir())) == 1 and "unreadable" in alerts[0]
 
 

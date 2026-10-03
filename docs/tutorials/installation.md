@@ -66,9 +66,11 @@ Items marked **TODO** weren't verified when this was written; check them as you 
    git -C ~/my-data commit -am "Configure for <you>" && git -C ~/my-data push
    ```
    A malformed `config.yaml` (an unknown key, a bad date, an unquoted time) stops every `trader`
-   command with a message naming the file, so a typo can't slip through quietly. Before the
-   install, pushing straight to `main` is fine; once the system runs, change it through pull
-   requests (see "Changing `config.yaml` later").
+   command with a message naming the file, so a typo can't slip through quietly. Only the last
+   resorts carry on without it: `trader stop`, the watchdog (which alerts that the file is
+   unreadable) and the alerts themselves. Before the install, pushing straight to `main` is
+   fine; once the system runs, change it through pull requests (see "Changing `config.yaml`
+   later").
 
 Your data repository never holds code, and the code repository never holds your data. Leave
 `config/mode.yaml` at `paper` until you mean to change it. The universe isn't in your data

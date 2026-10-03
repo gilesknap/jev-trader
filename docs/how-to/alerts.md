@@ -9,6 +9,10 @@ Every alert is also logged:
   `/srv/trading/strategist/strategist-alerts.log` (0640, git-ignored), because `trader` can't
   write the runtime directory by design.
 
+If `config.yaml` can't be read or is invalid, alerts still go out, but to the default public
+server, `https://ntfy.sh`, since the file that names yours is the thing that's broken. A
+self-hosted ntfy server won't get them until it's fixed; the logs above still have every one.
+
 ## What pages you
 
 The runner alerts when something needs a human or changes the money picture, for example:
@@ -31,7 +35,9 @@ sim accounts are info-level.
 - the runner's heartbeat is more than 5 minutes old during market hours (at most hourly);
 - no post-close strategist run has succeeded for the latest session by its deadline (once per
   session);
-- Alpaca's calendar can't be read, so those checks were skipped.
+- Alpaca's calendar can't be read, so those checks were skipped;
+- `config.yaml` can't be read or is invalid, so the post-close check was skipped and the runner
+  won't start a new session until it's fixed (at most hourly).
 
 ## Housekeeping
 

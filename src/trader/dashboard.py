@@ -512,6 +512,7 @@ def scoreboard(source: str = "live", all_days: bool | None = None):
     The live board starts at the experiment's first day; `all_days` also shows the test sessions
     before it (display only: the go-live gate and promotion never count them). Unset, it's on
     until the start date (before it there's nothing else to show) and off from then on."""
+    from trader import golive
     from trader import scoreboard as SB
 
     base, book_dirs = _source_dir(source)
@@ -537,8 +538,8 @@ def scoreboard(source: str = "live", all_days: bool | None = None):
     if all_days is None:
         from zoneinfo import ZoneInfo
 
-        all_days = dt.datetime.now(ZoneInfo("America/New_York")).date() < SB.EXPERIMENT_START
-    from_date = SB.EXPERIMENT_START.isoformat() if source == "live" and not all_days else None
+        all_days = dt.datetime.now(ZoneInfo("America/New_York")).date() < golive.start_date()
+    from_date = golive.start_date().isoformat() if source == "live" and not all_days else None
     books = {}
     bench = _csv(base / "benchmark.csv")
     for d in book_dirs:
@@ -558,7 +559,7 @@ def scoreboard(source: str = "live", all_days: bool | None = None):
             benchmark=bench,
         )
     if _sim_dirs(source) or (source == "live" and sim_ids):
-        from trader.broker import SIM_START_CASH
+        from trader.broker import sim_start_cash
 
         # Every sim account starts with the same cash, so % of it compares rules fairly. The
         # simulated fills (market and limit entries, and every exit) already include slippage, and
@@ -567,7 +568,7 @@ def scoreboard(source: str = "live", all_days: bool | None = None):
             _sim_trades(source),
             families,
             sim_ids,
-            SIM_START_CASH,
+            sim_start_cash(),
             since=None,
             slippage_per_side_pct=0.0,
             from_date=from_date,
@@ -575,7 +576,7 @@ def scoreboard(source: str = "live", all_days: bool | None = None):
     return {
         "source": source,
         "books": books,
-        "experiment_start": SB.EXPERIMENT_START.isoformat() if source == "live" else None,
+        "experiment_start": golive.start_date().isoformat() if source == "live" else None,
         "all_days": all_days,
     }
 

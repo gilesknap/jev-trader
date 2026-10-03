@@ -3,8 +3,8 @@
 Unset, every path resolves exactly as before (one checkout holds code and data). Set to another
 directory ("split mode"), it moves config.yaml, config/mode.yaml, the .env fallback and the
 rendered deploy files, plus STRATEGIST_ROOT's default; nothing else. config.py resolves its paths
-and loads SETTINGS at import, so those checks run in a fresh interpreter with a scrubbed
-environment: nothing leaks into, or in from, the other tests.
+at import (and caches SETTINGS once loaded), so those checks run in a fresh interpreter with a
+scrubbed environment: nothing leaks into, or in from, the other tests.
 
 CODE is the code root those subprocesses run with: this tree when it holds config.yaml (the monorepo),
 otherwise (the public code repo, whose data lives elsewhere) a temp code tree built from this one's
@@ -215,7 +215,7 @@ def test_secrets_fall_back_to_the_data_roots_env(tmp_path):
 def test_missing_config_names_trader_data_root(tmp_path):
     empty = tmp_path / "empty"
     empty.mkdir()
-    r = _run(["-c", "import trader.config"], tmp_path, TRADER_DATA_ROOT=str(empty))
+    r = _run(["-c", "import trader.config as c; c.SETTINGS"], tmp_path, TRADER_DATA_ROOT=str(empty))
     assert r.returncode != 0
     assert str(empty / "config.yaml") in r.stderr and "TRADER_DATA_ROOT" in r.stderr
 
@@ -287,7 +287,7 @@ def _snapshot(paths) -> dict:
 def test_cli_render_deploy_writes_and_checks_under_the_data_root(tmp_path, how):
     data = _data_root(tmp_path)
     before = _snapshot(config.DEPLOY_TEMPLATES.values())
-    # "option": SETTINGS loads from the code root's config.yaml at import; --data-root must still win.
+    # "option": config.SETTINGS would be the code root's config.yaml; --data-root must win.
     flag, env = (["--data-root", str(data)], {}) if how == "option" else ([], {"TRADER_DATA_ROOT": str(data)})
     cmd = ["-m", "trader.cli", "config", "render-deploy"]
 

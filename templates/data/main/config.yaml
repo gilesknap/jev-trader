@@ -1,7 +1,7 @@
 # Deployment settings: the values that make this copy of the project yours.
 # TEMPLATE: set owner, dashboard.users and experiment.start_date, then render the deploy files.
 # Loaded by src/trader/config.py from the data root (TRADER_DATA_ROOT): a malformed or incomplete
-# file stops every trader command.
+# file stops every trader command but the last resorts (STOP, the watchdog and alerts).
 # Files that can't read YAML (systemd timers, services.env) are generated from the code's
 # deploy/templates/ and this file by `uv run trader config render-deploy --data-root <this checkout>`,
 # which you run by hand after editing here; commit the rendered files beside this one. The setup
