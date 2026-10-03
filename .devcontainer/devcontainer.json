@@ -66,7 +66,6 @@
     ],
     // Mount the parent as /workspaces so we can pip install peers as editable
     "workspaceMount": "source=${localWorkspaceFolder}/..,target=/workspaces,type=bind",
-    // After the container is created, recreate the venv. The template also installs the pre-commit hooks
-    // here; that comes back once the dev tools (pre-commit, ruff) are in a dev dependency group.
-    "postCreateCommand": "uv venv --clear && uv sync --extra dev"
+    // After the container is created, recreate the venv then make pre-commit first run faster
+    "postCreateCommand": "uv venv --clear && uv sync && pre-commit install --install-hooks"
 }

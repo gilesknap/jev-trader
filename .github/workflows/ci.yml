@@ -1,46 +1,52 @@
 name: CI
 
-# Runs the lint checks and the test suite on pull requests and pushes to main.
-# Only in a public repository (like docs.yml): the private copy is tested by trading-deploy before
-# every deploy, against the operator's own config. A code checkout without config.yaml (the public
-# repo) runs the tests against templates/data (see tests/conftest.py). No test needs secrets.
+# Lint, tests (with coverage), the wheel and sdist, and a GitHub release on a tag.
+# Every job runs only in a public repository (like docs.yml): the private copy is tested by
+# trading-deploy before every deploy, against the operator's own config. A code checkout without
+# config.yaml (the public repo) runs the tests against templates/data (see tests/conftest.py). No
+# test needs secrets.
+# The docs build and publish in docs.yml (GitHub Actions Pages), not the template's gh-pages job.
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+    tags:
+      - '*'
   pull_request:
+  merge_group:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+
   lint:
-    # pre-commit's checks (.pre-commit-config.yaml): ruff check and format, YAML, file endings, gitleaks.
     if: ${{ !github.event.repository.private }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v7
-        with:
-          python-version: '3.14'
-      - name: Install pre-commit and ruff
-        run: |
-          uv tool install pre-commit
-          uv tool install ruff==0.16.10
-          uv tool dir --bin >> "$GITHUB_PATH"
-      - name: Run pre-commit
-        run: pre-commit run --all-files --show-diff-on-failure
+    uses: ./.github/workflows/_tox.yml
+    with:
+      tox: pre-commit
 
   test:
     if: ${{ !github.event.repository.private }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v7
-        with:
-          python-version: '3.14'
-      - name: Install
-        run: uv sync --frozen --extra dev
-      - name: Test
-        run: uv run --frozen --extra dev pytest -q
+    strategy:
+      matrix:
+        runs-on: ["ubuntu-latest"]
+        python-version: ["3.12", "3.13", "3.14"]
+      fail-fast: false
+    uses: ./.github/workflows/_test.yml
+    with:
+      runs-on: ${{ matrix.runs-on }}
+      python-version: ${{ matrix.python-version }}
+
+  dist:
+    if: ${{ !github.event.repository.private }}
+    uses: ./.github/workflows/_dist.yml
+
+  release:
+    needs: [dist, test]
+    if: ${{ !github.event.repository.private && github.ref_type == 'tag' }}
+    uses: ./.github/workflows/_release.yml
+    permissions:
+      contents: write

@@ -2,7 +2,7 @@
 # `trader` for the strategist in the split layout (#169 section 6.2). 2-strategist.sh installs this
 # as ~trader/.local/bin/trader (with trader-python beside it). It runs the DEPLOYED code from
 # trader's own venv (an editable install of /srv/trading/main/src, built by 2-strategist.sh with
-# `uv sync --frozen --project /srv/trading/main`), against the deployed config, the strategist's
+# `uv sync --frozen --no-dev --group test --project /srv/trading/main`), against the deployed config, the strategist's
 # checkout and the runner's runtime (read-only to trader). The paths are fixed on purpose: the
 # strategist runs exactly what the runner runs.
 export TRADER_CODE_ROOT=/srv/trading/main TRADER_DATA_ROOT=/srv/trading/config \

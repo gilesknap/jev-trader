@@ -12,7 +12,7 @@ Environment=TRADER_DASHBOARD_ALLOW_LOCAL=1
 WorkingDirectory=/srv/trading/main
 UMask=0027
 ExecStartPre=/bin/rm -f /srv/trading-dashview/dashboard.sock
-ExecStart=/usr/local/bin/uv run --frozen trader dashboard --uds /srv/trading-dashview/dashboard.sock
+ExecStart=/usr/local/bin/uv run --frozen --no-dev trader dashboard --uds /srv/trading-dashview/dashboard.sock
 Restart=always
 RestartSec=5
 

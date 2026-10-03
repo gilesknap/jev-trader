@@ -18,7 +18,7 @@ without it no command finds `config.yaml`.)
 From the dashboard, or:
 
 ```bash
-uv run trader stop
+uv run --no-dev trader stop
 ```
 
 STOP flattens every book (paper, live and every sim account) and blocks new entries for the rest
@@ -30,7 +30,7 @@ paper and live accounts directly through Alpaca. A STOP expires at the next trad
 A halt (NAV 30% below its high-water mark, or equity under $50) never clears itself:
 
 ```bash
-uv run trader clear-halt live     # or: paper, sim/<classifier id>
+uv run --no-dev trader clear-halt live     # or: paper, sim/<classifier id>
 ```
 
 Clearing it also rebases the high-water mark to the current NAV, so it doesn't re-trigger at once.
@@ -44,7 +44,7 @@ half-size week: the next 5 live sessions trade at half size.
 ## After resetting the Alpaca paper account
 
 ```bash
-uv run trader rebase-paper
+uv run --no-dev trader rebase-paper
 ```
 
 This restarts the paper book's NAV at 1.0 from its next mark and clears any halt, so the reset

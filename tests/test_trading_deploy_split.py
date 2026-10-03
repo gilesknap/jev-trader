@@ -503,7 +503,7 @@ def test_two_repo_deploy_switches_both_and_installs_each_unit_from_its_source(sp
             assert (split.units / name).read_text() == f"code {name} v1\n"
     assert not (split.units / "trader.env").exists()
     log = split.logged().splitlines()
-    tests = next(ln for ln in log if ln.startswith("uv run --frozen pytest"))
+    tests = next(ln for ln in log if ln.startswith("uv run --frozen --no-dev --group test pytest"))
     droot = tests.split("TRADER_DATA_ROOT=")[1].split(" |")[0]
     assert droot.startswith(str(split.scratch)) and "mode=mode: paper" in tests  # a worktree of TARGET_DATA
     assert any(ln.startswith(f"trader config render-deploy --check --data-root {droot} ") for ln in log)
@@ -539,7 +539,7 @@ def test_two_repo_only_data_moved_still_tests_the_code_against_it(split):
     r = split.run()
     assert r.returncode == 0, r.stdout + r.stderr
     assert "code repo" not in r.stdout and "=== data repo files changed" in r.stdout
-    assert "uv run --frozen pytest" in split.logged()
+    assert "uv run --frozen --no-dev --group test pytest" in split.logged()
 
 
 def test_two_repo_up_to_date(split):
@@ -676,8 +676,7 @@ def test_a_failed_switch_step_prints_the_rollback(tmp_path, two_repo, rig):
     r = rig.run(FAKE_PLAN_OUT="PR 0123456789 #9 merged", FAKE_SWITCH_SYNC_RC=7)
     assert r.returncode == 7 and "PARTIAL SWITCH" in r.stderr and "exit 7" in r.stderr
     assert (
-        f"git -C {rig.code} reset -q --hard {old_code} && (cd {rig.code} && uv sync -q --frozen --extra dev)"
-        in r.stderr
+        f"git -C {rig.code} reset -q --hard {old_code} && (cd {rig.code} && uv sync -q --frozen --no-dev)" in r.stderr
     )
     assert (f"git -C {rig.config} reset -q --hard" in r.stderr) == two_repo
     if two_repo:
@@ -752,7 +751,10 @@ def test_ownership_preflight_runs_early_and_again_just_before_the_switch():
     assert body.index("split_layout ||") < early < body.index("git fetch")
     late = body.index('foreign_files "${CHECKOUTS[@]}" || exit 1')
     assert (
-        body.index("uv run --frozen pytest") < late < body.index("lock_strategist || {") < body.index("lock_switch ||")
+        body.index("uv run --frozen --no-dev --group test pytest")
+        < late
+        < body.index("lock_strategist || {")
+        < body.index("lock_switch ||")
     )
     assert 'CHECKOUTS=("$CODE_DIR"); (( SPLIT )) && CHECKOUTS+=("$CONFIG_DIR")' in body
 
@@ -786,4 +788,4 @@ def test_ownership_preflight_catches_a_file_that_appears_during_the_tests(split)
             sneak.chmod(0o700)
     assert r.returncode == 1 and "REFUSING" in r.stderr and str(sneak) in r.stderr and "PARTIAL SWITCH" not in r.stderr
     assert git(split.code, "rev-parse", "HEAD") == old_code and git(split.config, "rev-parse", "HEAD") == old_data
-    assert "uv run --frozen pytest" in split.logged()
+    assert "uv run --frozen --no-dev --group test pytest" in split.logged()

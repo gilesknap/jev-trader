@@ -483,12 +483,12 @@ def test_split_syncs_trader_venv_first_under_the_lock(split):
     # the venv, while the run lock is held (a deploy takes it too).
     assert split.run("premarket").returncode == 0
     venv = split.home / ".local" / "share" / "trader" / "venv"
-    assert split.read("uv_sync") == f"{venv} sync -q --frozen --extra dev --project {ROOT}\n"
+    assert split.read("uv_sync") == f"{venv} sync -q --frozen --no-dev --group test --project {ROOT}\n"
     assert split.read("seq") == "sync\nsession\n"
     assert split.read("sync_lock") == "held\n"
     assert split.read("claude_runs") == "run\n" and split.read("alerts") == ""
     setup = (ROOT / "deploy" / "setup" / "2-strategist.sh").read_text()
-    assert 'UV_PROJECT_ENVIRONMENT=$VENV uv sync -q --frozen --extra dev --project "$CODE"' in setup
+    assert 'UV_PROJECT_ENVIRONMENT=$VENV uv sync -q --frozen --no-dev --group test --project "$CODE"' in setup
     assert "VENV=$HOME/.local/share/trader/venv" in setup
 
 

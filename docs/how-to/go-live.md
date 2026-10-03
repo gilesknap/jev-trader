@@ -10,7 +10,7 @@ explains the gate.
 trader golive
 ```
 
-(as `trader`, or `uv run trader golive` as `runner` with the services environment loaded, see
+(as `trader`, or `uv run --no-dev trader golive` as `runner` with the services environment loaded, see
 [Use the controls](controls.md)). It prints the override from `config/mode.yaml`, the effective mode, the saved state and the gate
 evaluated now (days, trades, expectancy after slippage, worst day, and what's blocking). The same
 state is in `/srv/trading/runtime/golive.json`, and the Daily P&L alert names the blocking reasons
@@ -33,7 +33,7 @@ Press **HOLD LIVE** on the dashboard, or as `runner` (with the services environm
 [Use the controls](controls.md)):
 
 ```bash
-uv run trader hold-live
+uv run --no-dev trader hold-live
 ```
 
 A HOLD always wins, at any stage, even one pressed while the runner is re-checking the gate. It
@@ -50,7 +50,7 @@ open, with an alert.
 ## Re-arm
 
 ```bash
-uv run trader release-live
+uv run --no-dev trader release-live
 ```
 
 This resets the state to pending; the gate is re-evaluated after each session from then on. Use it

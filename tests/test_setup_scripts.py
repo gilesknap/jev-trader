@@ -438,10 +438,10 @@ def test_trader_test_import_order_really_prefers_the_clone(tmp_path):
 # ---- 0-data.sh ---------------------------------------------------------------------------
 
 FAKE_GH = '#!/bin/sh\necho "$*" >> "$GH_LOG"\n'
-# `uv run -q trader ARGS` -> this tree's real CLI, with this tree's templates.
+# `uv run -q --no-dev trader ARGS` -> this tree's real CLI, with this tree's templates.
 FAKE_UV = f"""#!/bin/sh
 [ "$1" = run ] || exit 9
-shift; [ "$1" = -q ] && shift; [ "$1" = trader ] || exit 9; shift
+shift; [ "$1" = -q ] && shift; [ "$1" = --no-dev ] || exit 9; shift; [ "$1" = trader ] || exit 9; shift
 TRADER_CODE_ROOT={ROOT} exec {sys.executable} -m trader.cli "$@"
 """
 

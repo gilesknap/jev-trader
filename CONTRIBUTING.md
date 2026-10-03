@@ -17,14 +17,15 @@ tutorial uses `../my-data`), and check your diff before you push.
 
 ## Before you open a pull request
 
-- Run the tests: `env -u TRADER_DATA_ROOT uv run --extra dev pytest -q`. A checkout of the code
+- Run the tests: `env -u TRADER_DATA_ROOT uv run pytest -q`. A checkout of the code
   has no `config.yaml` of its own, so the tests run against a temporary copy of `templates/data/` (see
   `tests/conftest.py`), unless `TRADER_DATA_ROOT` is already set, in which case they use that
   directory: hence the `env -u`, in case you exported it for development. To run them against your
   own data checkout on purpose, set `TRADER_TEST_DATA_ROOT` to it.
-- Format and lint with [ruff](https://docs.astral.sh/ruff/) (line length 120):
-  `uvx ruff@0.16.10 format` and `uvx ruff@0.16.10 check --fix`. CI runs these through pre-commit
-  (`.pre-commit-config.yaml`), with its other checks: YAML, file endings and gitleaks.
+- Format and lint with [ruff](https://docs.astral.sh/ruff/) (line length 120): `uv run ruff format`
+  and `uv run ruff check --fix`, or all the checks CI runs: `uv run pre-commit run --all-files`
+  (`.pre-commit-config.yaml`: ruff, YAML, file endings, gitleaks). `uv run pre-commit install`
+  runs them on every commit. `uv run tox -p` runs the lint, tests and docs together.
 - If you changed the docs, build them with warnings as errors:
   `uv run --group docs sphinx-build -W --keep-going docs build/html`.
 - Keep changes to the guardrails (`src/trader/guardrails.py`, `src/trader/allocator.py`) and the
@@ -37,9 +38,10 @@ tutorial uses `../my-data`), and check your diff before you push.
 Every pull request runs two GitHub Actions workflows, with a read-only token and no secrets (no
 test needs keys):
 
-- **CI** (`.github/workflows/ci.yml`): `uv sync --frozen --extra dev`, then `pytest -q` against
-  the data template, on Python 3.12. Tests that need `bwrap` or `systemd-analyze` skip where those
-  are missing.
+- **CI** (`.github/workflows/ci.yml`, from the python-copier-template): lint (`tox -e pre-commit`),
+  the tests with coverage (`tox -e tests`) against the data template on Python 3.12, 3.13 and 3.14,
+  and a build of the wheel and sdist. Tests that need `bwrap` or `systemd-analyze` skip where those
+  are missing. A tag also makes a GitHub release.
 - **Docs** (`.github/workflows/docs.yml`): the Sphinx build with warnings as errors. Merges to
   `main` publish the result to GitHub Pages.
 

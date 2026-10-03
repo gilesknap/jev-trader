@@ -23,7 +23,7 @@ right Python by itself.
 ```bash
 git clone https://github.com/gilesknap/jev-trader.git
 cd jev-trader
-uv sync --extra dev
+uv sync
 ```
 
 The `dev` extra adds pytest and yfinance.
