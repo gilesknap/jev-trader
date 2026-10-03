@@ -30,6 +30,11 @@ that moved:
   your data repository; the diff is how you'd see it. That includes `config/mode.yaml`.
 - It always refuses a diff containing terminal control characters, invisible or bidirectional
   Unicode characters, or binary files, since those can hide code from a reviewer.
+- It refuses, listing them, when any file in `/srv/trading/main` or `/srv/trading/config` is owned
+  by someone other than `runner` (or can't be checked). The switch tightens the permissions of
+  both checkouts, and one foreign file would stop it half way, with the code switched and the
+  config not. It checks at the start and again just before the switch. Find out how the files got
+  there, then remove them or `sudo chown -h runner` them.
 
 The diffs that need review are shown together in one pager, each headed with its repository, and
 one typed `yes` covers them. Then, before switching anything, it tests the new code against the
