@@ -46,19 +46,12 @@ def test_validate_rejects_the_reserved_prefix_from_start_date(tmp_path, monkeypa
     monkeypatch.setattr("trader.features.harness.run_gate", lambda *a, **k: type("R", (), {"ok": True, "features": [], "errors": {}})())
     monkeypatch.setattr(cli, "_gate_samples", lambda *a, **k: [])
 
-    class Day(dt.date):
-        today_value = START_DATE
-
-        @classmethod
-        def today(cls):
-            return cls.today_value
-
-    monkeypatch.setattr(cli.dt, "date", Day)
-    Day.today_value = START_DATE - dt.timedelta(days=1)
+    day = [START_DATE - dt.timedelta(days=1)]
+    monkeypatch.setattr(cli.config, "ny_today", lambda: day[0])  # New York's date, not the host's
     with pytest.raises(SystemExit) as e:
         cli.main(["validate", "--file", str(f)])
     assert e.value.code == 0 and "classifiers OK" in capsys.readouterr().out
-    Day.today_value = START_DATE
+    day[0] = START_DATE
     with pytest.raises(SystemExit) as e:
         cli.main(["validate", "--file", str(f)])
     out = capsys.readouterr().out

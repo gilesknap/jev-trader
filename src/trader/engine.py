@@ -603,17 +603,42 @@ class Engine:
 
     def _restore_classifier_state(self, today: str) -> None:
         """After a mid-session restart, keep trade counts and retirements so max_trades and
-        stand-downs still hold."""
+        stand-downs still hold. A damaged file must not stop the session (stops, targets and the
+        flatten still need the runner), so it starts fresh, matched to the positions and orders
+        the books hold, with an urgent alert: today's trade counts and stand-downs are lost."""
         f = self._classifier_state_file()
-        data = json.loads(f.read_text()) if f.exists() else {}
-        if data.get("day") != today:
+        try:
+            data = json.loads(f.read_text()) if f.exists() else {}
+            if not isinstance(data, dict):
+                raise ValueError("not a JSON object")
+            if data.get("day") != today:
+                return
+            states = data.get("states", {})
+            if not isinstance(states, dict) or not all(isinstance(v, dict) for v in states.values()):
+                raise ValueError("`states` isn't a mapping of rules to stocks")
+        except (OSError, ValueError, RecursionError) as ex:  # ValueError: bad JSON or UTF-8; RecursionError: absurd nesting
+            try:
+                f.replace(f.with_name(f.name + ".unreadable"))  # kept for a look; rewritten each tick
+            except OSError:
+                pass
+            for cs in self.states:
+                for sym, st in cs.symbols.items():
+                    if not cs.spec.probe:
+                        self._resume_symbol(cs, sym, st, "armed", 0)
+            self._alert_every("classifier-state", "urgent", f"{f.name} is unreadable ({ex}), so the rules start fresh: if the runner "
+                                 "restarted mid-session, today's trade counts (max_trades) and stand-downs are "
+                                 "lost and a rule may trade again today. Open positions are still managed. "
+                                 "Press STOP if that's not acceptable.")
             return
+        damaged = []
         for cs in self.states:
-            book = self.books[cs.spec.book_key]
-            for sym, saved in data.get("states", {}).get(cs.spec.id, {}).items():
+            for sym, saved in states.get(cs.spec.id, {}).items():
                 st = cs.symbols.get(sym)
-                if st is None or not isinstance(saved, dict):
+                if st is None:
                     continue
+                if not isinstance(saved, dict):
+                    saved = {}  # resumed fresh below and reported
+                    damaged.append(f"{cs.spec.id}/{sym}")
                 counts = saved.get("counts")  # display only: a damaged tally is dropped, never fatal
                 if isinstance(counts, dict):
                     st.counts = {k: v for k, v in counts.items() if isinstance(k, str) and type(v) is int}
@@ -621,17 +646,33 @@ class Engine:
                     st.last_trigger = saved["last_trigger"]
                 if cs.spec.probe:
                     continue  # probes hold nothing and never retire
-                st.trades = int(saved.get("trades", 0))
-                status = saved.get("status", "armed")
-                e = book.entries.get(sym)
-                mine = bool(e and e.classifier == cs.spec.id)
-                o = book.pending.get(sym)
-                if status == "pending":  # a limit entry was resting
-                    st.status = "holding" if mine else "pending" if (o and o.classifier == cs.spec.id) else "armed"
-                elif status == "holding" and not mine:
-                    cs.on_exit(sym)  # position closed while we were down
-                else:
-                    st.status = status
+                trades, status = saved.get("trades", 0), saved.get("status", "armed")
+                if type(trades) is not int or trades < 0 or status not in ("armed", "pending", "holding", "retired"):
+                    if saved:
+                        damaged.append(f"{cs.spec.id}/{sym}")
+                    trades, status = 0, "armed"
+                self._resume_symbol(cs, sym, st, status, trades)
+        if damaged:
+            self._alert_every("classifier-state", "urgent", f"{self._classifier_state_file().name} had damaged entries for "
+                                 f"{', '.join(damaged)}: they start fresh, so today's trade count and any "
+                                 "stand-down for them are lost. Open positions are still managed.")
+
+    def _resume_symbol(self, cs: ClassifierState, sym: str, st, status: str, trades: int) -> None:
+        """Set a symbol's restored state, matched to what its book holds now."""
+        book = self.books[cs.spec.book_key]
+        e, o = book.entries.get(sym), book.pending.get(sym)
+        mine = bool(e and e.classifier == cs.spec.id)
+        st.trades = trades
+        if mine and status in ("armed", "pending"):  # its position is open, whatever was saved
+            st.status, st.trades = "holding", trades + 1  # it filled after the save, uncounted
+        elif status == "pending":  # a limit entry was resting
+            st.status = "pending" if (o and o.classifier == cs.spec.id) else "armed"
+        elif status == "holding" and not mine:
+            cs.on_exit(sym)  # position closed while we were down
+        elif status == "armed" and o and o.classifier == cs.spec.id:
+            st.status = "pending"  # its limit entry is still resting
+        else:
+            st.status = status
 
     def end_day(self, now: dt.datetime) -> dict:
         summary = {}
@@ -1034,7 +1075,10 @@ class Engine:
         return False
 
     def _ask(self, spec, sym, now, sb, feats, pos, kind):
-        rets = F.lib.recent_returns_bps(sb, now)
+        try:  # research context only: it must never cost the tick its classifier pass
+            rets = F.lib.recent_returns_bps(sb, now)
+        except Exception:
+            rets = []
         state = {
             "symbol": sym,
             "minutes_since_open": int((now - now.replace(hour=9, minute=30)).total_seconds() // 60),
