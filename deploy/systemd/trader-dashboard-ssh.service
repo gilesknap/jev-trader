@@ -1,0 +1,20 @@
+[Unit]
+Description=Trader dashboard for SSH tunnels (socket reachable only by the dashview group)
+# Optional: runs only on hosts where setup created the directory (deploy/setup/1-host.sh).
+ConditionPathIsDirectory=/srv/trading-dashview
+
+[Service]
+EnvironmentFile=%h/.config/trading/services.env
+# No Tailscale header arrives through an SSH tunnel. Trusting its absence is safe only here:
+# the socket's directory is runner:dashview 750, so reaching it already took an admin's SSH
+# login. Never set this on trader-dashboard.service, which tailscale serve exposes.
+Environment=TRADER_DASHBOARD_ALLOW_LOCAL=1
+WorkingDirectory=/srv/trading/main
+UMask=0027
+ExecStartPre=/bin/rm -f /srv/trading-dashview/dashboard.sock
+ExecStart=/usr/local/bin/uv run --frozen trader dashboard --uds /srv/trading-dashview/dashboard.sock
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

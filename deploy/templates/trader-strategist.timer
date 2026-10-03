@@ -1,0 +1,10 @@
+# TEMPLATE: double-brace keys come from config.yaml; @KIND@ is each strategist run. Edit here, then run `uv run trader config render-deploy`.
+[Unit]
+Description=Strategist @KIND@ run (the script self-gates on the market clock and runs once a day)
+
+[Timer]
+OnCalendar={{ schedule.strategist.@KIND@ }} {{ schedule.local_tz }}
+Unit=trader-strategist@@KIND@.service
+
+[Install]
+WantedBy=timers.target

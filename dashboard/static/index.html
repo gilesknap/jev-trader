@@ -1,0 +1,1245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trader Dashboard</title>
+<meta name="theme-color" content="#14202b">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2214%22%20fill%3D%22%230f172a%22/%3E%3Cg%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M16%2022v24M40%2014v22%22%20stroke%3D%22%2322c55e%22%20stroke-width%3D%222.5%22/%3E%3Cpath%20d%3D%22M28%2026v22M52%2020v18%22%20stroke%3D%22%23ef4444%22%20stroke-width%3D%222.5%22/%3E%3C/g%3E%3Crect%20x%3D%2212%22%20y%3D%2228%22%20width%3D%228%22%20height%3D%2212%22%20rx%3D%221.5%22%20fill%3D%22%2322c55e%22/%3E%3Crect%20x%3D%2224%22%20y%3D%2231%22%20width%3D%228%22%20height%3D%2212%22%20rx%3D%221.5%22%20fill%3D%22%23ef4444%22/%3E%3Crect%20x%3D%2236%22%20y%3D%2218%22%20width%3D%228%22%20height%3D%2213%22%20rx%3D%221.5%22%20fill%3D%22%2322c55e%22/%3E%3Crect%20x%3D%2248%22%20y%3D%2224%22%20width%3D%228%22%20height%3D%229%22%20rx%3D%221.5%22%20fill%3D%22%23ef4444%22/%3E%3Cpath%20d%3D%22M8%2050%20L22%2038%20L32%2042%20L44%2026%20L56%2014%22%20fill%3D%22none%22%20stroke%3D%22%23fbbf24%22%20stroke-width%3D%224%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M49%2013h8v8%22%20fill%3D%22none%22%20stroke%3D%22%23fbbf24%22%20stroke-width%3D%224%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/png;base64,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">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root {
+  --bg: #f3f5f7; --panel: #fbfcfd; --ink: #14202b; --ink2: #4f5c68; --muted: #76828d; --rule: #d6dce2;
+  --accent: #1f5f99; --accent-soft: #c9dbec;
+  --pos: #0a7d0a; --neg: #c0283a; --warn: #b77900; --pos-bg: #e1f2e1; --neg-bg: #f8dfe2; --warn-bg: #fbefd6;
+  --s1: #1f5f99; --s2: #b8561b; --s3: #0e7c86;
+  --novel: #b8561b; --conventional: #1f5f99; --control: #76828d; --spy: #0e7c86;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  --sans: "Archivo", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  color-scheme: dark; --bg: #10161c; --panel: #161e26; --ink: #e8edf2; --ink2: #b3bfca; --muted: #8a97a3; --rule: #2a3540;
+  --accent: #5b9bd8; --accent-soft: #1f3a55;
+  --pos: #4cc94c; --neg: #ff6b7a; --warn: #f0b43c; --pos-bg: #173a1c; --neg-bg: #431c22; --warn-bg: #3d2e10;
+  --s1: #5b9bd8; --s2: #f0914f; --s3: #3cc4c4;
+  --novel: #f0914f; --conventional: #5b9bd8; --control: #8a97a3; --spy: #3cc4c4; } }
+:root[data-theme="dark"] {
+  color-scheme: dark; --bg: #10161c; --panel: #161e26; --ink: #e8edf2; --ink2: #b3bfca; --muted: #8a97a3; --rule: #2a3540;
+  --accent: #5b9bd8; --accent-soft: #1f3a55;
+  --pos: #4cc94c; --neg: #ff6b7a; --warn: #f0b43c; --pos-bg: #173a1c; --neg-bg: #431c22; --warn-bg: #3d2e10;
+  --s1: #5b9bd8; --s2: #f0914f; --s3: #3cc4c4;
+  --novel: #f0914f; --conventional: #5b9bd8; --control: #8a97a3; --spy: #3cc4c4; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 var(--sans); padding-inline: 16px; padding-block: 16px 32px; }
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; gap: 14px; }
+a { color: var(--accent); }
+button, select { font: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---- header, banner, page tabs ---- */
+header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 10px 24px; border-bottom: 2px solid var(--ink); padding-bottom: 10px; }
+h1 { font-size: 30px; font-weight: 800; font-stretch: 78%; letter-spacing: -.01em; margin: 0; line-height: 1.05; }
+.sub { color: var(--ink2); margin: 4px 0 0; font-size: 13.5px; }
+.controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.controls label { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; font-stretch: 85%; color: var(--ink2); }
+select { background: var(--panel); color: var(--ink); border: 1px solid var(--rule); border-radius: 5px; padding: 5px 8px; max-width: 62vw; font-size: 13px; }
+.stop { font-family: var(--sans); font-weight: 800; font-stretch: 85%; letter-spacing: .06em; font-size: 13px; border-radius: 5px; padding: 6px 14px; cursor: pointer;
+  background: var(--neg); color: #fff; border: 1px solid var(--neg); }
+.stop.ghost { background: transparent; color: var(--neg); }
+.stop.armed { background: #7a0f0a; border-color: #7a0f0a; color: #fff; }
+.stop[disabled] { opacity: .5; cursor: not-allowed; }
+.banner { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 13.5px; color: var(--ink2); }
+.banner b { color: var(--ink); }
+.tag { font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: .06em; padding: 2px 7px; border-radius: 3px; border: 1px solid currentColor; white-space: nowrap; }
+.banner.paper .tag { color: var(--accent); background: var(--accent-soft); }
+.banner.replay .tag { color: var(--s2); background: var(--warn-bg); }
+.banner.live .tag { color: var(--neg); background: var(--neg-bg); }
+nav { display: flex; gap: 2px 18px; flex-wrap: wrap; border-bottom: 1px solid var(--rule); }
+nav button { background: none; border: 0; border-bottom: 3px solid transparent; margin-bottom: -1px; padding: 6px 0 7px; cursor: pointer; color: var(--ink2);
+  font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; font-stretch: 85%; display: inline-flex; gap: 6px; align-items: center; }
+nav button:hover { color: var(--ink); }
+nav button[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
+.count { font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent-soft); color: var(--accent); line-height: 17px; text-align: center; }
+.count.bad { background: var(--neg-bg); color: var(--neg); }
+.page { display: grid; gap: 14px; }
+
+/* ---- panels ---- */
+section { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px; min-width: 0; }
+h2 { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; font-stretch: 85%; margin: 0 0 10px; text-wrap: balance; }
+h2 span { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--muted); font-stretch: 100%; }
+.grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.stat { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; display: grid; gap: 2px; align-content: start; min-width: 0; }
+.stat .l { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; font-stretch: 85%; color: var(--ink2); }
+.stat .n { font-family: var(--mono); font-size: 23px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.15; overflow-wrap: anywhere; }
+.stat .n.small { font-size: 14px; line-height: 1.35; }
+.stat .d { font-size: 12px; color: var(--muted); }
+.stat .d b { font-family: var(--mono); font-weight: 500; }
+.stat.family { border-top: 3px solid var(--control); } .stat.family.novel { border-top-color: var(--novel); } .stat.family.conventional { border-top-color: var(--conventional); }
+.stat .n.ci { font-size: 20px; } .stat .n.ci small { font-size: 13px; font-weight: 500; color: var(--muted); }
+.stat.alert { border-color: var(--neg); background: var(--neg-bg); }
+.pos { color: var(--pos); } .neg { color: var(--neg); } .muted { color: var(--muted); } .warn { color: var(--warn); font-weight: 600; }
+.note { font-size: 12px; color: var(--muted); margin: 10px 0 0; }
+
+/* "About this panel" and other collapsibles */
+details.about { font-size: 12.5px; color: var(--ink2); margin: -4px 0 10px; }
+details.about > summary, details.help > summary { cursor: pointer; color: var(--accent); font-size: 12px; list-style: none; display: inline-flex; gap: 5px; align-items: center; }
+details > summary::-webkit-details-marker { display: none; }
+details.about > summary::before, details.help > summary::before { content: "+"; font-family: var(--mono); font-weight: 600; width: 12px; }
+details[open].about > summary::before, details[open].help > summary::before { content: "−"; }
+details.about p { margin: 6px 0 0; max-width: 78ch; }
+details.help { font-size: 13px; color: var(--ink2); }
+details.help + details.help { margin-top: 8px; }
+details.help dl { margin: 6px 0 0; display: grid; gap: 8px; max-width: 86ch; }
+details.help dt { color: var(--ink); font-weight: 700; }
+details.help dd { margin: 2px 0 0; }
+details.fold { padding: 0; }
+details.fold > summary { padding: 13px 16px; cursor: pointer; list-style: none; display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+details.fold > summary h2 { margin: 0; }
+details.fold > summary::after { content: "show"; font-size: 12px; color: var(--accent); }
+details.fold[open] > summary::after { content: "hide"; }
+details.fold > .inner { padding: 0 16px 14px; }
+
+/* ---- tables ---- */
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--rule); white-space: nowrap; vertical-align: baseline; }
+th { color: var(--ink2); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; font-stretch: 85%; }
+td.num, th.num { text-align: right; }
+td.num { font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+tbody tr:last-child td { border-bottom: 0; }
+tr.grp td { border-top: 1px solid var(--ink2); }
+tbody tr.grp:first-child td { border-top: 0; }
+tr.retired td { opacity: .6; }
+tr.day th { font-size: 12px; color: var(--ink); padding-top: 12px; border-bottom-color: var(--ink2); }
+tbody tr.day:first-child th { padding-top: 5px; }
+p.dayline { margin: 0 0 8px; font-size: 13.5px; color: var(--ink); }
+.sym { font-family: var(--mono); font-weight: 600; font-size: 12.5px; }
+.pill { font-family: var(--mono); font-size: 11px; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--rule); color: var(--ink2); white-space: nowrap; }
+.pill.holding { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.pill.retired { color: var(--muted); }
+.pill.buy { color: var(--accent); border-color: var(--accent); }
+.pill.sell { color: var(--ink); border-color: var(--ink2); }
+.probs { display: inline-flex; gap: 2px; align-items: flex-end; vertical-align: -2px; height: 18px; margin-right: 6px; }
+.probs i { display: inline-block; width: 7px; background: var(--accent); border-radius: 1px 1px 0 0; }
+.probs i.top { background: var(--ink); }
+.pmeta { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.pmeta b { color: var(--ink); font-weight: 600; }
+.fam { display: inline-block; font-family: var(--mono); font-size: 10.5px; font-weight: 600; padding: 0 5px; border-radius: 3px; border: 1px solid currentColor; line-height: 1.55; }
+.fam.novel { color: var(--novel); } .fam.conventional { color: var(--conventional); } .fam.control, .fam.unlabelled { color: var(--control); }
+.verdict { font-size: 12.5px; }
+
+/* ---- probes ---- */
+.probe { display: grid; gap: 10px; }
+.probe + .probe { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--rule); }
+.probe .phead { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; font-size: 13px; color: var(--ink2); }
+.pbars { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 3px 18px; }
+.pbar { display: grid; grid-template-columns: 52px 1fr 38px 40px; gap: 8px; align-items: center; font-size: 12px; }
+.pbar .track { height: 10px; background: var(--rule); border-radius: 2px; position: relative; overflow: hidden; }
+.pbar .fill { position: absolute; inset: 0 auto 0 0; background: color-mix(in oklab, var(--accent) 35%, var(--rule)); }
+.pbar .fill.hot { background: var(--accent); }
+.pbar .tick { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--ink); opacity: .55; }
+.pbar .v, .pbar .t { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; color: var(--ink2); }
+.pbar .t { color: var(--muted); }
+.pverdict { font-size: 13.5px; padding: 8px 10px; border-left: 3px solid var(--rule); background: var(--bg); }
+.pverdict.pos { border-color: var(--pos); } .pverdict.neg { border-color: var(--neg); }
+.pverdict.pos, .pverdict.neg { color: var(--ink); }
+.pgrid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; align-items: start; }
+@media (max-width: 760px) { .pgrid { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---- key/value list (at a glance) ---- */
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; font-size: 13px; }
+.kv dt { color: var(--ink2); }
+.kv dd { margin: 0; text-align: right; font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+/* ---- charts ---- */
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart svg text { font-family: var(--mono); font-size: 11px; fill: var(--ink2); }
+#range, #racerange { margin: -2px 0 8px; }
+#race g.ln { transition: opacity .12s; cursor: pointer; } #race g.ln.old { opacity: .5; }
+#race.focus g.ln { opacity: .12; } #race.focus g.ln.on { opacity: 1; }
+#race.focus g.ln.on polyline:not(.hit) { stroke-width: 3; }
+tr.on td { background: var(--accent-soft); }
+@media (prefers-reduced-motion: reduce) { #race g.ln { transition: none; } }
+.legend { display: flex; gap: 6px 16px; flex-wrap: wrap; font-size: 12px; color: var(--ink2); margin-top: 8px; }
+.legend i { display: inline-block; width: 14px; height: 3px; margin-right: 6px; vertical-align: middle; border-radius: 2px; }
+.legend b { font-family: var(--mono); font-weight: 500; color: var(--ink); }
+.h2h { display: grid; gap: 8px; font-size: 13px; }
+.h2h > div { display: grid; gap: 2px; padding-bottom: 8px; border-bottom: 1px solid var(--rule); }
+.h2h b { font-family: var(--mono); font-weight: 600; font-variant-numeric: tabular-nums; }
+.segs { display: flex; gap: 4px; flex-wrap: wrap; }
+.segs button { background: transparent; color: var(--ink2); border: 1px solid var(--rule); border-radius: 4px; padding: 3px 9px; cursor: pointer; font-family: var(--mono); font-size: 12px; }
+.segs button.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+/* ---- notes ---- */
+.notes { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 14px; align-items: start; }
+.doclist { display: grid; gap: 12px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 10px); }
+.doclist h3 { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; font-stretch: 85%; color: var(--ink2); margin: 0 0 4px; }
+.doclist button { display: block; width: 100%; text-align: left; background: none; border: 0; border-left: 2px solid var(--rule); padding: 4px 10px; cursor: pointer; color: var(--ink2); font-size: 13px; }
+.doclist button.mono { font-family: var(--mono); font-size: 12px; }
+.doclist button.on { border-left-color: var(--accent); color: var(--ink); font-weight: 600; }
+.md { overflow-wrap: anywhere; max-width: 80ch; font-size: 14px; line-height: 1.55; }
+.md h1 { font-size: 22px; font-weight: 800; font-stretch: 80%; margin: 0 0 8px; }
+.md h2 { margin: 18px 0 6px; }
+.md h3 { font-size: 14px; margin: 14px 0 4px; }
+.md p { margin: 6px 0; }
+.md ul { margin: 6px 0; padding-left: 20px; }
+.md pre { white-space: pre-wrap; background: var(--bg); border: 1px solid var(--rule); padding: 10px 12px; border-radius: 5px; font: 12px/1.5 var(--mono); }
+.md code { font-family: var(--mono); font-size: .88em; background: var(--bg); padding: 0 3px; border-radius: 3px; }
+
+/* ---- rules ---- */
+a.rulelink { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--muted); }
+a.rulelink:hover { color: var(--accent); border-bottom-color: var(--accent); }
+details.rule { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; scroll-margin-top: 12px; }
+details.rule > summary { flex-wrap: wrap; align-items: center; }
+details.rule > summary::after { margin-left: auto; }
+.rhead { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; font-size: 15px; }
+.rsyms { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.rstat { font-size: 12.5px; color: var(--ink2); }
+.rstat b { font-family: var(--mono); font-weight: 600; }
+.rbody { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 24px; border-top: 1px solid var(--rule); padding-top: 12px !important; }
+.rbody h3 { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; font-stretch: 85%; color: var(--ink2); margin: 0 0 4px; }
+.rbody h3 + p, .rbody p { margin: 0 0 8px; font-size: 13.5px; max-width: 70ch; }
+.rwhy { grid-column: 1 / -1; }
+.rwhy p { font-size: 14.5px; }
+.crit { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; margin: 0; font-size: 13px; }
+.crit dt { padding-top: 1px; } .crit dd { margin: 0; }
+.trig { margin: 0 0 8px; padding-left: 18px; font-size: 13px; }
+.feats { display: flex; flex-wrap: wrap; gap: 4px; }
+.feats code { background: var(--bg); border: 1px solid var(--rule); border-radius: 3px; padding: 0 5px; font-size: 11.5px; }
+.kv.plain dd { text-align: left; font-family: var(--sans); font-size: 13px; }
+@media (max-width: 700px) { .rbody { grid-template-columns: 1fr; } }
+
+/* ---- system ---- */
+.linkgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.linkgrid > div { border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; background: var(--panel); }
+.linkgrid h3 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; font-stretch: 85%; margin: 0 0 2px; }
+.linkgrid p { color: var(--muted); font-size: 12px; margin: 0 0 6px; }
+.linkgrid a { display: block; padding: 5px 0; text-decoration: none; border-top: 1px solid var(--rule); }
+.linkgrid a:hover { text-decoration: underline; }
+.linkgrid a span { display: block; color: var(--muted); font-size: 12px; }
+.cmd { display: block; user-select: all; overflow-x: auto; white-space: pre; background: var(--bg); color: var(--ink); border: 1px solid var(--rule); padding: 4px 8px; border-radius: 4px; margin: 4px 0; font: 12px var(--mono); }
+code { font-family: var(--mono); font-size: .9em; }
+
+@media (max-width: 860px) { .grid, .notes { grid-template-columns: 1fr; } .doclist { position: static; } }
+@media (max-width: 460px) { h1 { font-size: 26px; } .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .stat .n { font-size: 19px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div><h1>Trader</h1><p class="sub" id="clock">Loading…</p></div>
+  <div class="controls">
+    <label for="source">Viewing</label>
+    <select id="source"></select>
+    <button class="stop ghost" id="hold" title="Stop the automatic switch from practice money to real money">HOLD LIVE</button>
+    <button class="stop" id="stop" title="Emergency: sell everything now and stop trading for today">STOP</button>
+  </div>
+</header>
+<div class="banner" id="banner">Loading…</div>
+<nav id="nav" aria-label="Dashboard pages">
+  <button data-page="today">Today <span class="count" id="n-pos" hidden></span></button>
+  <button data-page="score">Scoreboard</button>
+  <button data-page="rules">Rules</button>
+  <button data-page="probes">Probes</button>
+  <button data-page="trades">Trades <span class="count" id="n-trades" hidden></span></button>
+  <button data-page="notes">Strategist's notes</button>
+  <button data-page="system">System and links <span class="count bad" id="n-sys" hidden></span></button>
+</nav>
+
+<!-- ============ TODAY ============ -->
+<div class="page" id="page-today">
+  <div class="stats" id="books"></div>
+  <div class="grid">
+    <section><h2>Performance <span id="perfsub">growth of $1 over the period</span></h2>
+      <div class="segs" id="range"></div>
+      <details class="about"><summary>About this chart</summary>
+        <p><b>1.000</b> means break-even (the dashed line), <b>1.010</b> means +1%, measured from the close before the period starts (or the account's first mark, if it's newer). Deposits and withdrawals don't move this line, only trading does. The dashed teal line is holding SPY over the same period (from the first session's open, if that's later), the yardstick the strategist has to beat.</p>
+        <p><b>1D</b> is the latest session and <b>7D</b> the last 7 days, both marked every 5 minutes. <b>1M</b> and <b>1Y</b> plot one point per day, at the close.</p></details>
+      <div class="chart" id="chart"></div><div class="legend" id="legend"></div></section>
+    <section id="sec-glance"><h2>At a glance <span>refreshes every 15 s</span></h2>
+      <dl class="kv" id="health"></dl></section>
+    <section id="sec-backtest" hidden><h2>This backtest</h2>
+      <dl class="kv" id="btinfo"></dl>
+      <p class="note">A replay over past market data with a pretend account. It can flatter a strategy, so only forward paper results count towards going live.</p></section>
+  </div>
+  <section id="sec-positions"><h2>Open positions <span>sold automatically at the stop-loss or target, and 15 min before the close</span></h2>
+    <details class="about"><summary>About positions</summary>
+      <p>Shares held right now. Each has a <b>stop-loss</b> (sold automatically if the price falls to it) and a <b>target</b> (sold to take the profit). Everything is sold 15 minutes before the US close, so nothing is held overnight.</p></details>
+    <div class="table-wrap" id="positions"></div></section>
+  <section><h2>Rules right now <span>what each classifier is doing, per stock</span></h2>
+    <details class="about"><summary>About the rules</summary>
+      <p>Each classifier watches a few stocks. Every few minutes it asks <b>Jev</b> (a decision model) whether to act, and only acts when Jev's confidence is above the classifier's threshold. The bars show Jev's last answer, tallest first in the label. <b>control_orb</b> is a deliberately simple benchmark the strategist has to beat.</p></details>
+    <div class="table-wrap" id="classifiers"></div></section>
+</div>
+
+<!-- ============ PROBES ============ -->
+<div class="page" id="page-probes" hidden>
+  <div class="banner"><span>A <b>probe</b> asks Jev its question on schedule and logs the answer, but never trades. It answers one thing: <b>does Jev's answer predict what the price does next, better than a plain formula on the same numbers?</b> Nothing here counts towards going live.</span></div>
+  <section><h2>Today <span>Jev's latest answer per stock, most confident first</span></h2>
+    <details class="about"><summary>About this list</summary>
+      <p>Each bar is Jev's latest <b>P(ENTER)</b> for that stock: how sure it is that a long bought now would beat costs. Solid bars are at or above the probe's threshold, the point where a trading rule would buy. These are single answers: on their own they say nothing about whether Jev is any good. That's what the results below are for.</p></details>
+    <div id="probetoday"><p class="muted">Loading…</p></div></section>
+  <section><h2>Results so far <span>scored after each close against what prices did next</span></h2>
+    <details class="about"><summary>How to read this</summary>
+      <p><b>IC</b> (information coefficient) is the rank correlation between Jev's P(ENTER) and the price move over the next 15, 30 or 60 minutes (cut off at the 3:45 pm flatten). 0 means no information; 0.05 is already useful for a trading signal; anything above 0.2 is suspicious. It's worked out day by day and averaged, and <b>t</b> says how consistent it is across days. Roughly, t above 2 starts to mean something, and t isn't shown at all under 5 days.</p>
+      <p><b>Plain formula</b> is a straight-line fit, over earlier days only, of the same numbers Jev was shown. <b>Formula + Jev</b> adds Jev's answer to it. If adding Jev doesn't beat the plain formula, a simple rule would do the same job without Jev. <b>Jev enters: net</b> is the average move after 0.1% round-trip costs when Jev was above the threshold (how many times in brackets); <b>all: net</b> is the same for every answer, the baseline to beat.</p></details>
+    <div id="proberesults"><p class="muted">Loading…</p></div></section>
+</div>
+
+<!-- ============ SCOREBOARD ============ -->
+<div class="page" id="page-score" hidden>
+  <div class="banner"><span>Every rule's closed trades, after <b>0.05% per side</b> slippage (<span id="slipnote">charged here, as the go-live gate does</span>). <b>Read the verdicts before the numbers:</b> at a few trades a day one idea will look ahead for weeks before the difference means anything.</span></div>
+  <div id="scopepick"></div>
+  <div id="bookpick"></div>
+  <div class="stats" id="famtiles"></div>
+  <div class="grid">
+    <section><h2>The race <span id="racesub">running P&amp;L per rule, after slippage</span></h2>
+      <div class="segs" id="racerange"></div>
+      <div class="chart" id="race"></div><div class="legend" id="racelegend"></div></section>
+    <section><h2>Head to head <span>difference per trade, 95% interval</span></h2>
+      <div class="h2h" id="h2h"></div>
+      <p class="note">The strategist labels each rule <span class="fam novel">novel</span> (its own idea) or <span class="fam conventional">conventional</span>. <span class="fam control">control</span> is the benchmark to beat. Rules the strategist removes from the file stay on the board, marked <i>removed</i>; <i>in use</i> means still in today's file, whether or not it's done trading for the day.</p></section>
+  </div>
+  <section><h2>Every rule</h2>
+    <div class="table-wrap" id="scoretable"></div></section>
+  <section>
+    <details class="help"><summary>How to read the scoreboard</summary><dl>
+      <dt>Avg per trade</dt><dd>The mean profit or loss of a closed trade as a % of what it put in, after slippage. The <b>±</b> is a 95% interval: if it straddles zero, the result can't be told apart from luck.</dd>
+      <dt>Race chart</dt><dd>Each rule's running profit or loss after slippage, as a % of the account's starting money, at the end of each trading day. The 1D/7D/1M/1Y buttons count back from the latest trading day, and every line starts the range at zero. Rules take positions of different sizes, so compare the verdicts too, not just the lines.</dd>
+      <dt>Promotion</dt><dd>Closed paper trades on the rule's current settings. It needs 20, with positive average after slippage, before it may trade real money. Editing a rule (other than its label, mode or on/off) restarts the count.</dd>
+      <dt>Why the intervals are wide</dt><dd>Trades on the same day share that day's market, so ten trades on one day are not ten separate pieces of evidence. The intervals count trading days, not just trades, and no verdict is given before 10 trades over 3 days.</dd>
+      <dt>Family totals</dt><dd>A family's figures pool its trades, so a rule that trades often counts for more than one that trades rarely. Check the table to see whether one rule is carrying its family.</dd>
+      <dt>One "ahead" rule among many</dt><dd>Each verdict is a 95% test, so with several rules on the board one will now and then look "ahead" by pure chance. Trust a result more when it holds for a family, not just one rule, and keeps holding as trades accumulate.</dd>
+      <dt>Leaning the project one way</dt><dd>Wait until a family shows "ahead" with at least a few dozen trades before steering the strategist towards it. Fewer trades than that is a hypothesis, not evidence.</dd>
+    </dl></details></section>
+</div>
+
+<!-- ============ RULES ============ -->
+<div class="page" id="page-rules" hidden>
+  <div class="page" id="rules"><p class="muted">Loading…</p></div>
+</div>
+
+<!-- ============ TRADES ============ -->
+<div class="page" id="page-trades" hidden>
+  <section><h2>Recent trades <span>the last 40 fills, newest first, grouped by New York trading day, times in New York time</span></h2>
+    <details class="about"><summary>About trades</summary>
+      <p>Every buy and sell. P&amp;L (profit and loss) appears on the sell that closes a trade. <b>paper</b> is the Alpaca practice account, <b>live</b> is real money, and <b>sim</b> is the pretend account inside a backtest.</p></details>
+    <p class="dayline" id="trades-day" hidden></p>
+    <div class="table-wrap" id="trades"></div></section>
+</div>
+
+<!-- ============ NOTES ============ -->
+<div class="page" id="page-notes" hidden>
+  <div class="notes">
+    <div class="doclist" id="doctabs"></div>
+    <section><div class="md" id="doc"></div></section>
+  </div>
+</div>
+
+<!-- ============ SYSTEM ============ -->
+<div class="page" id="page-system" hidden>
+  <div class="stats" id="ovstate"></div>
+  <section id="sec-links"><h2>Links <span>each service asks you to log in on its own site; nothing secret is stored here</span></h2>
+    <div class="linkgrid" id="links"><p class="muted">Loading…</p></div></section>
+  <section>
+    <details class="help"><summary>Commands you may need (on the VPS)</summary><dl>
+      <dt>Become the runner (for the <code>uv run trader</code> commands below)</dt>
+      <dd>From your admin account:<code class="cmd">sudo -iu runner</code><code class="cmd">cd /srv/trading/main &amp;&amp; set -a &amp;&amp; . ~/.config/trading/services.env &amp;&amp; set +a</code>Skip the second line and the commands that change state refuse to run.</dd>
+      <dt>Deploy merged code to the runner</dt>
+      <dd>From your admin account. It shows what is about to deploy, tests it first, and may ask you to review a diff and type <b>yes</b> (the README's deploy section has the details). Strategy changes don't need this; only code on main does.<code class="cmd">sudo -u runner trading-deploy</code></dd>
+      <dt>STOP: sell everything and stop for today</dt>
+      <dd>The red button at the top, or:<code class="cmd">uv run trader stop</code></dd>
+      <dt>Veto or allow the switch to real money</dt>
+      <dd>HOLD LIVE at the top, or the first line. The second re-arms it; the third shows the gate.<code class="cmd">uv run trader hold-live</code><code class="cmd">uv run trader release-live</code><code class="cmd">uv run trader golive</code></dd>
+      <dt>Force paper or live</dt>
+      <dd>Set <code>config/mode.yaml</code> on main to <code>paper</code>, <code>live</code> or <code>auto</code>, then deploy.</dd>
+      <dt>Clear a halt (−30% from peak, or under $50)</dt>
+      <dd>A halt never clears itself. Clearing also resets the peak to today's value, so it doesn't trip again at once.<code class="cmd">uv run trader clear-halt paper</code><code class="cmd">uv run trader clear-halt live</code></dd>
+      <dt>After resetting the Alpaca paper account</dt>
+      <dd>So the reset isn't read as a loss:<code class="cmd">uv run trader rebase-paper</code></dd>
+      <dt>Where the logs live</dt>
+      <dd><b>Today's trading</b> (runner): <code>/srv/trading/runtime</code>: status.json, golive.json and <code>books/&lt;account&gt;/</code> trades and equity.<br>
+        <b>Runner and dashboard output</b>, as runner:<code class="cmd">journalctl --user -u trader-runner -u trader-dashboard -n 200</code>
+        <b>Strategist runs</b>: <code>~trader/.local/state/trader/*.log</code> (kept 14 days).<br>
+        <b>Permanent record</b> (every fill, every Jev decision): <code>/srv/trading/strategist/logs/</code>.</dd>
+      <dt>Everything else</dt>
+      <dd>The operations guide: <span id="readme"><code>README.md</code> in <code>/srv/trading/main</code></span>.</dd>
+    </dl></details>
+    <details class="help"><summary>Glossary: day-trading terms used on this dashboard</summary><dl>
+      <dt>Day trading</dt><dd>Buying and selling within the same day. Unlike long-term investing, every position here is closed before the market shuts, so overnight news can't hurt it.</dd>
+      <dt>Long</dt><dd>Buying first and selling later, hoping the price rises. This system only goes long: no short-selling, no borrowing (margin), no options.</dd>
+      <dt>US market hours</dt><dd>9:30–16:00 New York time on weekdays, except US holidays. That's usually 14:30–21:00 UK time (an hour earlier for a few weeks a year when the clocks change on different dates).</dd>
+      <dt>Stop-loss / target</dt><dd>Prices set at entry: sell if it falls to the stop (limits the loss) or rises to the target (locks in the gain).</dd>
+      <dt>Flatten</dt><dd>Sell every position. Happens automatically 15 minutes before the close, and on STOP.</dd>
+      <dt>Slippage</dt><dd>The small cost of trading: you usually buy a little above and sell a little below the quoted price. Backtests subtract 0.05% each way.</dd>
+      <dt>Paper vs live</dt><dd>Paper trading uses Alpaca's practice account: real prices, fake money. Live uses your real money.</dd>
+      <dt>Backtest (replay)</dt><dd>Running the rules over past days of market data with a pretend account. Useful for testing ideas, but it can flatter a strategy, so only forward paper results count towards going live.</dd>
+      <dt>Classifier</dt><dd>One trading rule: which stocks, what time window, what question to ask Jev, how much to buy, where to put the stop and target.</dd>
+      <dt>Shadow</dt><dd>A classifier trading on the paper account only, to prove itself before it may use real money.</dd>
+      <dt>Kill switch (−5% day)</dt><dd>If an account loses 5% in one day, everything is sold and it stops until the next day.</dd>
+      <dt>Halt (−30% from peak, or under $50)</dt><dd>A bigger safety stop. Everything is sold and trading stays off until you clear it by hand.</dd>
+      <dt>Growth (NAV) and peak (HWM)</dt><dd>NAV is the value of $1 invested at the start (so it ignores your deposits and withdrawals). HWM ("high-water mark") is the highest NAV reached, and the halt is measured from it.</dd>
+      <dt>Go-live gate</dt><dd>The automatic test for switching to real money: at least 10 trading days, at least 20 strategist paper trades, profitable after costs, and no −5% day. When it passes you get a notification and 3 sessions to press HOLD LIVE.</dd>
+      <dt>STOP / HOLD LIVE</dt><dd>STOP sells everything now and stops trading for today. HOLD LIVE blocks the switch to real money until you release it.</dd>
+    </dl></details></section>
+</div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = (v, d = 2) => v == null || isNaN(v) ? "–" : Number(v).toFixed(d);
+const cls = v => v > 0 ? "pos" : v < 0 ? "neg" : "";
+const COLORS = ["var(--s1)", "var(--s2)", "var(--s3)"];
+const STATUS = { armed: "watching", holding: "in a trade", retired: "done for today", "no-trigger": "conditions not met" };
+const REASON = { ENTER: "bought", stop: "stop-loss hit", target: "profit target hit", "eod flatten": "closed before market close",
+  "classifier EXIT": "Jev said exit", "daily kill switch": "kill switch (−5% day)", HALT: "halt", "manual STOP": "STOP pressed",
+  "server stop / external close": "stop-loss hit (at broker)" };
+const pct = v => v == null || isNaN(v) ? "–" : (v >= 0 ? "+" : "") + (v * 100).toFixed(2) + "%";
+const usd = v => v == null || isNaN(v) ? "–" : (v >= 0 ? "+$" : "−$") + fmt(Math.abs(v));
+let SOURCES = { replays: [], mode: "paper" };
+
+// ---- pages: one tab per page, remembered in the URL hash and this browser ----
+const PAGES = ["today", "score", "rules", "probes", "trades", "notes", "system"];
+function showPage(p) {
+  if (!PAGES.includes(p)) p = "today";
+  for (const x of PAGES) $("page-" + x).hidden = x !== p;
+  document.querySelectorAll("#nav button").forEach(b => b.dataset.page === p ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"));
+  try { localStorage.setItem("page", p); } catch {}
+  if (location.hash.slice(1) !== p) history.replaceState(null, "", "#" + p);
+}
+document.querySelectorAll("#nav button").forEach(b => b.onclick = () => showPage(b.dataset.page));
+window.addEventListener("hashchange", () => showPage(location.hash.slice(1)));
+showPage(location.hash.slice(1) || (() => { try { return localStorage.getItem("page"); } catch { return null; } })() || "today");
+function badge(id, n) { const el = $(id); el.hidden = !n; el.textContent = n || ""; }
+
+// US market hours, shown in UK time: the browser's own zone can be wrong (a UTC device, or
+// privacy settings such as Firefox's resistFingerprinting report UTC), which put the close an hour early.
+function nyToLocal(h, m) {
+  const now = new Date();
+  const ny = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
+  const off = Math.round((now - ny) / 900000) * 900000;
+  const d = new Date(ny); d.setHours(h, m, 0, 0);
+  return new Date(d.getTime() + off);
+}
+function marketClock() {
+  const hm = d => d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" });
+  const o = nyToLocal(9, 30), c = nyToLocal(16, 0), now = new Date();
+  const nyDay = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" })).getDay();
+  const weekday = nyDay >= 1 && nyDay <= 5;
+  if (weekday && now >= o && now < c) return `US market <b>open</b>, closes ${hm(c)} UK time`;
+  return `US market <b>closed</b>; opens ${hm(o)}–${hm(c)} UK time on weekdays (except US holidays)`;
+}
+
+// Minimal markdown: escape first, then a few safe transforms.
+function md(text) {
+  if (!text) return '<p class="muted">Nothing here yet.</p>';
+  const out = []; let inCode = false, list = false;
+  for (const raw of text.split("\n")) {
+    if (raw.startsWith("```")) { if (list) { out.push("</ul>"); list = false; } out.push(inCode ? "</pre>" : "<pre>"); inCode = !inCode; continue; }
+    if (inCode) { out.push(esc(raw)); continue; }
+    let l = esc(raw).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
+    const h = l.match(/^(#{1,3})\s+(.*)/);
+    const li = l.match(/^\s*[-*]\s+(.*)/);
+    if (li) { if (!list) { out.push("<ul>"); list = true; } out.push(`<li>${li[1]}</li>`); continue; }
+    if (list) { out.push("</ul>"); list = false; }
+    if (h) out.push(`<h${h[1].length}>${h[2]}</h${h[1].length}>`);
+    else if (l.trim()) out.push(`<p>${l}</p>`);
+  }
+  if (inCode) out.push("</pre>"); if (list) out.push("</ul>");
+  return out.join("\n");
+}
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  return r.json();
+}
+
+// `head(r)`, if given, returns HTML for a full-width header row to put before row r ("" for none).
+function table(cols, rows, rowCls = () => "", empty = "None.", head = null) {
+  if (!rows.length) return `<p class="muted">${esc(empty)}</p>`;
+  return `<table><thead><tr>${cols.map(c => `<th class="${c.num ? "num" : ""}">${esc(c.h)}</th>`).join("")}</tr></thead><tbody>` +
+    rows.map(r => (head ? head(r) : "") + `<tr class="${rowCls(r)}">${cols.map(c => `<td class="${c.num ? "num" : ""} ${c.cls ? c.cls(r) : ""}">${c.raw ? c.v(r) : esc(c.v(r))}</td>`).join("")}</tr>`).join("") +
+    "</tbody></table>";
+}
+
+// ---- time ranges (Performance and the race) ----
+// Calendar days back from the latest point. For Performance the server sends every 5-minute mark
+// for the last 7 days and one close per day before that; the long ranges use the closes only.
+const RANGES = [["1d", "1D", 1, "the latest session"], ["7d", "7D", 7, "the last 7 days"],
+                ["1m", "1M", 30, "the last month"], ["1y", "1Y", 365, "the last year"]];
+const rangeOf = k => RANGES.find(r => r[0] === k) || RANGES[0];
+// The first date (YYYY-MM-DD) inside a range of `days` calendar days ending on `lastDay`.
+const rangeFrom = (lastDay, days) => new Date(new Date(lastDay + "T12:00:00Z") - (days - 1) * 864e5).toISOString().slice(0, 10);
+// The race inside a range: the days in it, and each rule's running P&L re-based to zero at the
+// close before the range, so every line starts the window level. The curves are running sums, so
+// re-basing subtracts. When the range cuts days off, rules with no P&L in it are left out and
+// counted in `quiet`.
+function raceWindow(days, rows, span) {
+  if (!days.length) return { days: [], rows: [], quiet: 0 };
+  const from = rangeFrom(days[days.length - 1], span), i0 = days.findIndex(d => d >= from);
+  const moved = rows.map(r => {
+    const b0 = i0 > 0 ? r.curve[i0 - 1] : 0;
+    return { ...r, curve: r.curve.slice(i0).map(v => Math.round((v - b0) * 1e4) / 1e4) };
+  }).filter(r => i0 === 0 || r.curve.some(v => v !== 0));
+  return { days: days.slice(i0), rows: moved, quiet: rows.length - moved.length };
+}
+// The 1D/7D/1M/1Y buttons, into `el`; pick(key) runs on a click.
+function rangeSegs(el, cur, pick) {
+  el.innerHTML = RANGES.map(([k, l, , t]) => `<button data-r="${k}" title="${t}" class="${k === cur ? "on" : ""}">${l}</button>`).join("");
+  el.querySelectorAll("button[data-r]").forEach(b => b.onclick = () => pick(b.dataset.r));
+}
+// The dates a race range actually covers, for its subtitle: "1D · Tue 29 Sept", "7D · 23–29 Sept".
+// The race counts back from the latest day with a closed trade, which may not be today.
+function raceSpan(key, days) {
+  const f = (d, o) => new Date(d + "T12:00Z").toLocaleDateString("en-GB", { ...o, timeZone: "UTC" });
+  const lab = rangeOf(key)[1], a = days[0], z = days[days.length - 1];
+  if (!a) return lab;
+  if (a === z) return `${lab} · ${f(z, { weekday: "short", day: "numeric", month: "short" })}`;
+  const end = f(z, { day: "numeric", month: "short", ...(a.slice(0, 4) !== z.slice(0, 4) && { year: "numeric" }) });
+  const start = a.slice(0, 7) === z.slice(0, 7) ? String(+a.slice(8)) : f(a, { day: "numeric", month: "short", ...(a.slice(0, 4) !== z.slice(0, 4) && { year: "numeric" }) }) + " ";
+  return `${lab} · ${start}${start.endsWith(" ") ? "– " : "–"}${end}`;
+}
+let perfRange = null, LAST_CHART = null, raceRange = "1y";
+// ---- end time ranges ----
+// ---- trades by New York trading day ----
+// Trade times are ISO with the New York offset (2026-09-29T15:44-04:00), so the first 10 characters
+// are the New York date. Today's New York date comes from the clock, not the browser's zone.
+const nyToday = (now = new Date()) => now.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+function dayLabel(day, today) {
+  const nice = new Date(day + "T12:00Z").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+  return day === today ? `Today, ${nice}` : nice;
+}
+// Mark the first trade of each day (trades newest first), and say whether any are from today.
+// A replay has no "today" (today = null): no note, and the badge counts the latest day shown.
+function tradeDays(trades, today) {
+  let prev = null;
+  const rows = trades.map(t => { const day = t.time.slice(0, 10), first = day !== prev; prev = day; return { ...t, day, first }; });
+  const nToday = rows.filter(r => r.day === (today ?? rows[0].day)).length;
+  const note = !today || !rows.length || nToday ? "" : `No trades today yet. Showing the most recent, from ${dayLabel(rows[0].day, today)}.`;
+  return { rows, nToday, note };
+}
+
+// Indices of `equity` inside the range, and the mark to measure from: the one just before the
+// range (the previous close), else the range's first.
+function rangeIdx(equity, days, daily) {
+  const from = rangeFrom(equity[equity.length - 1][0].slice(0, 10), days);
+  let i0 = equity.findIndex(p => p[0].slice(0, 10) >= from);
+  if (i0 < 0) i0 = equity.length - 1;
+  let idx = equity.map((_, i) => i).slice(i0);
+  if (daily) idx = idx.filter(i => i === equity.length - 1 || equity[i + 1][0].slice(0, 10) !== equity[i][0].slice(0, 10));
+  return { idx, base: i0 > 0 ? i0 - 1 : i0 };
+}
+
+function rangePick(source) {
+  if (!RANGES.some(r => r[0] === perfRange)) perfRange = source === "live" ? "1d" : "1y";  // a backtest reads best whole
+  rangeSegs($("range"), perfRange, k => { perfRange = k; rangePick(source); if (LAST_CHART) chart(...LAST_CHART); });
+}
+
+function chart(books, bench) {
+  LAST_CHART = [books, bench];
+  const [, , days, what] = rangeOf(perfRange);
+  $("perfsub").textContent = `growth of $1 over ${what}`;
+  const daily = days > 7;
+  const all0 = Object.entries(books).filter(([, b]) => b.equity.length > 1);
+  if (!all0.length) { $("chart").innerHTML = '<p class="muted">No history yet. The line starts with the first trading session.</p>'; $("legend").innerHTML = ""; return; }
+  // Plot NAV per unit so books of different size (and cashflows) compare fairly, rebased to the
+  // mark before the range so every line starts the period at 1.000.
+  const W = 640, H = 240, P = 46, R = 10;
+  // Buy-and-hold SPY from the first session's open, marked at each day's close (the mission's yardstick).
+  const longest = all0.reduce((a, s) => s[1].equity.length > a[1].equity.length ? s : a)[1].equity;
+  const spyAll = spyLine(longest, bench || []);
+  const series = all0.map(([n, b]) => {
+    const { idx, base } = rangeIdx(b.equity, days, daily), b0 = b.equity[base][2] || 1;
+    return [n, { equity: idx.map(i => [b.equity[i][0], b.equity[i][1], b.equity[i][2] / b0]) }];
+  });
+  let spy = null;
+  if (spyAll) {
+    const { idx, base } = rangeIdx(longest, days, daily);
+    const s0 = spyAll.vals[base] ?? idx.map(i => spyAll.vals[i]).find(v => v != null);
+    const vals = idx.map(i => spyAll.vals[i] == null || !s0 ? null : spyAll.vals[i] / s0);
+    if (vals.some(v => v != null)) spy = { vals, from: spyAll.from };
+  }
+  const all = [1, ...series.flatMap(([, b]) => b.equity.map(p => p[2])), ...(spy ? spy.vals.filter(v => v != null) : [])];
+  let lo = Math.min(...all), hi = Math.max(...all); if (hi - lo < 1e-4) { hi += 0.001; lo -= 0.001; }
+  const maxN = Math.max(...series.map(([, b]) => b.equity.length));
+  const x = i => P + (W - P - R) * i / Math.max(1, maxN - 1);
+  const y = v => 10 + (H - 10 - 24) * (hi - v) / (hi - lo);
+  // Enough decimals that the three axis labels differ, even on a quiet day.
+  const dp = Math.min(6, Math.max(3, Math.ceil(-Math.log10((hi - lo) / 2)) + 1));
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="NAV per unit">`;
+  for (const t of [lo, (lo + hi) / 2, hi]) svg += `<line x1="${P}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--rule)"/><text x="${P - 6}" y="${y(t) + 4}" text-anchor="end">${t.toFixed(dp)}</text>`;
+  if (lo < 1 && hi > 1) svg += `<line x1="${P}" x2="${W - R}" y1="${y(1)}" y2="${y(1)}" stroke="var(--muted)" stroke-dasharray="3 3"/>`;
+  if (spy) {  // one polyline per unbroken run
+    let run = [];
+    const flush = () => { if (run.length > 1) svg += `<polyline fill="none" stroke="var(--spy)" stroke-width="1.5" stroke-dasharray="6 3" points="${run.join(" ")}"/>`; run = []; };
+    spy.vals.forEach((v, i) => { if (v == null) flush(); else run.push(`${x(i).toFixed(1)},${y(v).toFixed(1)}`); });
+    flush();
+  }
+  series.forEach(([name, b], k) => {
+    const e = b.equity, pts = e.map((p, i) => `${x(i).toFixed(1)},${y(p[2]).toFixed(1)}`).join(" ");
+    if (k === 0) svg += `<polygon fill="${COLORS[0]}" opacity=".08" points="${x(0)},${H - 24} ${pts} ${x(e.length - 1)},${H - 24}"/>`;
+    svg += `<polyline fill="none" stroke="${COLORS[k % 3]}" stroke-width="2" stroke-linejoin="round" points="${pts}"/>`;
+    svg += `<circle cx="${x(e.length - 1)}" cy="${y(e[e.length - 1][2])}" r="3.5" fill="${COLORS[k % 3]}"/>`;
+  });
+  svg += `<line x1="${P}" x2="${W - R}" y1="${H - 24}" y2="${H - 24}" stroke="var(--ink2)"/>`;
+  const first = series[0][1].equity, last = first[first.length - 1];
+  const stamp = t => days === 1 ? t.slice(11, 16) : daily ? t.slice(0, 10) : t.slice(0, 16).replace("T", " ");
+  svg += `<text x="${P}" y="${H - 6}">${esc(stamp(first[0][0]))}</text>`;
+  svg += `<text x="${W - R}" y="${H - 6}" text-anchor="end">${esc(stamp(last[0]))}</text></svg>`;
+  $("chart").innerHTML = svg;
+  $("legend").innerHTML = series.map(([n, b], k) => {
+    const e = b.equity; return `<span><i style="background:${COLORS[k % 3]}"></i>${esc(n)} <b class="${cls(e[e.length - 1][2] - 1)}">${pct(e[e.length - 1][2] - 1)}</b> · <b>$${fmt(e[e.length - 1][1])}</b></span>`;
+  }).join("") + (spy ? (() => {
+    const last = [...spy.vals].reverse().find(v => v != null), since = spy.from > first[0][0].slice(0, 10) ? ` since ${esc(spy.from)}` : "";
+    return `<span title="Holding SPY over the same period, overnights included (marked at each day's close)"><i style="background:var(--spy)"></i>SPY buy-and-hold${since} <b class="${cls(last - 1)}">${pct(last - 1)}</b></span>`;
+  })() : "");
+}
+
+// SPY growth at each equity mark, from the first session with a benchmark row (null before it, and
+// on past days with no row, so gaps show as breaks): the previous close until a day's last mark,
+// then that day's close. Returns {vals, from} or null.
+function spyLine(equity, bench) {
+  if (!bench.length || equity.length < 2) return null;
+  const rows = [...bench].filter(r => +r.spy_open > 0 && +r.spy_close > 0).sort((a, b) => a.date.localeCompare(b.date));
+  if (!rows.length) return null;
+  const byDay = Object.fromEntries(rows.map(r => [r.date, +r.spy_close]));
+  const from = rows[0].date, base = +rows[0].spy_open, today = equity[equity.length - 1][0].slice(0, 10);
+  const lastMark = {};
+  equity.forEach((p, i) => { lastMark[p[0].slice(0, 10)] = i; });
+  let prev = base;
+  const vals = equity.map((p, i) => {
+    const d = p[0].slice(0, 10);
+    if (d < from || (!(d in byDay) && d !== today)) return null;
+    const v = lastMark[d] === i && byDay[d] ? byDay[d] : prev;
+    if (lastMark[d] === i && byDay[d]) prev = byDay[d];
+    return v / base;
+  });
+  return vals.some(v => v != null) ? { vals, from } : null;
+}
+
+function render(d) {
+  const st = d.status || {};
+  const sb = st.books || {};
+  // Live sim accounts (one per sim classifier) get one combined tile below, not a tile each. A
+  // replay's single account is also called "sim", but it's the replay's only account: keep its tile.
+  const isSim = n => d.source === "live" && (n === "sim" || n.startsWith("sim:"));
+  const names = [...new Set([...Object.keys(sb), ...Object.keys(d.books)])].filter(n => !isSim(n));
+  $("books").innerHTML = names.map(n => {
+    const b = sb[n] || {}, f = d.books[n] || {}, nav = f.nav || {};
+    const eq = b.equity ?? nav.last_equity, pnl = b.equity != null && !b.start_unverified ? b.equity - b.day_start_equity : null;
+    const blocked = b.blocked || (f.risk && f.risk.halted ? "halt" : null) || (b.start_unverified ? "unverified" : null);
+    const label = { paper: "paper · practice money", live: "LIVE · real money", sim: "sim · backtest money" }[n] || n;
+    const blockedTxt = { kill: "KILL SWITCH: off for today", halt: "HALTED: needs you", stop: "STOPPED for today", unverified: "NO NEW ENTRIES: start equity unreadable" }[blocked] || (blocked || "").toUpperCase();
+    const navv = b.nav ?? (nav.units ? nav.last_equity / nav.units : null);
+    const hwm = b.hwm ?? nav.hwm;
+    return `<div class="stat${blocked ? " alert" : ""}"><span class="l">${esc(label)}</span><span class="n">$${fmt(eq)}</span>
+      ${blocked ? `<span class="d warn">${esc(blockedTxt)}</span>` : ""}
+      <span class="d">today <b class="${cls(pnl)}">${pnl == null ? "–" : usd(pnl)}</b> · ${b.trades_today ?? 0} trades</span>
+      <span class="d" title="NAV: value of $1 invested at the start. Peak: the highest NAV so far.">growth <b class="${cls(navv - 1)}">${pct(navv == null ? null : navv - 1)}</b> · peak <b>${pct(hwm == null ? null : hwm - 1)}</b></span></div>`;
+  }).join("") || '<div class="stat"><span class="l">accounts</span><span class="d">No trading yet. Accounts appear here once the first session has started.</span></div>';
+  const sims = Object.entries(sb).filter(([n]) => n.startsWith("sim:"));
+  if (sims.length) {
+    const pnl = sims.reduce((a, [, b]) => a + ((b.equity ?? 0) - (b.day_start_equity ?? 0)), 0);
+    const trades = sims.reduce((a, [, b]) => a + (b.trades_today ?? 0), 0), off = sims.filter(([, b]) => b.blocked).length;
+    $("books").innerHTML += `<div class="stat${off ? " alert" : ""}" title="Each sim rule trades its own simulated $250 account on the live prices. No orders reach Alpaca, and none of it counts towards going live.">` +
+      `<span class="l">sim · ${sims.length} simulated account${sims.length === 1 ? "" : "s"}</span><span class="n ${cls(pnl)}">${usd(pnl)}</span>` +
+      (off ? `<span class="d warn">${off} stopped for today or halted</span>` : "") +
+      `<span class="d">today, all accounts · ${trades} trades · no real orders</span></div>`;
+  }
+  const days = d.summary ? Object.keys(d.summary.days || {}).sort() : [];
+  if (d.summary) {
+    const s = d.summary;
+    $("books").innerHTML += `<div class="stat"><span class="l">backtest result</span><span class="n ${cls(s.final_equity - s.start_equity)}">$${fmt(s.final_equity)}</span><span class="d">${usd(s.final_equity - s.start_equity)} on $${fmt(s.start_equity)} · ${days.length} sessions</span></div>`;
+    $("btinfo").innerHTML = [["sessions", days.length], ["from", esc(days[0] || s.start)], ["to", esc(days[days.length - 1] || s.end)],
+      ["started with", "$" + fmt(s.start_equity)], ["ended with", `<span class="${cls(s.final_equity - s.start_equity)}">$${fmt(s.final_equity)}</span>`],
+      ["Jev decisions", esc(s.decision_calls)], ["Jev cost", "$" + fmt(s.decision_cost_usd, 4)],
+      ["rules tested", esc((st.classifiers || []).map(c => c.id).join(", ") || "–")]]
+      .map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("");
+  } else $("btinfo").innerHTML = '<dt>status</dt><dd>still running…</dd>';
+
+  rangePick(d.source);
+  chart(d.books, d.benchmark);
+
+  const pos = Object.entries(sb).flatMap(([bn, b]) => Object.entries(b.positions || {}).map(([s, p]) => ({ bn, s, ...p })));
+  const held = pos.filter(p => !isSim(p.bn));  // the tile and badge count Alpaca positions; sim ones are listed below
+  badge("n-pos", held.length);
+  if (d.source === "live") {
+    const open = held.reduce((a, p) => a + (p.last - p.entry) * (p.qty || 0), 0);
+    $("books").innerHTML += `<div class="stat"><span class="l">open positions</span><span class="n">${held.length}</span>` +
+      `<span class="d">${held.length ? `unrealised <b class="${cls(open)}">${usd(open)}</b> · ${esc(held.map(p => p.s).join(", "))}` : "nothing held"}</span>` +
+      (pos.length > held.length ? `<span class="d">plus ${pos.length - held.length} in sim accounts</span>` : "") + `</div>`;
+  }
+  $("positions").innerHTML = table([
+    { h: "stock", raw: 1, v: r => `<span class="sym">${esc(r.s)}</span>` }, { h: "rule", raw: 1, v: r => ruleLink(r.classifier) }, { h: "account", v: r => r.bn },
+    { h: "bought at", v: r => fmt(r.entry), num: 1 }, { h: "now", v: r => fmt(r.last), num: 1 },
+    { h: "gain so far", v: r => pct(r.last / r.entry - 1), num: 1, cls: r => cls(r.last - r.entry) },
+    { h: "stop-loss", v: r => fmt(r.stop), num: 1 }, { h: "target", v: r => fmt(r.target), num: 1 },
+    { h: "since", v: r => r.since, num: 1 },
+  ], pos, () => "", "No open positions.");
+
+  // One group of rows per rule; the rule's name shows on its first row only.
+  // A probe covers many stocks and never trades: one summary row, with the detail on the Probes page.
+  const rows = (st.classifiers || []).flatMap(c => c.mode === "probe" ? [probeRow(c)]
+    : Object.entries(c.symbols).map(([s, x], i) => ({ c, s, x, first: i === 0 })));
+  $("classifiers").innerHTML = table([
+    { h: "rule", raw: 1, v: r => r.first ? `<b>${ruleLink(r.c.id)}</b> ${famBadge(r.c.family || (r.c.control ? "control" : "unlabelled"))} <span class="muted">${modeLabel(r.c.mode)}</span>` : "" },
+    { h: "stock", raw: 1, v: r => r.probe ? `${r.probe.n} stocks` : `<span class="sym">${esc(r.s)}</span>` },
+    { h: "status", raw: 1, v: r => r.probe ? '<span class="pill">probing</span>' : `<span class="pill ${esc(r.x.status)}">${esc(STATUS[r.x.status] || r.x.status)}</span>` },
+    { h: "trades", v: r => r.probe ? "–" : `${r.x.trades}/${r.c.max_trades}`, num: 1 },
+    { h: "Jev's last answer", raw: 1, v: r => {
+        if (r.probe) return `<span class="pmeta">asked on ${r.probe.asked}/${r.probe.n} · ${nstr(num(r.c.calls) ?? 0)} answers today` +
+          (r.probe.top.length ? ` · most confident <b>${r.probe.top.map(([s, v]) => `${esc(s)} ${Math.round(v * 100)}%`).join(", ")}</b>` : "") +
+          ` · <a href="#probes">see Probes</a></span>`;
+        const p = Object.entries(r.x.probs || {}), top = p.length ? Math.max(...p.map(e => e[1])) : null;
+        const choice = esc(STATUS[r.x.last_choice] || r.x.last_choice || "–");
+        if (!p.length) return `<span class="muted">${choice}</span>`;
+        return `<span class="probs" title="${esc(p.map(([k, v]) => `${k} ${v}`).join(", "))}">` +
+          p.map(([k, v]) => `<i class="${v === top ? "top" : ""}" style="height:${Math.max(2, v * 18)}px"></i>`).join("") + "</span>" +
+          `<span class="pmeta">${[...p].sort((a, b) => b[1] - a[1]).map(([k, v], i) => i ? `${esc(k)} ${Math.round(v * 100)}%` : `<b>${esc(k)} ${Math.round(v * 100)}%</b>`).join(" · ")}</span>`; } },
+    { h: "asked at", v: r => r.x.last_eval || "–", num: 1 }, { h: "note", v: r => r.x.note || "" },
+  ], rows, r => r.first ? "grp" : "", "No rules loaded yet. The runner loads them shortly before the open.");
+
+  const trades = Object.values(d.books).flatMap(b => b.trades).sort((a, b) => b.time.localeCompare(a.time)).slice(0, 40);
+  const today = d.source === "live" ? nyToday() : null, td = tradeDays(trades, today);
+  badge("n-trades", td.nToday);
+  $("trades-day").hidden = !td.note; $("trades-day").textContent = td.note;
+  const tcols = [
+    { h: "NY time", v: r => r.time.slice(11, 16), num: 1 },
+    { h: "stock", raw: 1, v: r => `<span class="sym">${esc(r.symbol)}</span>` },
+    { h: "", raw: 1, v: r => `<span class="pill ${esc(r.side)}">${esc(r.side)}</span>` },
+    { h: "rule", raw: 1, v: r => ruleLink(r.classifier) }, { h: "account", v: r => r.book },
+    { h: "price", v: r => fmt(r.price), num: 1 }, { h: "amount $", v: r => fmt(r.notional), num: 1 },
+    { h: "profit/loss $", v: r => r.pnl === "" ? "" : fmt(r.pnl), num: 1, cls: r => cls(Number(r.pnl)) },
+    { h: "why", v: r => REASON[r.reason] || r.reason },
+  ];
+  $("trades").innerHTML = table(tcols, td.rows, () => "", "No trades yet.", r => !r.first ? "" :
+    `<tr class="day"><th colspan="${tcols.length}">${esc(dayLabel(r.day, today))}</th></tr>`);
+}
+
+function probeRow(c) {
+  const syms = Object.entries(c.symbols || {});
+  const asked = syms.filter(([, x]) => x && x.probs && num(x.probs.ENTER) != null);
+  const top = asked.map(([s, x]) => [s, num(x.probs.ENTER)]).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const last = asked.map(([, x]) => x.last_eval).filter(Boolean).sort().pop();
+  return { c, s: "", x: { last_eval: last, note: "" }, first: true, probe: { n: syms.length, asked: asked.length, top } };
+}
+
+// ---- Probes page ----
+// The report is a file the strategist (an LLM) can write, so nothing from it reaches the page
+// unchecked: numbers are coerced to finite numbers (else null) and every string goes through esc().
+const num = v => { const x = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN; return Number.isFinite(x) ? x : null; };
+const obj = v => v && typeof v === "object" && !Array.isArray(v) ? v : {};
+const stat = s => { s = obj(s); return { mean: num(s.mean), t: num(s.t), days: num(s.days) }; };
+const nstr = v => v == null ? "–" : String(v);
+function cleanReport(rep) {
+  rep = obj(rep);
+  return {
+    first_day: String(rep.first_day ?? "?"), last_day: String(rep.last_day ?? "?"), generated: String(rep.generated ?? ""),
+    skipped: num(rep.skipped_lines),
+    probes: Object.entries(obj(rep.probes)).map(([id, pr]) => {
+      pr = obj(pr);
+      const horizons = Object.entries(obj(pr.horizons)).map(([h, x]) => {
+        x = obj(x);
+        return { h: num(h), n: num(x.n), jev_ic: stat(x.jev_ic), wf_inputs_only: stat(x.wf_inputs_only), wf_inputs_plus_jev: stat(x.wf_inputs_plus_jev),
+          enter_n: num(x.enter_n), enter_mean_net_pct: num(x.enter_mean_net_pct), all_mean_net_pct: num(x.all_mean_net_pct),
+          by_p_enter: Array.isArray(x.by_p_enter) ? x.by_p_enter.map(b => { b = obj(b); return { lo: num(b.p_enter_min), hi: num(b.p_enter_max), n: num(b.n), bps: num(b.mean_gross_bps) }; })
+            .filter(b => b.lo != null && b.hi != null && b.bps != null) : [],
+          feature_ic: Object.entries(obj(x.feature_ic)).map(([k, s]) => [String(k), stat(s)]) };
+      }).filter(x => x.h != null).sort((a, b) => a.h - b.h);
+      return { id: String(id), rows: num(pr.rows), days: num(pr.days), symbols: num(pr.symbols), threshold: num(pr.threshold), horizons };
+    }),
+  };
+}
+function renderProbeToday(st) {
+  const list = (st.classifiers || []).filter(c => c && c.mode === "probe");
+  if (!list.length) { $("probetoday").innerHTML = '<p class="muted">No probe is running. A probe is a rule with <code>mode: probe</code> in the strategist\'s rules file.</p>'; return; }
+  $("probetoday").innerHTML = list.map(c => {
+    const thr = num(c.threshold), win = Array.isArray(c.window) ? c.window : [];
+    const syms = Object.entries(obj(c.symbols)).map(([s, x]) => ({ s, p: num(obj(obj(x).probs).ENTER), t: obj(x).last_eval }))
+      .sort((a, b) => (b.p ?? -1) - (a.p ?? -1));
+    const asked = syms.filter(r => r.p != null).length, hot = syms.filter(r => thr != null && r.p != null && r.p >= thr).length;
+    return `<div class="probe"><div class="phead"><b>${ruleLink(c.id)}</b> ${famBadge(c.family || "unlabelled")}` +
+      `<span>${nstr(num(c.calls) ?? 0)} answers today</span><span>asked on ${asked} of ${syms.length} stocks</span>` +
+      (thr != null ? `<span>${hot} at or above its ${Math.round(thr * 100)}% threshold</span>` : "") +
+      (win.length === 2 ? `<span class="muted">${esc(win[0])}–${esc(win[1])} New York time</span>` : "") + `</div>` +
+      `<div class="pbars">${syms.map(r => `<div class="pbar" title="${esc(r.s)}: P(ENTER) ${r.p == null ? "not asked yet" : Math.round(r.p * 100) + "%"}${r.t ? ", asked at " + esc(r.t) : ""}">` +
+        `<span class="sym">${esc(r.s)}</span><span class="track">` +
+        (r.p == null ? "" : `<span class="fill${thr != null && r.p >= thr ? " hot" : ""}" style="width:${(Math.min(1, Math.max(0, r.p)) * 100).toFixed(1)}%"></span>`) +
+        (thr != null ? `<span class="tick" style="left:${(thr * 100).toFixed(1)}%"></span>` : "") +
+        `</span><span class="v">${r.p == null ? "–" : Math.round(r.p * 100) + "%"}</span><span class="t">${esc(r.t || "")}</span></div>`).join("")}</div></div>`;
+  }).join("");
+}
+
+const ic = s => !s || s.mean == null ? "–" : (s.mean >= 0 ? "+" : "−") + Math.abs(s.mean).toFixed(3);
+const tval = s => !s || s.t == null ? "" : ` <span class="muted">t ${s.t >= 0 ? "" : "−"}${Math.abs(s.t).toFixed(1)}</span>`;
+// A deliberately cautious one-line reading of the main horizon (30 min when present). It never
+// turns green: at these sample sizes nothing here is more than a hint, and the gap between the two
+// baselines has no significance test of its own.
+function probeVerdict(pr, h) {
+  const j = h && h.jev_ic, plain = h && h.wf_inputs_only, plus = h && h.wf_inputs_plus_jev;
+  const d = j && j.days != null ? j.days : pr.days;
+  if (!h || !j || j.t == null) return ["", `Too early to say: ${nstr(d)} day${d === 1 ? "" : "s"} with enough answers to score, and no reading is shown under 5.`];
+  if (Math.abs(j.t) < 2) return ["", `No sign yet that Jev's answer predicts the next move (IC ${ic(j)}, t ${j.t.toFixed(1)} over ${nstr(j.days)} days).`];
+  if (j.mean < 0) return ["neg", `So far Jev's answer has pointed the <b>wrong way</b> (IC ${ic(j)}, t ${j.t.toFixed(1)} over ${nstr(j.days)} days): stocks it liked did worse.`];
+  const adds = plus && plain && plus.mean != null && plain.mean != null ? plus.mean - plain.mean : null;
+  return ["", `So far Jev's answer has ranked the next move (IC ${ic(j)}, t ${j.t.toFixed(1)} over ${nstr(j.days)} days), which is still weak evidence at this sample size. ` +
+    (adds == null ? "The plain-formula comparison needs a few more days."
+      : adds > 0.01 ? `With Jev the formula scored higher (${ic(plain)} → ${ic(plus)}), but that gap isn't tested and may be noise.`
+      : `The plain formula did about as well (${ic(plain)} without Jev, ${ic(plus)} with), so a simple rule might do.`)];
+}
+function binChart(bins) {
+  if (!bins || !bins.length) return '<p class="muted">Not enough answers to split by confidence yet.</p>';
+  const W = 460, H = 200, P = 40, B = 34, vals = bins.map(b => b.bps);
+  let lo = Math.min(0, ...vals), hi = Math.max(0, ...vals); if (hi - lo < 1) { hi += 1; lo -= 1; }
+  const y = v => 8 + (H - 8 - B) * (hi - v) / (hi - lo), bw = (W - P - 6) / bins.length;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Average next move by Jev's confidence">`;
+  for (const t of [lo, hi]) if (Math.round(t) !== 0) svg += `<text x="${P - 6}" y="${y(t) + 4}" text-anchor="end">${t >= 0 ? "+" : ""}${t.toFixed(0)}</text>`;
+  svg += `<text x="${P - 6}" y="${y(0) + 4}" text-anchor="end">0</text><line x1="${P}" x2="${W - 6}" y1="${y(0)}" y2="${y(0)}" stroke="var(--ink2)"/>`;
+  bins.forEach((b, i) => {
+    const x = P + i * bw + 3, v = b.bps, top = Math.min(y(v), y(0)), h = Math.max(1, Math.abs(y(v) - y(0)));
+    const lab = b.lo === b.hi ? `${Math.round(b.lo * 100)}%` : `${Math.round(b.lo * 100)}–${Math.round(b.hi * 100)}%`;
+    svg += `<rect x="${x}" y="${top}" width="${bw - 6}" height="${h}" fill="var(--${v >= 0 ? "pos" : "neg"})" opacity=".75"><title>P(ENTER) ${lab}: ${nstr(b.n)} answers, average next move ${v >= 0 ? "+" : ""}${v} bps before costs</title></rect>` +
+      `<text x="${x + (bw - 6) / 2}" y="${H - B + 14}" text-anchor="middle">${lab}</text><text x="${x + (bw - 6) / 2}" y="${H - B + 27}" text-anchor="middle" style="fill:var(--muted)">n ${nstr(b.n)}</text>`;
+  });
+  return svg + "</svg>";
+}
+function renderProbeResults(res, src) {
+  if (src !== "live") { $("proberesults").innerHTML = '<p class="muted">Scored results are for the live runner\'s probes. To score a backtest\'s probes, run <code>uv run trader probe-report --replay &lt;name&gt;</code>.</p>'; return; }
+  if (res.error) { $("proberesults").innerHTML = `<p class="neg">Couldn't load the probe report: ${esc(res.error)}</p>`; return; }
+  if (!res.report) { $("proberesults").innerHTML = '<p class="muted">No results yet. The report is written after each close, once a probe has run for a session.</p>'; return; }
+  const rep = cleanReport(res.report), age = num(res.age_s);
+  // Written once per post-close run: older than a long weekend means the nightly scoring has been failing.
+  const stale = age != null && age > 4 * 86400;
+  const when = `Scored ${esc(rep.first_day)} → ${esc(rep.last_day)}, written ${esc(rep.generated.slice(0, 16).replace("T", " "))} New York time` +
+    (age != null ? ` (${age < 7200 ? Math.round(age / 60) + " min" : age < 172800 ? Math.round(age / 3600) + " h" : Math.round(age / 86400) + " days"} ago).` : ".");
+  $("proberesults").innerHTML = (stale ? `<p class="warn" style="margin:0 0 6px">This report is ${Math.round(age / 86400)} days old: the nightly scoring may be failing (see the strategist's post-close log).</p>` : "") +
+    `<p class="note" style="margin:0 0 10px">${when}${rep.skipped ? ` ${rep.skipped} unreadable log lines skipped.` : ""}</p>` +
+    (rep.probes.map(pr => {
+      const hs = pr.horizons.map(x => x.h), mainH = hs.includes(30) ? 30 : hs[Math.floor(hs.length / 2)];
+      const main = pr.horizons.find(x => x.h === mainH);
+      const [vc, vt] = probeVerdict(pr, main);
+      const feats = main ? main.feature_ic.filter(([, s]) => s.mean != null).sort((a, b) => Math.abs(b[1].mean) - Math.abs(a[1].mean)).slice(0, 3) : [];
+      return `<div class="probe"><div class="phead"><b>${ruleLink(pr.id)}</b><span>${nstr(pr.rows)} answers</span><span>${nstr(pr.days)} day${pr.days === 1 ? "" : "s"}</span><span>${nstr(pr.symbols)} stocks</span>` +
+        (pr.threshold != null ? `<span class="muted">threshold ${Math.round(pr.threshold * 100)}%</span>` : "") + `</div>` +
+        `<div class="pverdict ${vc}">${vt}</div>` +
+        `<div class="pgrid"><div class="table-wrap">` + table([
+          { h: "next", v: r => `${r.h} min` },
+          { h: "Jev IC", raw: 1, v: r => ic(r.jev_ic) + tval(r.jev_ic), num: 1 },
+          { h: "plain formula", raw: 1, v: r => ic(r.wf_inputs_only) + tval(r.wf_inputs_only), num: 1 },
+          { h: "formula + Jev", raw: 1, v: r => ic(r.wf_inputs_plus_jev) + tval(r.wf_inputs_plus_jev), num: 1 },
+          { h: "Jev enters: net", v: r => r.enter_n ? `${pp(r.enter_mean_net_pct, 3)} (${r.enter_n})` : "none", num: 1, cls: r => cls(r.enter_mean_net_pct) },
+          { h: "all: net", v: r => pp(r.all_mean_net_pct, 3), num: 1, cls: r => cls(r.all_mean_net_pct) },
+        ], pr.horizons) + `</div><div><div class="chart">${binChart(main && main.by_p_enter)}</div>` +
+        `<p class="note">Average move over the next ${nstr(mainH)} min, in basis points (0.01%) before costs, grouped by Jev's confidence. A staircase rising to the right is what a useful Jev looks like.</p></div></div>` +
+        (feats.length ? `<p class="note" style="margin:0">Strongest single inputs at this horizon: ${feats.map(([k, s]) => `<code>${esc(k)}</code> ${ic(s)}`).join(" · ")}. If one of these matches Jev on its own, a rule on that input would do.</p>` : "") +
+        "</div>";
+    }).join("") || '<p class="muted">The report has no probes in it.</p>');
+}
+
+const famBadge = f => `<span class="fam ${esc(f)}">${esc(f)}</span>`;
+const ruleLink = id => `<a class="rulelink" href="#rules" data-rule="${esc(id)}">${esc(id)}</a>`;
+const pp = (v, d = 2) => v == null || isNaN(v) ? "–" : (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(d) + "%";
+const ci = (m, h) => m == null ? "–" : pp(m) + (h == null || !isFinite(h) ? "" : ` ± ${Math.abs(h).toFixed(2)}`);
+const vcls = v => /^ahead/.test(v) ? "pos" : /^(losing|behind)/.test(v) ? "neg" : "muted";
+let scoreBook = null;
+// Live board only: also show the test sessions before the experiment's first day (display only).
+// null: the server's default (shown until the start date, hidden from then on); else the viewer's choice.
+let scoreAll = (() => { try { const v = localStorage.getItem("scoreAll"); return v === "1" ? true : v === "0" ? false : null; } catch { return null; } })();
+const scoreUrl = src => `/api/scoreboard?source=${encodeURIComponent(src)}` + (src === "live" && scoreAll !== null ? `&all_days=${scoreAll ? 1 : 0}` : "");
+// Only the latest request renders, so a slow refresh can't undo a toggle.
+let scoreSeq = 0;
+function loadScore(src) {
+  const n = ++scoreSeq;
+  return api(scoreUrl(src)).catch(e => ({ error: e.message })).then(sb => {
+    if (n === scoreSeq) try { renderScore(sb); } catch (e) { scoreError(e.message); }
+  });
+}
+
+function scopePick(sb) {
+  const start = sb.experiment_start;
+  if (!start) { $("scopepick").innerHTML = ""; return; }
+  // The book being shown (renderScore picks it next, from the same rule), not every book added up.
+  const names = Object.keys(sb.books || {}), bk = sb.books?.[names.includes(scoreBook) ? scoreBook : names.includes("paper") ? "paper" : names[0]];
+  const hidden = bk?.hidden_before_start || 0, on = !!sb.all_days;
+  $("scopepick").innerHTML = `<div class="segs"><button data-a="0" class="${on ? "" : "on"}">from ${esc(start)}</button>` +
+    `<button data-a="1" class="${on ? "on" : ""}">include pre-start tests</button></div>` +
+    (on ? `<p class="note">Showing the plumbing-test sessions before ${esc(start)} as well. They count towards nothing: the go-live gate and promotion ignore them.</p>`
+      : hidden ? `<p class="note">${hidden} closed trade${hidden === 1 ? "" : "s"} before ${esc(start)} ${hidden === 1 ? "is" : "are"} hidden (pre-launch tests), so the counts below leave ${hidden === 1 ? "it" : "them"} out. They count towards nothing; choose <i>include pre-start tests</i> to see them.</p>` : "");
+  $("scopepick").querySelectorAll("button[data-a]").forEach(b => b.onclick = () => {
+    scoreAll = b.dataset.a === "1";
+    try { localStorage.setItem("scoreAll", scoreAll ? "1" : "0"); } catch {}
+    loadScore($("source").value || "live");
+  });
+}
+
+function scoreError(msg) {
+  $("famtiles").innerHTML = `<div class="stat alert"><span class="l">scoreboard</span><span class="d">It couldn't load: ${esc(msg)}</span></div>`;
+  for (const id of ["bookpick", "h2h", "racerange", "race", "racelegend", "scoretable"]) $(id).innerHTML = "";
+}
+
+function renderScore(sb) {
+  if (sb.error) return scoreError(sb.error);
+  scopePick(sb);
+  const names = Object.keys(sb.books);
+  if (!names.length) {
+    $("famtiles").innerHTML = '<div class="stat"><span class="l">no trades yet</span><span class="d">The board fills in as rules close trades.</span></div>';
+    for (const id of ["bookpick", "h2h", "racerange", "race", "racelegend", "scoretable"]) $(id).innerHTML = ""; return;
+  }
+  if (!names.includes(scoreBook)) scoreBook = names.includes("paper") ? "paper" : names[0];
+  const b = sb.books[scoreBook];
+  $("slipnote").textContent = b.slippage_per_side_pct ? "charged here, as the go-live gate does" : "already in the simulated fills";
+  $("bookpick").innerHTML = (names.length > 1 ? `<div class="segs">${names.map(n => `<button data-b="${esc(n)}" class="${n === scoreBook ? "on" : ""}">${esc(n)}</button>`).join("")}</div>` : "") +
+    (scoreBook === "sim" && sb.source === "live" ? '<p class="note">Sim rules, each trading its own simulated $250 account on the live prices. Fills are simulated (the bar close with slippage; stops and targets at their own level), so they flatter a strategy a little, and <b>none of this counts towards going live</b>: a rule has to trade on paper for that.</p>' : "");
+  $("bookpick").querySelectorAll("button[data-b]").forEach(x => x.onclick = () => { scoreBook = x.dataset.b; renderScore(sb); });
+  $("famtiles").innerHTML = b.families.map(f => `<div class="stat family ${esc(f.family)}"><span class="l">${famBadge(f.family)} ${f.classifiers} rule${f.classifiers === 1 ? "" : "s"} · ${f.n} trades</span>` +
+    `<span class="n ci ${cls(f.mean_pct)}" title="average per trade after slippage, with 95% interval">${pp(f.mean_pct)}<small> ± ${f.ci_pct == null || !isFinite(f.ci_pct) ? "–" : Math.abs(f.ci_pct).toFixed(2)}</small></span>` +
+    `<span class="d">per trade · ${f.win_rate == null ? "–" : Math.round(f.win_rate * 100) + "% winners"} · <b class="${cls(f.net_usd)}">${f.net_usd >= 0 ? "+" : "−"}$${fmt(Math.abs(f.net_usd))}</b></span>` +
+    `<span class="verdict ${vcls(f.verdict)}">${esc(f.verdict)}</span></div>`).join("") || '<div class="stat"><span class="d">No trades yet.</span></div>';
+  const h2h = (label, c) => c ? `<div><span>${label}</span><span><b class="${cls(c.diff_pct)}">${ci(c.diff_pct, c.ci_pct)}</b> per trade</span><span class="verdict ${vcls(c.verdict)}">${esc(c.verdict)}</span></div>` : "";
+  $("h2h").innerHTML = (h2h(`${famBadge("novel")} vs ${famBadge("conventional")}`, b.novel_vs_conventional) + h2h(`${famBadge("novel")} vs ${famBadge("control")}`, b.novel_vs_control))
+    || '<p class="muted">Head-to-head comparisons appear once both sides have at least 2 closed trades.</p>';
+  race(b);
+  $("scoretable").innerHTML = table([
+    { h: "rule", raw: 1, v: r => `<b>${ruleLink(r.id)}</b> ${famBadge(r.family)}` },
+    { h: "", raw: 1, v: r => `<span class="pill ${r.active ? "" : "retired"}">${r.active ? "in use" : "removed"}</span>` },
+    { h: "trades", v: r => r.n, num: 1 },
+    { h: "winners", v: r => r.win_rate == null ? "–" : Math.round(r.win_rate * 100) + "%", num: 1 },
+    { h: "avg per trade ± 95%", v: r => ci(r.mean_pct, r.ci_pct), num: 1, cls: r => cls(r.mean_pct) },
+    { h: "total $", v: r => (r.net_usd >= 0 ? "+" : "−") + fmt(Math.abs(r.net_usd)), num: 1, cls: r => cls(r.net_usd) },
+    { h: "promotion", v: r => r.promotion ? `${r.promotion.n}/${r.promotion.of}` : "–", num: 1 },
+    { h: "verdict", raw: 1, v: r => `<span class="verdict ${vcls(r.verdict)}">${esc(r.verdict)}</span>` },
+  ], b.classifiers, r => r.active ? "" : "retired");
+  $("scoretable").querySelectorAll("tbody tr").forEach((tr, i) => {
+    tr.dataset.line = b.classifiers[i].id;
+    tr.onmouseenter = () => focusLine(b.classifiers[i].id); tr.onmouseleave = () => focusLine(null);
+  });
+  LAST_SCORE = b; if (RULES) renderRules();
+}
+
+// Colour says the family; within a family each rule gets its own shade, dash and end marker,
+// so lines of one colour stay tellable apart without a longer legend.
+const SHADE = f => [`var(--${f})`, `color-mix(in oklab, var(--${f}) 55%, var(--ink))`, `color-mix(in oklab, var(--${f}) 50%, var(--panel))`];
+const DASH = ["", "7 3", "2 3", "10 3 2 3"];
+function marker(k, cx, cy, col, r = 4) {
+  const s = k % 4;
+  if (s === 0) return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${col}"/>`;
+  if (s === 1) return `<rect x="${cx - r + .5}" y="${cy - r + .5}" width="${2 * r - 1}" height="${2 * r - 1}" fill="${col}"/>`;
+  if (s === 2) return `<path d="M${cx},${cy - r - 1} L${cx + r + 1},${cy + r} L${cx - r - 1},${cy + r} Z" fill="${col}"/>`;
+  return `<path d="M${cx},${cy - r - 1} L${cx + r + 1},${cy} L${cx},${cy + r + 1} L${cx - r - 1},${cy} Z" fill="${col}"/>`;
+}
+let LAST_SCORE = null, pinnedLine = null;
+function focusLine(id) {
+  const box = $("race"), has = x => x && [...box.querySelectorAll("g.ln")].some(g => g.dataset.id === x);
+  if (pinnedLine && !has(pinnedLine)) pinnedLine = null;
+  id = has(id) ? id : pinnedLine;
+  box.classList.toggle("focus", !!id);
+  box.querySelectorAll("g.ln").forEach(g => g.classList.toggle("on", g.dataset.id === id));
+  $("scoretable").querySelectorAll("tr[data-line]").forEach(tr => tr.classList.toggle("on", tr.dataset.line === id));
+}
+function lineStyle(rows) {
+  const seen = {}, style = {};
+  for (const r of rows) {
+    const f = r.family === "unlabelled" ? "control" : r.family, k = seen[f] = (seen[f] ?? -1) + 1;
+    style[r.id] = { k, col: SHADE(f)[k % 3], dash: f === "control" && k === 0 ? "5 4" : DASH[k % 4] };
+  }
+  return style;
+}
+
+function race(b) {
+  const traded = b.classifiers.filter(r => r.n);
+  if (b.days.length < 1 || !traded.length) {
+    for (const id of ["racerange", "race", "racelegend"]) $(id).innerHTML = "";
+    $("racesub").textContent = "running P&L per rule, after slippage"; return;
+  }
+  rangeSegs($("racerange"), raceRange, k => { raceRange = k; race(b); });
+  const [, , span, what] = rangeOf(raceRange);
+  const { days, rows, quiet } = raceWindow(b.days, traded, span);
+  $("racesub").textContent = `running P&L per rule after slippage · ${raceSpan(raceRange, days)}`;
+  const quietNote = quiet ? ` · ${quiet} rule${quiet === 1 ? "" : "s"} with no P&L in this range not shown` : "";
+  if (!rows.length) {
+    $("race").innerHTML = `<p class="muted">No closed trades in ${what} (to ${esc(b.days[b.days.length - 1])}). Pick a longer range.</p>`;
+    $("racelegend").innerHTML = ""; focusLine(null); return;
+  }
+  const W = 640, H = 250, P = 56, R = 160;
+  const pts = rows.flatMap(r => r.curve);
+  let lo = Math.min(0, ...pts), hi = Math.max(0, ...pts); if (hi - lo < 1e-3) { hi += 0.05; lo -= 0.05; }
+  const x = i => P + (W - P - R) * (days.length === 1 ? 1 : i / (days.length - 1));
+  const y = v => 10 + (H - 10 - 24) * (hi - v) / (hi - lo);
+  const unit = b.units === "$" ? "$" : "%";
+  const style = lineStyle(rows);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Running profit or loss per rule">`;
+  for (const t of [lo, (lo + hi) / 2, hi]) svg += `<line x1="${P}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--rule)"/><text x="${P - 6}" y="${y(t) + 4}" text-anchor="end">${t >= 0 ? "+" : ""}${t.toFixed(2)}${unit}</text>`;
+  svg += `<line x1="${P}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}" stroke="var(--muted)" stroke-dasharray="3 3"/>`;
+  svg += `<line x1="${P}" x2="${W - R}" y1="${H - 24}" y2="${H - 24}" stroke="var(--ink2)"/>`;
+  svg += (days.length > 1 ? `<text x="${P}" y="${H - 6}">${esc(days[0])}</text>` : "") + `<text x="${W - R}" y="${H - 6}" text-anchor="end">${esc(days[days.length - 1])}</text>`;
+  // End labels are spread so they never overlap; each gets the rule's marker.
+  const labels = rows.map(r => ({ id: r.id, y: y(r.curve[r.curve.length - 1]) })).sort((a, c) => a.y - c.y);
+  for (let i = 1; i < labels.length; i++) labels[i].y = Math.max(labels[i].y, labels[i - 1].y + 15);
+  const labelY = Object.fromEntries(labels.map(l => [l.id, l.y]));
+  // Draw control first so the strategist's lines sit on top.
+  const order = [...rows].sort((a, c) => (a.family === "control") - (c.family === "control")).reverse();
+  for (const r of order) {
+    const { k, col, dash } = style[r.id], end = r.curve.length - 1, ex = x(end), ey = y(r.curve[end]), ly = labelY[r.id];
+    const p = r.curve.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    svg += `<g class="ln${r.active ? "" : " old"}" data-id="${esc(r.id)}">` +
+      (days.length === 1 ? "" : `<polyline fill="none" stroke="${col}" stroke-width="${r.active ? 2.2 : 1.4}"${dash ? ` stroke-dasharray="${dash}"` : ""} stroke-linejoin="round" points="${p}"/>`) +
+      `<polyline class="hit" fill="none" stroke="transparent" stroke-width="12" points="${p}"/>` +
+      marker(k, ex, ey, col) +
+      (Math.abs(ly - ey) > 2 ? `<line x1="${ex + 5}" y1="${ey}" x2="${W - R + 4}" y2="${ly}" stroke="${col}" stroke-width=".8" opacity=".6"/>` : "") +
+      marker(k, W - R + 12, ly, col, 3.5) +
+      `<text x="${W - R + 21}" y="${ly + 4}" style="fill:${col}">${esc(r.id)}</text></g>`;
+  }
+  svg += "</svg>";
+  $("race").innerHTML = svg;
+  $("race").querySelectorAll("g.ln").forEach(g => {
+    g.onmouseenter = () => focusLine(g.dataset.id); g.onmouseleave = () => focusLine(null);
+    g.onclick = () => { pinnedLine = pinnedLine === g.dataset.id ? null : g.dataset.id; focusLine(null); };
+  });
+  $("racelegend").innerHTML = ["novel", "conventional", "control"].map(f => `<span><i style="background:var(--${f})"></i>${f}</span>`).join("") +
+    `<span class="muted">${esc(b.units)}, counted from the start of the range · faded = removed${quietNote} · hover or tap a line, or hover a table row, to pick it out</span>`;
+  focusLine(null);
+}
+
+// ---- Rules page: each classifier's settings, written out for a person ----
+let RULES = null;
+async function loadRules() {
+  try { RULES = await api("/api/rules"); } catch (e) { RULES = { classifiers: [], fetchError: e.message }; }
+  renderRules();
+}
+let rulesKey = null;
+const OPS = { ">": ">", ">=": "≥", "<": "<", "<=": "≤" };
+const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+// A probe asks Jev and logs the answer but never places an order.
+function modeLabel(m) { return m === "live" ? "real money" : m === "probe" ? "probe (no orders)" : m === "sim" ? "sim (simulated account)" : "paper only"; }
+function question(q, keys) {
+  return `<p>${esc(q.instructions)} <span class="muted">Acts when Jev is at least <b>${Math.round(q.threshold * 100)}%</b> sure.</span></p><dl class="crit">` +
+    Object.entries(q.criteria).map(([k, v]) => `<dt><span class="pill${k === keys ? " holding" : ""}">${esc(k)}</span></dt><dd>${esc(v)}</dd>`).join("") + "</dl>";
+}
+function money(c) {
+  const rows = [
+    ["size", c.risk_pct ? `sized so a stop-out loses about ${c.risk_pct}% of the account, at most ${Math.round(c.size_fraction * 100)}%` : `${Math.round(c.size_fraction * 100)}% of the account per position`],
+    ["stop-loss", `${c.stop_pct}% below entry` + (c.stop_atr_mult ? `, or ${c.stop_atr_mult}× the recent average range if that's closer` : "")],
+    ["target", `${c.target_pct}% above entry`],
+    c.trail_pct && ["trailing stop", `follows the highest price since entry, ${c.trail_pct}% below it; only ever rises`],
+    c.scale_out && ["scale out", `sells ${Math.round(c.scale_out.fraction * 100)}% at +${c.scale_out.at_pct}%` + (c.scale_out.stop_to_breakeven ? ", then moves the stop to the entry price" : "")],
+    c.max_hold_min && ["time stop", `sells after ${c.max_hold_min} minutes`],
+    ["entry order", c.entry_order && c.entry_order.type === "limit" ? `limit ${c.entry_order.offset_pct}% below the last price, cancelled after ${c.entry_order.expire_min} min` : "market order"],
+    ["per stock per day", `${plural(c.max_trades, "trade")}; after a trade it ${c.after_exit === "rearm" ? "looks again" : "stops for the day"}`],
+  ].filter(Boolean);
+  return `<dl class="kv plain">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`;
+}
+function renderRules() {
+  if (!RULES) return;
+  const score = Object.fromEntries(((LAST_SCORE || {}).classifiers || []).map(r => [r.id, r]));
+  // Rebuild only when something shown changed, so an open card keeps its selection and focus.
+  const key = JSON.stringify([RULES, score, !!OVERVIEW]);
+  if (key === rulesKey) return;
+  rulesKey = key;
+  const list = RULES.classifiers;
+  const probs = RULES.problems || [];
+  const head = RULES.fetchError ? `<div class="stat alert"><span class="l">rules</span><span class="d">The dashboard couldn't load the rules: ${esc(RULES.fetchError)}. It tries again with the next refresh.</span></div>`
+    : RULES.error ? `<div class="stat alert"><span class="l">rules</span><span class="d">${esc(RULES.error)}. While the file can't be read, the runner trades nothing.</span></div>`
+    : (probs.length ? `<div class="stat alert"><span class="l">the runner will trade nothing</span><span class="d">It checks this file at each session start and rejects all of it while any of these stand:</span><ul class="trig">${probs.map(p => `<li>${esc(p)}</li>`).join("")}</ul></div>` : "") +
+      `<p class="note" style="margin:0">From <code>state/classifiers.yaml</code>${RULES.date ? `, written for the session on <b>${esc(RULES.date)}</b>` : ""}. The runner reloads it at each session start. Times are New York time.</p>`;
+  const card = c => {
+    const fam = c.control ? "control" : (c.family || "unlabelled"), s = score[c.id];
+    const stat = s ? `<span class="rstat">${s.n} trades · <b class="${cls(s.mean_pct)}">${ci(s.mean_pct, s.ci_pct)}</b> · <span class="${vcls(s.verdict)}">${esc(s.verdict)}</span></span>` : '<span class="rstat muted">no closed trades yet</span>';
+    if (c.invalid) return `<details class="fold rule" id="rule-${esc(c.id)}"><summary><span class="rhead"><b>${esc(c.id)}</b> <span class="pill neg">invalid</span></span></summary><div class="inner"><p class="neg">${esc(c.invalid)}</p><p class="note">While any rule is invalid the runner rejects the whole file and trades nothing that session. The raw file is under Strategist's notes › Rule settings.</p></div></details>`;
+    return `<details class="fold rule" id="rule-${esc(c.id)}"><summary><span class="rhead"><b>${esc(c.id)}</b> ${famBadge(fam)}
+        <span class="pill">${c.enabled === false ? "switched off" : modeLabel(c.mode)}</span>
+        <span class="rsyms">${c.symbols.map(x => `<span class="sym">${esc(x)}</span>`).join(" ")}</span></span>${stat}</summary>
+      <div class="inner rbody">
+        <div class="rwhy"><h3>Why it exists</h3><p>${esc(c.context) || '<span class="muted">No rationale written.</span>'}</p></div>
+        <div><h3>When it looks</h3><p><b>${esc(c.window[0])}–${esc(c.window[1])}</b>, asking Jev at most every ${plural(c.cadence_min, "minute")} per stock` +
+          (c.trigger.length ? `, and only while all of these hold:</p><ul class="trig">${c.trigger.map(t => `<li><code>${esc(t.feature)} ${OPS[t.op] || esc(t.op)} ${esc(t.value)}</code></li>`).join("")}</ul>` : ".</p>") +
+          `<h3>What Jev sees</h3><p class="feats">${c.features.map(f => `<code>${esc(f)}</code>`).join(" ")}</p></div>
+        <div><h3>${c.mode === "probe" ? "Question (logged, never traded)" : "Buying"}</h3>${question(c.entry, "ENTER")}</div>` +
+        (c.mode === "probe" ? "" : `<div><h3>Holding</h3>${question(c.exit, "EXIT")}</div>
+        <div class="rmoney"><h3>Money and exits</h3>${money(c)}</div>`) + `
+      </div></details>`;
+  };
+  const removed = Object.values(score).filter(r => !list.some(c => c.id === r.id));
+  const gh = OVERVIEW && OVERVIEW.repo ? `https://github.com/${OVERVIEW.repo}/commits/strategist/state/classifiers.yaml` : null;
+  const open = new Set([...$("rules").querySelectorAll("details[open]")].map(d => d.id));
+  $("rules").innerHTML = head + list.map(card).join("") +
+    (removed.length ? `<section><h2>Removed <span>on the scoreboard, but no longer in the file</span></h2><p class="note" style="margin:0">${removed.map(r => `<b>${esc(r.id)}</b> ${famBadge(r.family)}`).join(" · ")}. Their settings are in the file's history${gh ? `: <a href="${esc(gh)}" target="_blank" rel="noopener noreferrer">classifiers.yaml commits ↗</a>` : ""}.</p></section>` : "");
+  open.forEach(id => { const d = $(id); if (d) d.open = true; });
+}
+// Any rule name on the page opens that rule's card.
+document.addEventListener("click", e => {
+  const a = e.target.closest("[data-rule]");
+  if (!a) return;
+  e.preventDefault();
+  showPage("rules");
+  const d = $("rule-" + a.dataset.rule);
+  if (d) { d.open = true; d.scrollIntoView({ block: "start" }); }
+});
+
+function renderHealth(d, h) {
+  const age = d.status_age_s, st = d.status || {};
+  const errs = st.decision_errors;
+  badge("n-sys", h.decision_errors > 0 ? h.decision_errors : 0);  // the live runner's, whatever is being viewed
+  const items = [
+    ["money in use", h.mode === "live" ? '<span class="neg">LIVE (real money)</span>' : "paper (practice)"],
+    ["switch to real money", esc(h.golive)],
+    ["last runner update", age == null ? "none yet" : `${age < 120 ? age + " s" : Math.round(age / 60) + " min"} ago${age > 180 ? ' <span class="muted">(fine if market closed)</span>' : ""}`],
+    ["market time (NY)", esc((st.market_time || "–").replace("T", " ").slice(0, 16))],
+    ["Jev decisions today", esc(st.decision_calls ?? "–")],
+    ["Jev cost today", "$" + fmt(st.decision_cost_usd, 4)],
+    ["Jev errors", errs > 0 ? `<span class="neg">${errs}</span>` : esc(errs ?? "–")],
+    ...(st.probe_errors != null ? [["probe errors (no effect on trading)", st.probe_errors > 0 ? `<span class="warn">${esc(st.probe_errors)}</span>` : "0"]] : []),
+    ["strategist last ran", esc(h.strategist_last_run ? h.strategist_last_run.replace("T", " ") : "not yet")],
+    ["disk free", `${esc(h.disk_free_gb)} GB`],
+  ];
+  $("health").innerHTML = items.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("");
+}
+
+// Links come from the server (one list in dashboard.py); the state line refreshes with health.
+let OVERVIEW = null;
+async function loadOverview() {
+  OVERVIEW = await api("/api/overview");
+  $("links").innerHTML = OVERVIEW.links.map(g => `<div><h3>${esc(g.title)}</h3>${g.hint ? `<p>${esc(g.hint)}</p>` : ""}` +
+    g.links.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.label)} ↗<span>${esc(l.hint)}</span></a>`).join("") + "</div>").join("");
+  const gh = OVERVIEW.repo ? `https://github.com/${OVERVIEW.repo}` : null;
+  if (gh) {
+    $("readme").innerHTML = `<a href="${esc(gh)}/blob/main/README.md" target="_blank" rel="noopener noreferrer">README.md</a>`;
+  }
+}
+function renderOverviewState(h) {
+  if (!OVERVIEW) return;
+  const d = OVERVIEW.deployed, gh = OVERVIEW.repo ? `https://github.com/${OVERVIEW.repo}` : null;
+  const code = d ? `<span class="n">${esc(d.short)}</span><span class="d">${esc(d.date)} · ${esc(d.subject)}</span>` +
+      (gh ? `<span class="d"><a href="${esc(gh)}/compare/${esc(d.sha)}...main" target="_blank" rel="noopener noreferrer">anything on main not deployed yet?</a></span>` : "")
+    : '<span class="n">–</span><span class="d">couldn\'t read the deployed commit</span>';
+  $("ovstate").innerHTML =
+    `<div class="stat"><span class="l">money in use</span><span class="n ${h.mode === "live" ? "neg" : ""}">${h.mode === "live" ? "LIVE" : "paper"}</span><span class="d">${h.mode === "live" ? "real money" : "practice money"}</span></div>` +
+    `<div class="stat"><span class="l">switch to real money</span><span class="n small">${esc(h.golive)}</span><span class="d">checked by the runner after each session</span></div>` +
+    `<div class="stat"><span class="l" title="The version of the code the runner and this page are running">code running</span>${code}</div>` +
+    // The tab's red count is this number: show it here, not only on Today.
+    `<div class="stat"><span class="l">Jev errors today</span><span class="n ${h.decision_errors > 0 ? "neg" : ""}">${esc(h.decision_errors ?? "–")}</span>` +
+    `<span class="d">${h.decision_errors > 0 ? "failed calls: no decision was made, and new decisions pause for a few minutes after each (details on Today and in the runner log)" : "decision calls that failed"}</span></div>`;
+}
+
+let docs = null, docSel = "strategy";
+async function renderDocs() {
+  docs = await api("/api/docs");
+  const btn = ([k, label], mono) => `<button data-k="${esc(k)}" class="${k === docSel ? "on" : ""}${mono ? " mono" : ""}">${esc(label)}</button>`;
+  const groups = [["The strategist's state", [["strategy", "Current strategy"], ["classifiers", "Rule settings (raw file)"], ["watchlist", "Ideas not yet tried"]], false],
+    ...Object.entries(docs.journal).filter(([, n]) => n.length).map(([k, names]) =>
+      [`${k} journal`, names.slice(0, 6).map(n => [`j:${k}/${n}`, n.replace(".md", "")]), true])];
+  $("doctabs").innerHTML = groups.map(([title, items, mono]) => `<div><h3>${esc(title)}</h3>${items.map(i => btn(i, mono)).join("")}</div>`).join("") +
+    (Object.values(docs.journal).every(n => !n.length) ? '<div><h3>Journal</h3><p class="note">No entries yet. The first daily note is written after the first session.</p></div>' : "");
+  $("doctabs").querySelectorAll("button").forEach(b => b.onclick = () => { docSel = b.dataset.k; renderDocs(); });
+  if (docSel.startsWith("j:")) {
+    const [kind, name] = docSel.slice(2).split("/");
+    const j = await api(`/api/journal/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`);
+    $("doc").innerHTML = md(j.text);
+  } else if (docSel === "classifiers") {
+    $("doc").innerHTML = docs.classifiers ? `<h1>Rule settings</h1><pre>${esc(docs.classifiers)}</pre>` : md(null);
+  } else {
+    $("doc").innerHTML = md(docs[docSel]);
+  }
+}
+
+function banner(src, d, h) {
+  const b = $("banner");
+  $("clock").innerHTML = marketClock();
+  // Live-system panels mean nothing inside a finished backtest.
+  for (const id of ["sec-positions", "sec-glance"]) $(id).hidden = src !== "live";
+  $("sec-backtest").hidden = src === "live";
+  if (src !== "live") {
+    const r = SOURCES.replays.find(x => x.id === src) || {};
+    b.className = "banner replay";
+    b.innerHTML = `<span class="tag">BACKTEST</span><span>A replay of <b>${esc(r.start || "?")} → ${esc(r.end || "?")}</b> using past market data and a pretend account. ` +
+      `No real orders were placed. Rules tested: ${esc((r.classifiers || []).join(", ") || "?")}. ` +
+      (r.pnl != null ? `Result: <b class="${cls(r.pnl)}">${r.pnl >= 0 ? "+" : "−"}$${fmt(Math.abs(r.pnl))}</b> on $250.` : "Still running…") + "</span>";
+    return;
+  }
+  const live = (h && h.mode) === "live";
+  b.className = "banner " + (live ? "live" : "paper");
+  const st = d.status || {};
+  const runner = st.phase === "waiting for open" ? "The runner is waiting for the open."
+    : d.status_age_s != null && d.status_age_s < 180 ? "The runner is trading now."
+    : "The runner isn't trading right now (it starts shortly before each session).";
+  b.innerHTML = `<span class="tag">${live ? "LIVE MONEY" : "PAPER"}</span><span>Today's session on the ${live ? "<b>real-money</b>" : "<b>practice (paper)</b>"} account. ` +
+    `${runner} Switch to real money: <b>${esc((h && h.golive) || "?")}</b>.</span>`;
+}
+
+async function refresh() {
+  try {
+    const src = $("source").value || "live";
+    // The scoreboard loads on its own, so a failure there never blanks positions, rules or STOP.
+    loadScore(src);
+    const [d, h] = await Promise.all([api(`/api/data?source=${encodeURIComponent(src)}`), api("/api/health")]);
+    render(d);
+    // Probe panels load and fail on their own, like the scoreboard: never at the cost of the rest.
+    try { renderProbeToday(d.status || {}); } catch (e) { $("probetoday").innerHTML = `<p class="neg">Couldn't show today's probes: ${esc(e.message)}</p>`; }
+    api("/api/probes").catch(e => ({ error: e.message })).then(r => {
+      try { renderProbeResults(r, src); } catch (e) { $("proberesults").innerHTML = `<p class="neg">Couldn't show the probe report: ${esc(e.message)}</p>`; }
+    });
+    banner(src, d, h);
+    renderHealth(d, h);
+    renderOverviewState(h);
+    loadRules();
+  } catch (e) { $("banner").className = "banner live"; $("banner").innerHTML = `<span class="tag">ERROR</span><span class="neg">${esc(e.message)}</span>`; }
+}
+
+async function init() {
+  SOURCES = await api("/api/sources");
+  const sources = SOURCES.sources;
+  const saved = new URLSearchParams(location.search).get("source")
+    || (() => { try { return localStorage.getItem("source"); } catch { return null; } })();
+  const day = s => s ? new Date(s + "T12:00").toLocaleDateString([], { day: "numeric", month: "short" }) : "?";
+  const replayLabel = r => `${day(r.start)}–${day(r.end)} · ${r.classifiers.join(", ") || r.id} · ` +
+    (r.pnl == null ? "running" : `${r.pnl >= 0 ? "+" : "−"}$${fmt(Math.abs(r.pnl))}`);
+  $("source").innerHTML =
+    `<optgroup label="Trading account"><option value="live">Today's session (${SOURCES.mode === "live" ? "real money" : "paper money"})</option></optgroup>` +
+    (SOURCES.replays.length ? `<optgroup label="Backtests on past data (pretend money)">` +
+      SOURCES.replays.map(r => `<option value="${esc(r.id)}">${esc(replayLabel(r))}</option>`).join("") + "</optgroup>" : "");
+  if (saved && sources.includes(saved)) $("source").value = saved;
+  $("source").onchange = () => { try { localStorage.setItem("source", $("source").value); } catch {} perfRange = null; refresh(); };
+  await loadOverview().catch(e => { $("links").innerHTML = `<p class="neg">${esc(e.message)}</p>`; });
+  await refresh();
+  renderDocs().catch(() => {});
+  setInterval(refresh, 15000);
+}
+
+let armTimer = null;
+$("stop").onclick = async () => {
+  const btn = $("stop");
+  if (!btn.classList.contains("armed")) {
+    btn.classList.add("armed"); btn.textContent = "CONFIRM STOP";
+    armTimer = setTimeout(() => { btn.classList.remove("armed"); btn.textContent = "STOP"; }, 5000);
+    return;
+  }
+  clearTimeout(armTimer);
+  const typed = prompt('Flatten all positions and halt trading for today.\nType STOP to confirm:');
+  btn.classList.remove("armed"); btn.textContent = "STOP";
+  if (typed !== "STOP") return;
+  try {
+    const r = await api("/api/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm: "STOP" }) });
+    alert("STOP sent: " + r.result);
+  } catch (e) { alert("STOP failed: " + e.message); }
+  refresh();
+};
+
+$("hold").onclick = async () => {
+  const typed = prompt('Veto automatic go-live: stay on paper until `trader release-live`.\nType HOLD to confirm:');
+  if (typed !== "HOLD") return;
+  try {
+    const r = await api("/api/hold-live", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm: "HOLD" }) });
+    alert("Go-live " + r.result);
+  } catch (e) { alert("HOLD LIVE failed: " + e.message); }
+  refresh();
+};
+
+init();
+</script>
+</body>
+</html>

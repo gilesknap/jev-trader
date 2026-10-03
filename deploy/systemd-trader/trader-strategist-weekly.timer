@@ -1,0 +1,10 @@
+# GENERATED from deploy/templates/trader-strategist.timer and config.yaml by `trader config render-deploy`: edit those, not this file.
+[Unit]
+Description=Strategist weekly run (the script self-gates on the market clock and runs once a day)
+
+[Timer]
+OnCalendar=Sat 10:00 Europe/London
+Unit=trader-strategist@weekly.service
+
+[Install]
+WantedBy=timers.target

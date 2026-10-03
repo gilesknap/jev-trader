@@ -1,0 +1,33 @@
+# Tradeable universe: liquid US ETFs and mega-caps where IEX quotes track the NBBO.
+# Max 30 (free IEX websocket limit). Changes go via PR to main.
+tickers:
+  - SPY
+  - QQQ
+  - IWM
+  - DIA
+  - XLF
+  - XLK
+  - XLE
+  - XLV
+  - XLI
+  - XLY
+  - SMH
+  - TLT
+  - GLD
+  - AAPL
+  - MSFT
+  - NVDA
+  - AMZN
+  - GOOGL
+  - META
+  - TSLA
+  - AMD
+  - AVGO
+  - JPM
+  - NFLX
+  - COST
+  - LLY
+  - UNH
+  - XOM
+  - BAC
+  - PLTR

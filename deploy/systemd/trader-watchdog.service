@@ -1,0 +1,9 @@
+[Unit]
+Description=Trader watchdog: stale runner / strategist alerts
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/trading/services.env
+WorkingDirectory=/srv/trading/main
+UMask=0027
+ExecStart=/usr/local/bin/uv run --frozen trader watchdog

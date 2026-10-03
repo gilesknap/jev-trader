@@ -1,0 +1,243 @@
+# PRE-LAUNCH PACK: plumbing tests to run on paper for 1-2 trading days before the experiment
+# starts (see SETUP.md, "Pre-launch"). Copy it to state/classifiers.yaml on the strategist
+# branch, set `date:` below to the first session it's for, and run `uv run trader validate`.
+# The runner drops every test_* rule on and after experiment.start_date, and `trader validate`
+# refuses them from that date; remove them before then anyway, and leave control_orb and
+# the probe running.
+# Times are US/Eastern. See CLAUDE.md for the schema.
+date: 2026-01-05   # placeholder: set to the session this file is written for
+classifiers:
+  # CONTROL: deliberately simple opening-range breakout. A benchmark to beat, not a hint.
+  # Do not edit or remove except to fix a bug; it runs in shadow permanently.
+  - id: control_orb
+    mode: shadow
+    control: true
+    symbols: [SPY, QQQ]
+    window: ["09:45", "15:00"]
+    cadence_min: 2
+    trigger:
+      - {feature: or15_break_pct, op: ">", value: 0.0}
+      - {feature: vwap_dist_pct, op: ">", value: 0.0}
+    features: [or15_break_pct, or15_width_pct, vwap_dist_pct, rel_volume_15m, ret_5m_pct, ret_since_open_pct, rsi_14, trend_slope_30m]
+    context: >-
+      Opening-range breakout on a broad index ETF. Long only. We want breakouts above the
+      first 15 minutes' high that are backed by volume and sustained momentum, and to avoid
+      false breakouts that immediately fade back into the range.
+    entry:
+      instructions: Should we open a long position now?
+      criteria:
+        ENTER: Price is holding above the opening range and VWAP with supportive volume and upward momentum; the breakout looks genuine.
+        WAIT: The breakout is marginal, unconfirmed or momentum is mixed; check again later.
+        STAND_DOWN: The session is choppy or the breakout has clearly failed; stop looking for today.
+      threshold: 0.65
+    exit:
+      instructions: We hold a long position from the breakout. Should we keep holding?
+      criteria:
+        HOLD: Momentum remains intact and price holds above VWAP and the opening-range high.
+        EXIT: Momentum has faded, price is slipping back toward the range, or the move looks exhausted.
+      threshold: 0.65
+    size_fraction: 0.2
+    max_trades: 1
+    after_exit: retire
+    stop_pct: 0.4
+    target_pct: 0.8
+
+  # ---------------------------------------------------------------------------------------
+  # PRE-LAUNCH PLUMBING TESTS. Not strategies.
+  # They exist only to push orders through every execution path before launch. Which trade
+  # row (trades.csv `reason`) or status note proves each path:
+  #   test_market_timestop  AAPL  market ENTER; `target` (0.1%) or `time stop` (10 min); rearm
+  #   test_jev_exit         MSFT  `classifier EXIT` (Jev decides the exit after 6 minutes)
+  #   test_limit_scaleout   XLF   limit fill; `scale out` (sell_part); `server stop` or `stop (raised)`
+  #                               at breakeven or on the trail
+  #   test_limit_expiry     XLI   note "limit expired unfilled" and no trade row
+  #   test_hold_to_close    XLV   `eod flatten` 15 minutes before the close
+  # Their trades fall before the experiment start date, so the go-live gate and the live
+  # scoreboard ignore them. REMOVE ALL test_* BEFORE THE START DATE.
+  # They use symbols control_orb doesn't, so they never block it.
+  - id: test_market_timestop
+    mode: shadow
+    family: conventional
+    enabled: true
+    symbols: [AAPL]
+    window: ["09:50", "15:00"]
+    cadence_min: 5
+    trigger: []
+    features: [ret_5m_pct, vwap_dist_pct]
+    context: >-
+      PLUMBING TEST, not a strategy. We deliberately buy whenever asked, to exercise
+      market entries, a target fill, the time stop and re-arming. Always choose ENTER.
+    entry:
+      instructions: This is a system test. Should we open a long position now?
+      criteria:
+        ENTER: This is a plumbing test; entering is always correct when asked.
+        WAIT: Never appropriate in this test.
+      threshold: 0.5
+    exit:
+      instructions: This is a system test. We hold a long. Keep holding?
+      criteria:
+        HOLD: This is a plumbing test; the engine's time stop will close the position, so always hold.
+        EXIT: Never appropriate in this test.
+      threshold: 0.9
+    size_fraction: 0.08
+    max_trades: 2
+    after_exit: rearm
+    stop_pct: 1.0
+    target_pct: 0.1   # tiny target so a target fill happens (or the 10-minute time stop)
+    max_hold_min: 10
+
+  - id: test_jev_exit
+    mode: shadow
+    family: conventional
+    enabled: true
+    symbols: [MSFT]
+    window: ["09:50", "15:00"]
+    cadence_min: 2
+    trigger: []
+    features: [ret_5m_pct, vwap_dist_pct]
+    context: >-
+      PLUMBING TEST, not a strategy. We deliberately buy whenever asked, then let the
+      decision model close the position, to exercise the model-driven exit path.
+    entry:
+      instructions: This is a system test. Should we open a long position now?
+      criteria:
+        ENTER: This is a plumbing test; entering is always correct when asked.
+        WAIT: Never appropriate in this test.
+      threshold: 0.5
+    exit:
+      instructions: This is a system test. We hold a long. Keep holding?
+      criteria:
+        HOLD: The position has been held for fewer than 6 minutes (see position.minutes_held).
+        EXIT: The position has been held for 6 minutes or more (see position.minutes_held).
+      threshold: 0.5   # Jev scores even "always" criteria at ~45-57%; 0.6 would leave this to the time stop
+    size_fraction: 0.08
+    max_trades: 2
+    after_exit: rearm
+    stop_pct: 1.0
+    target_pct: 2.0
+    max_hold_min: 30
+
+  - id: test_limit_scaleout
+    mode: shadow
+    family: conventional
+    enabled: true
+    symbols: [XLF]
+    window: ["09:50", "15:00"]
+    cadence_min: 3
+    trigger: []
+    features: [ret_5m_pct, vwap_dist_pct]
+    context: >-
+      PLUMBING TEST, not a strategy. We deliberately try to buy with a resting limit order,
+      to exercise limit fills and expiry, partial scale-out, breakeven stops and the trailing stop.
+    entry:
+      instructions: This is a system test. Should we open a long position now?
+      criteria:
+        ENTER: This is a plumbing test; entering is always correct when asked.
+        WAIT: Never appropriate in this test.
+      threshold: 0.5
+    exit:
+      instructions: This is a system test. We hold a long. Keep holding?
+      criteria:
+        HOLD: This is a plumbing test; the engine's stops will close the position, so always hold.
+        EXIT: Never appropriate in this test.
+      threshold: 0.9
+    size_fraction: 0.08
+    max_trades: 2
+    after_exit: rearm
+    stop_pct: 0.3
+    target_pct: 0.6
+    trail_pct: 0.2
+    entry_order: {type: limit, offset_pct: 0.02, expire_min: 5}
+    scale_out: {at_pct: 0.1, fraction: 0.5, stop_to_breakeven: true}
+
+  # A limit far below the price that should expire unfilled (a non-fill isn't a trade). Every 20 minutes until 11:00, so a handful of placements and expiries.
+  - id: test_limit_expiry
+    mode: shadow
+    family: conventional
+    enabled: true
+    symbols: [XLI]
+    window: ["09:50", "11:00"]
+    cadence_min: 20
+    trigger: []
+    features: [ret_5m_pct, vwap_dist_pct]
+    context: >-
+      PLUMBING TEST, not a strategy. We deliberately place a limit buy far below the price
+      so that it expires unfilled, to exercise limit expiry and re-asking. Always choose ENTER.
+    entry:
+      instructions: This is a system test. Should we open a long position now?
+      criteria:
+        ENTER: This is a plumbing test; entering is always correct when asked.
+        WAIT: Never appropriate in this test.
+      threshold: 0.5
+    exit:
+      instructions: This is a system test. We hold a long. Keep holding?
+      criteria:
+        HOLD: This is a plumbing test; the engine's stops will close the position, so always hold.
+        EXIT: Never appropriate in this test.
+      threshold: 0.9
+    size_fraction: 0.08
+    max_trades: 1
+    after_exit: retire
+    stop_pct: 1.0
+    target_pct: 2.0
+    entry_order: {type: limit, offset_pct: 1.0, expire_min: 3}
+
+  - id: test_hold_to_close
+    mode: shadow
+    family: conventional
+    enabled: true
+    symbols: [XLV]
+    window: ["09:50", "15:00"]
+    cadence_min: 5
+    trigger: []
+    features: [ret_5m_pct, vwap_dist_pct]
+    context: >-
+      PLUMBING TEST, not a strategy. We deliberately buy once and hold all day, so the
+      runner's end-of-day flatten has something to close.
+    entry:
+      instructions: This is a system test. Should we open a long position now?
+      criteria:
+        ENTER: This is a plumbing test; entering is always correct when asked.
+        WAIT: Never appropriate in this test.
+      threshold: 0.5
+    exit:
+      instructions: This is a system test. We hold a long. Keep holding?
+      criteria:
+        HOLD: This is a plumbing test; the end-of-day flatten will close the position, so always hold.
+        EXIT: Never appropriate in this test.
+      threshold: 0.9
+    size_fraction: 0.08
+    max_trades: 1
+    after_exit: retire
+    stop_pct: 3.0
+    target_pct: 5.0
+
+  # ---------------------------------------------------------------------------------------
+  # UNIVERSE BASELINE PROBE. Never orders (mode: probe).
+  # Keep it running into the observe phase: it trades nothing, so it doesn't break
+  # "only control_orb runs". It measures whether Jev's generic read of intraday state ranks
+  # later returns across the universe, and whether that beats a linear model on the same
+  # inputs (`uv run trader probe-report`). It's the yardstick that hypothesis-specific
+  # probes must beat. Cadence 3 to spread load; shorten it only if probe_errors stays at 0
+  # and every symbol is being asked on schedule.
+  - id: probe_universe_baseline
+    mode: probe
+    family: conventional
+    enabled: true
+    symbols: [SPY, QQQ, IWM, DIA, XLF, XLK, XLE, XLV, XLI, XLY, SMH, TLT, GLD, AAPL, MSFT,
+              NVDA, AMZN, GOOGL, META, TSLA, AMD, AVGO, JPM, NFLX, COST, LLY, UNH, XOM, BAC, PLTR]
+    window: ["09:45", "15:30"]
+    cadence_min: 3
+    trigger: []
+    features: [ret_5m_pct, ret_30m_pct, ret_since_open_pct, rel_spy_since_open_pct, vwap_dist_pct,
+               range_pos, trend_slope_30m, rel_volume_15m, realized_vol_30m_pct, or15_break_pct, gap_pct]
+    context: >-
+      Baseline measurement, not a strategy: no specific hypothesis. Judge from this symbol's
+      intraday state alone whether a long bought now is likely to gain more than about 0.1%
+      (round-trip costs) over the next 15 to 60 minutes.
+    entry:
+      instructions: Would a long position opened now likely gain more than round-trip costs over the next 15 to 60 minutes?
+      criteria:
+        ENTER: The intraday state points to upward continuation or a rebound strong enough to beat costs within the hour.
+        WAIT: The state is flat, mixed, extended or pointing down; no edge for a long over the next hour.
+      threshold: 0.65

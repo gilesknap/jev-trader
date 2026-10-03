@@ -1,0 +1,16 @@
+[Unit]
+Description=Trader runner: one market session (waits for the open, exits after the close)
+After=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/trading/services.env
+WorkingDirectory=/srv/trading/main
+UMask=0027
+# Holds the session lock (shared) for the whole session, so trading-deploy refuses rather than
+# switching code under it; waits out a deploy's switch (seconds) if one is in progress at 12:50.
+# /srv/trading/runtime must exist (deploy/setup/1-host.sh makes it): flock can't create the directory.
+ExecStart=/usr/bin/flock -s -w 600 /srv/trading/runtime/session.lock /usr/local/bin/uv run --frozen trader run
+Restart=on-failure
+RestartSec=30
+# A crash mid-session restarts and recovers open positions from entries.json.

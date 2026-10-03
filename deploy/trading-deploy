@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# Deploy merged main to the runner. HUMAN-ONLY: run as `sudo -u runner trading-deploy [--dry-run]`.
+# Branch protection isn't enforced on this private repo, so this is the gate. Code is reviewed
+# in its pull request: when every commit since the last deploy is a GitHub-signed PR merge
+# (checked by the *deployed* code, see src/trader/deploy.py), it lists the PRs and deploys.
+# Anything else (a direct push, a squash/rebase merge, rewritten history) shows its diff and
+# needs a typed "yes". Hidden-character and binary refusals and test-before-switch always apply.
+# It never replaces code under a running session: it refuses while the runner is up (12:50 London
+# on weekdays until it exits after the US close), and locks only around the switch itself.
+set -euo pipefail
+umask 027
+DRY=0; [[ "${1:-}" == "--dry-run" ]] && DRY=1
+[[ "$(id -un)" == runner ]] || { echo "run as: sudo -u runner $0" >&2; exit 1; }
+[[ -t 0 || $DRY == 1 ]] || { echo "interactive only: a human must run this" >&2; exit 1; }
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+export PATH="/usr/local/bin:/usr/bin:/bin"
+cd /srv/trading/main
+# --- session lock (tests/test_deploy_session_lock.py runs these functions) ---
+# trader-runner.service holds LOCK shared (flock -s) for its whole session. A deploy never waits
+# on a session: it takes LOCK exclusive and non-blocking only for the switch, and a runner that
+# starts meanwhile waits for the switch to finish. The kernel drops the lock when the holder dies.
+LOCK=/srv/trading/runtime/session.lock
+runner_idle() {  # systemd's view too: covers a unit without the lock and the restart gap after a crash
+    local state
+    state=$(systemctl --user show trader-runner.service --property=ActiveState --value 2>/dev/null) || state=""
+    [[ $state == inactive || $state == failed ]] && return 0
+    echo "REFUSING: a trading session is running (trader-runner is ${state:-in an unknown state}); nothing was changed." >&2
+    echo "The runner starts at 12:50 London on weekdays and exits after the US close: deploy once it has exited." >&2
+    return 1
+}
+lock_switch() {  # exclusive, never blocking; held on fd 9 until unlock_switch (or exit)
+    exec 9>>"$LOCK" || return 1
+    if ! flock -n -x 9; then
+        echo "REFUSING: the runner holds the session lock (a trading session is running); nothing was changed." >&2
+        echo "The runner starts at 12:50 London on weekdays and exits after the US close: deploy once it has exited." >&2
+        return 1
+    fi
+    runner_idle
+}
+unlock_switch() { flock -u 9; exec 9>&-; }  # -u releases it even if a child kept a copy of fd 9
+# --- end session lock ---
+(( DRY )) || runner_idle || exit 1  # fail fast, before the review and the tests
+git fetch -q origin main
+TARGET=$(git rev-parse origin/main)  # pinned now: the reviewed diff and the deployed commit are the same
+if [[ "$(git rev-parse HEAD)" == "$TARGET" ]]; then
+    echo "already at origin/main ($(git rev-parse --short HEAD)); nothing to deploy"; exit 0
+fi
+echo "=== files changed since last deploy ($(git rev-parse --short HEAD) -> ${TARGET:0:7}) ==="
+git diff --stat HEAD "$TARGET"
+echo
+# Diffs go through files (quitting the pager early can't abort the script), with attribute/
+# driver tricks disabled so nothing can hide as "binary" or be rewritten by a textconv.
+tmp=$(mktemp); plain=$(mktemp); trap 'rm -f "$tmp" "$plain"' EXIT
+DIFF=(diff --patch --summary --text --no-ext-diff --no-textconv HEAD "$TARGET")
+git --no-pager "${DIFF[@]}" > "$plain"
+# Refuse diffs that could visually hide code: terminal control characters (colour/conceal
+# escapes) and invisible or direction-changing Unicode (Trojan Source). Each check tests the
+# file directly with grep -q (never a pipeline's status, which pipefail/SIGPIPE can flip).
+CTRL='[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]'
+UNI='[\x{061C}\x{200B}-\x{200F}\x{2028}-\x{202E}\x{2060}-\x{2069}\x{FEFF}\x{E0000}-\x{E007F}]'
+if LC_ALL=C grep -qaP "$CTRL" "$plain"; then
+    echo "REFUSING: the diff contains terminal control characters:" >&2
+    { LC_ALL=C grep -naP "$CTRL" "$plain" | cat -v | head -20; } >&2 || true
+    exit 1
+fi
+if LC_ALL=C.UTF-8 grep -qP "$UNI" "$plain"; then
+    echo "REFUSING: the diff contains invisible or bidi Unicode characters:" >&2
+    { LC_ALL=C.UTF-8 grep -nP "$UNI" "$plain" | cat -v | head -20; } >&2 || true
+    exit 1
+fi
+# Binary = contains NUL bytes, judged by content (not .gitattributes, which a commit could set),
+# for every added/modified/renamed/type-changed file. grep -c reads to EOF, so no SIGPIPE.
+binaries=""
+while IFS= read -r -d '' f; do  # NUL-separated: non-ASCII paths aren't quoted
+    n=$(git cat-file -p "$TARGET:$f" | LC_ALL=C grep -acP '\x00' || true)
+    (( ${n:-0} > 0 )) && binaries+="$f"$'\n'
+done < <(git diff --no-renames --name-only -z --diff-filter=d HEAD "$TARGET")
+if [[ -n "$binaries" ]]; then
+    echo "REFUSING: binary files changed and can't be reviewed here:" >&2
+    printf '%s' "$binaries" >&2
+    exit 1
+fi
+# Which commits came through a merged PR? Asked of the deployed code and key, never the candidate's.
+planout=$(./.venv/bin/trader deploy-plan --base HEAD --target "$TARGET" 2>&1) && rc=0 || rc=$?
+review=()  # (base tip) pairs to show
+case $rc in
+    0) echo "=== merged pull requests (GitHub-signed merge commits; review happened in each PR) ==="
+       echo "$planout" | sed 's/^PR /  /' ;;
+    3) echo "=== commits since last deploy ==="
+       echo "$planout" | sed 's/^PR /  PR     /; s/^REVIEW /  REVIEW /'
+       while read -r kind sha _; do
+           [[ $kind == REVIEW ]] || continue
+           full=$(git rev-parse "$sha^{commit}")
+           if [[ $full == "$TARGET" ]] && ! git merge-base --is-ancestor HEAD "$TARGET"; then
+               review+=(HEAD "$TARGET")  # rewritten history: everything
+           else
+               review+=("$full^1" "$full")
+           fi
+       done <<< "$planout"
+       (( ${#review[@]} )) || review=(HEAD "$TARGET") ;;  # "needs review" but nothing parsed: review it all
+    *) echo "could not check which commits are merged PRs (exit $rc): ${planout:0:300}"
+       echo "falling back to reviewing the full diff"
+       review=(HEAD "$TARGET") ;;
+esac
+echo
+if (( DRY )); then
+    (( ${#review[@]} )) && echo "dry run: $(( ${#review[@]} / 2 )) diff(s) would need review and a typed yes" \
+        || echo "dry run: would deploy ${TARGET:0:7} without a diff review (after the tests pass)"
+    exit 0
+fi
+if (( ${#review[@]} )); then
+    : > "$tmp"
+    for ((i = 0; i < ${#review[@]}; i += 2)); do
+        git --no-pager diff --patch --summary --text --no-ext-diff --no-textconv --color=always \
+            "${review[i]}" "${review[i+1]}" >> "$tmp"
+    done
+    long=$(awk 'length > 400' "$plain" | wc -l)
+    (( long > 0 )) && echo "NOTE: $long diff line(s) longer than 400 characters; scroll right in the pager to read them fully."
+    echo "=== diff of what did NOT come through a merged PR (it will be executed, served or read by the runner) ==="
+    less -R "$tmp"
+    read -r -p "Deploy ${TARGET:0:7} to the runner? Type yes: " ok
+    [[ "$ok" == yes ]] || { echo "aborted"; exit 1; }
+fi
+# Test the candidate in a throwaway worktree with its own venv BEFORE touching the live copy:
+# if the tests fail, /srv/trading/main is unchanged and the runner keeps its current code.
+cand=$(mktemp -d -p /var/tmp)  # not /tmp: may be a small tmpfs, and the venv is large
+cleanup() {  # each step independent: set -e must not skip the rest of the cleanup
+    rm -f "$tmp" "$plain" || true
+    git worktree remove --force "$cand" 2>/dev/null || rm -rf "$cand" || true
+    git worktree prune || true
+}
+trap cleanup EXIT
+git worktree add -q --detach "$cand" "$TARGET"
+echo "testing ${TARGET:0:7} in a temporary checkout..."
+if ! (cd "$cand" && uv sync -q --frozen --extra dev && uv run --frozen pytest -q tests); then
+    echo "TESTS FAILED: nothing deployed; the runner keeps $(git rev-parse --short HEAD)" >&2
+    exit 1
+fi
+# The switch. A session that started during the review or the tests wins: refuse, change nothing.
+lock_switch || { echo "the tests passed, but deploy ${TARGET:0:7} again after the session" >&2; exit 1; }
+git reset -q --hard "$TARGET"
+git clean -qfd
+chmod -R g-w,o-rwx /srv/trading/main
+uv sync -q --frozen --extra dev
+cp deploy/systemd/*.service deploy/systemd/*.timer ~/.config/systemd/user/   # services.env is left alone
+systemctl --user daemon-reload
+unlock_switch
+systemctl --user restart trader-dashboard.service  # a session here is at most waiting for the open
+systemctl --user try-restart trader-dashboard-ssh.service  # only if this host runs it
+echo "deployed $(git rev-parse --short HEAD); the runner picks it up at the next session start"
+[[ "$(git diff --name-only HEAD@{1} HEAD -- deploy/trading-deploy)" ]] && \
+    echo "NOTE: trading-deploy itself changed — reinstall: sudo install -m 755 /srv/trading/main/deploy/trading-deploy /usr/local/bin/"
+exit 0

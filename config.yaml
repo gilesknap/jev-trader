@@ -1,0 +1,42 @@
+# Deployment settings: the values that make this copy of the project yours.
+# STARTER COPY: set owner, dashboard.users and experiment.start_date (SETUP.md step 0), then render-deploy.
+# Loaded by src/trader/config.py (a malformed or incomplete file stops every trader command).
+# Files that can't read YAML (systemd timers, services.env) are generated from
+# deploy/templates/ and this file by `uv run trader config render-deploy`, which you run by hand
+# after editing here; commit the rendered files. Neither the setup scripts nor trading-deploy
+# render: they install the checked-in files (a test fails if those disagree with this file).
+# Safety rules (guardrails, the go-live gate's thresholds) are deliberately NOT here: they are code.
+
+owner:
+  name: Your Name   # the human operator, for docs and PR text
+  github_repo: your-github-user/your-repo   # owner/repo on GitHub (a private repo)
+
+dashboard:
+  users: []   # Tailscale logins allowed in (empty = nobody); TRADER_DASHBOARD_USERS overrides
+  tailscale_port: 8444                # `tailscale serve --https=<port>` on the tailnet
+
+experiment:
+  start_date: 2099-01-05   # observe phase day 1: the go-live gate and scoreboard count from here,
+                                      # and test_* plumbing classifiers stop running from this date
+
+schedule:
+  local_tz: Europe/London             # the operator's clock: the runner timer and the strategist timers use it
+  runner_start: "12:50"               # weekdays, local time: comfortably before 09:30 New York in every DST week
+  postclose_cutoff: "23:45"           # local time: the watchdog's latest deadline for the post-close run
+  strategist:                         # strategist runs: systemd OnCalendar specs for `trader`'s timers, in local_tz;
+                                      # the script self-gates on the market clock and runs each kind once a day
+    premarket: "Mon..Fri 12..14:00/15"  # every 15 min 12:00-14:45; runs once, 30-75 min before the actual open
+    postclose: "Mon..Fri 21,22:30"    # after the close, with one retry
+    weekly: "Sat 10:00"               # Saturday retrospective
+    housekeeping: "*-*-* 09:00"       # daily credit/token/disk checks
+
+models:
+  jev: typesafe/jev-1.13              # OpenRouter decision model; pinned, bump deliberately after checking behaviour
+  strategist: claude-opus-5-5         # Claude Code model for the headless strategist runs
+
+alerts:
+  ntfy_server: https://ntfy.sh        # push server; the topic is NTFY_TOPIC in the secrets file
+
+capital:
+  sim_cash: 250                       # each `mode: sim` classifier's own simulated account (USD)
+  replay_cash: 250                    # a replay's pretend account (USD)
