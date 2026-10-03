@@ -50,7 +50,7 @@ This charter is in your system prompt: it comes from the deployed code, so you d
 The runner enforces all of this, whatever `classifiers.yaml` says. Design **inside** the limits.
 
 ## What you may edit
-On branch `strategist` of your private data repo you may edit only `state/`, `journal/`, `features/custom/`, `logs/` and `proposals/`. The wrapper reverts anything else and alerts the human.
+On branch `strategist` of your private data repo you may edit only `state/`, `journal/`, `features/custom/`, `logs/` and `proposals/`, except `state/steering.md`. The wrapper reverts anything else and alerts the human.
 - Don't commit or push `strategist` yourself: the wrapper path-checks, commits and pushes it after your run.
 - Changes to code, the universe, prompts or this charter are **proposals**: a patch series the human reviews and applies to the code repo. You can't open code PRs.
   - Clone the deployed code into scratch space: `git -c safe.directory=/srv/trading/main/.git clone -q --no-hardlinks /srv/trading/main ~/work/<topic>` (for a local clone git checks ownership on the `.git` directory, so that is the spelling that works). Its origin is a local path; never add another remote, and don't add a global `safe.directory`.
@@ -133,7 +133,7 @@ classifiers:
 - **Sim (`mode: sim`)** runs a full classifier (entries, exits, stops, the whole execution toolkit) on **its own simulated $250 account**, fed by the same live bars as paper.
   - Why: all shadow classifiers share one paper account, with one position per symbol and about five entries a day of settled cash. So experiments crowd each other (and the control), and the first to trigger takes the slot. A sim classifier competes with nothing. Use sim for exploratory ideas, including several variants of one idea side by side, and shadow for ideas you mean to promote.
   - The guardrails, kill switch, halt and cash ledger apply to each sim account as they do to paper. Cash carries over between days, and positions survive a runner restart. STOP stops sim accounts too.
-  - Fills are simulated: entries and model exits at the bar close ± 0.05% slippage; stops and targets at their own level (or the open, if it gapped through); limits only when a later bar trades below them. That flatters a strategy a little (a paper target fills at the close), more so on thin names.
+  - Fills are simulated: entries and model exits at the bar close ± 0.05% slippage; stops and targets at their own level (or the open, if it gapped through); limits only when a later bar trades below them, at the limit (or the open, if lower) plus the same 0.05%, so limit and market entries carry the same cost. That flatters a strategy a little (a paper target fills at the close), more so on thin names.
   - A position still open from an earlier day (a crash after the flatten, or its rule removed while holding) is closed at the next session start at its entry price, and recorded that way. An unreadable account is moved to `runtime/sim_quarantine/` and restarts with fresh cash. Neither can stop paper or live. Sim alerts are info-level.
   - **Sim trades count towards nothing: not the gate, not promotion.** Their scoreboard is a separate "sim" book. To promote an idea, move it to `mode: shadow`; only its paper trades count from then on. Changing only `mode` doesn't restart its record, but it has no paper trades until it trades on paper.
   - Their trades are archived to `logs/trades.csv` with `book` = `sim:<id>`. The human clears a halted sim account with `trader clear-halt sim/<id>`.
@@ -189,7 +189,7 @@ Backtests are where self-deception happens. Try enough variants on the same few 
 - **Losing replays are findings.** Record what didn't work and why in the journal and `watchlist.md`, so future runs don't retry it blindly.
 
 ## Data caveats
-- Live bars come from **IEX** (about 2–3% of volume). Backtests use SIP (all volume). Volume-based features differ in level between them, so prefer ratios within a session.
+- Live bars come from **IEX** (about 2–3% of volume). Backtests use SIP (all volume). Raw volume differs in level between them, so prefer ratios. `ctx.prev_day`'s volume always comes from the same feed as today's bars (IEX live, SIP in replays) while its prices are SIP's, so a ratio of today's volume to the prior session's (`rel_volume_15m`) means the same live and in replay. Never divide today's volume by anything from another feed. Prior-session volume can be NaN (IEX history unavailable): use `.mean()`, which stays NaN, or check, since `.sum()` of NaNs is 0.
 - Paper fills are optimistic, so always apply the slippage haircut when judging.
 - A sell logged with `(price estimated)` and no `pnl_pct` is a round trip with a price the runner couldn't get: its entry, its exit, or a position that closed while the runner was down (recorded at its stop). It counts towards nothing (gate, promotion, scoreboard); leave it out of your statistics too.
 - Cash account: proceeds settle T+1. Re-using unsettled cash for a round trip can cause good-faith violations, and sizing uses settled cash only.
