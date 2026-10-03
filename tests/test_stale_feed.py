@@ -152,8 +152,10 @@ def test_no_duplicate_or_future_bars_when_the_stream_resumes(session):
     # The stream resumes, replaying 10:05 on with different prices: it wins those minutes.
     resumed = xlv.copy()
     resumed.loc[resumed.index >= pd.Timestamp(at(10, 5)), "close"] += 1
-    rows = {"SPY": rows_of(spy, at(10, 12)),
-            "XLV": rows_of(xlv, at(10, 0)) + rows_of(resumed[resumed.index >= pd.Timestamp(at(10, 5))], at(10, 12))}
+    rows = {
+        "SPY": rows_of(spy, at(10, 12)),
+        "XLV": rows_of(xlv, at(10, 0)) + rows_of(resumed[resumed.index >= pd.Timestamp(at(10, 5))], at(10, 12)),
+    }
     tick = at(10, 12)
     live = stream_bars(rows, tick)
     rest.poll(tick, live, {"XLV"})
@@ -162,8 +164,10 @@ def test_no_duplicate_or_future_bars_when_the_stream_resumes(session):
     assert merged.index.is_unique and merged.index.is_monotonic_increasing
     assert merged.index[-1] < pd.Timestamp(tick)
     assert list(merged.index) == list(xlv.index[xlv.index < pd.Timestamp(tick)])  # 10:00-10:04 filled from REST
-    assert (merged.close[merged.index >= pd.Timestamp(at(10, 5))] ==
-            resumed.close[(resumed.index >= pd.Timestamp(at(10, 5))) & (resumed.index < pd.Timestamp(tick))]).all()
+    assert (
+        merged.close[merged.index >= pd.Timestamp(at(10, 5))]
+        == resumed.close[(resumed.index >= pd.Timestamp(at(10, 5))) & (resumed.index < pd.Timestamp(tick))]
+    ).all()
 
 
 def test_nothing_is_fetched_when_the_feed_is_healthy_or_nothing_is_held(session):

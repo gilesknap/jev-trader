@@ -46,15 +46,27 @@ class Venue(FakeClient):
     def get_orders(self, req):
         """Open orders, filtered by symbol and side as Alpaca does (an order with no side is a sell)."""
         side = getattr(req.side, "value", req.side)
-        return [NS(id=oid, symbol=o.get("symbol", "SPY"), side=NS(value=o.get("side", "sell")), status=NS(value=o["status"]))
-                for oid, o in self.orders.items()
-                if o["status"] in ("new", "accepted", "partially_filled") and o.get("symbol", "SPY") in req.symbols
-                and (side is None or o.get("side", "sell") == side)]
+        return [
+            NS(
+                id=oid,
+                symbol=o.get("symbol", "SPY"),
+                side=NS(value=o.get("side", "sell")),
+                status=NS(value=o["status"]),
+            )
+            for oid, o in self.orders.items()
+            if o["status"] in ("new", "accepted", "partially_filled")
+            and o.get("symbol", "SPY") in req.symbols
+            and (side is None or o.get("side", "sell") == side)
+        ]
 
     def _held_for_orders(self, sym):
-        return sum(float(o.get("qty", 0)) - float(o.get("filled_qty") or 0) for o in self.orders.values()
-                   if o.get("side", "sell") == "sell" and o.get("symbol", "SPY") == sym
-                   and o["status"] in ("new", "accepted", "partially_filled"))
+        return sum(
+            float(o.get("qty", 0)) - float(o.get("filled_qty") or 0)
+            for o in self.orders.values()
+            if o.get("side", "sell") == "sell"
+            and o.get("symbol", "SPY") == sym
+            and o["status"] in ("new", "accepted", "partially_filled")
+        )
 
     def cancel_order_by_id(self, oid):
         self.calls.append(("cancel", oid))
@@ -78,8 +90,11 @@ class Venue(FakeClient):
     def close_position(self, sym):
         self.calls.append(("close", sym))
         if sym in self.positions and (held := self._held_for_orders(sym)) > 1e-9:
-            raise APIError(403, '{"code":40310000,"message":"insufficient qty available for order '
-                                f'(requested: {self.positions[sym]:g}, available: {max(0.0, self.positions[sym] - held):g})"}}')
+            raise APIError(
+                403,
+                '{"code":40310000,"message":"insufficient qty available for order '
+                f'(requested: {self.positions[sym]:g}, available: {max(0.0, self.positions[sym] - held):g})"}}',
+            )
         what = self.closes.pop(0)
         if isinstance(what, Exception):
             raise what
@@ -87,7 +102,11 @@ class Venue(FakeClient):
         qty = min(qty, self.positions[sym])
         self._sell(qty)
         oid = f"c{sum(1 for c in self.calls if c[0] == 'close')}"
-        self.orders[oid] = {"status": "canceled" if sym in self.positions else "filled", "filled_qty": qty, "price": price}
+        self.orders[oid] = {
+            "status": "canceled" if sym in self.positions else "filled",
+            "filled_qty": qty,
+            "price": price,
+        }
         return NS(id=oid)
 
     def close_all_positions(self, cancel_orders=True):
@@ -97,8 +116,11 @@ class Venue(FakeClient):
 
     def alive(self):
         """Server stops still working."""
-        return {oid: o["qty"] for oid, o in self.orders.items()
-                if oid.startswith("s") and o["status"] in ("new", "partially_filled")}
+        return {
+            oid: o["qty"]
+            for oid, o in self.orders.items()
+            if oid.startswith("s") and o["status"] in ("new", "partially_filled")
+        }
 
 
 class Paper(AlpacaBroker):
@@ -165,7 +187,10 @@ def test_the_issue_example_is_one_trade_at_plus_two_across_retries_and_a_restart
     assert not book.entries and not v.positions and not v.alive()
     t = trade_rows(tmp_path)
     assert [(r["side"], r["qty"], r["price"]) for r in t] == [
-        ("sell_part", "0.400000", "90.0000"), ("sell_part", "0.300000", "110.0000"), ("sell", "0.300000", "110.0000")]
+        ("sell_part", "0.400000", "90.0000"),
+        ("sell_part", "0.300000", "110.0000"),
+        ("sell", "0.300000", "110.0000"),
+    ]
     assert float(t[-1]["pnl"]) == pytest.approx(2.0) and float(t[-1]["pnl_pct"]) == pytest.approx(2.0)
     assert golive.shadow_record("t", "2026-10-01", tmp_path / "paper") == (1, pytest.approx(2.0 - 0.1))
     assert len(scoreboard.closed_trades(t)) == 1
@@ -235,7 +260,10 @@ def test_a_leg_with_no_reported_price_makes_the_round_trip_estimated(tmp_path, c
     eng._exit(book, "SPY", book.entries["SPY"], 100.0, T0, "classifier EXIT")
     eng._exit(book, "SPY", book.entries["SPY"], 100.0, T0 + dt.timedelta(minutes=1), "classifier EXIT")
     t = trade_rows(tmp_path)
-    assert [r["reason"] for r in t] == ["classifier EXIT (partial) (price estimated)", "classifier EXIT (price estimated)"]
+    assert [r["reason"] for r in t] == [
+        "classifier EXIT (partial) (price estimated)",
+        "classifier EXIT (price estimated)",
+    ]
     assert t[0]["pnl_pct"] == "" and t[1]["pnl_pct"] == ""  # not gate, promotion or scoreboard evidence
     assert golive.shadow_record("t", "2026-10-01", tmp_path / "paper") == (0, None)
 
@@ -297,11 +325,32 @@ def test_late_entry_fill_after_a_scale_out_gives_pnl_pct_on_the_real_cost(tmp_pa
 def test_scoreboard_charges_slippage_on_the_whole_cost_of_a_late_filled_entry():
     """#116 review, item 3: an `ENTER (late fill)` row adds to the open cost, it doesn't replace it."""
     rows = [
-        {"time": "2026-10-14T10:00", "classifier": "t", "symbol": "SPY", "side": "buy", "notional": "10.00", "reason": "ENTER"},
-        {"time": "2026-10-14T10:02", "classifier": "t", "symbol": "SPY", "side": "buy", "notional": "5.00",
-         "reason": "ENTER (late fill)"},
-        {"time": "2026-10-14T11:00", "classifier": "t", "symbol": "SPY", "side": "sell", "notional": "15.30",
-         "reason": "target", "pnl": "0.30", "pnl_pct": "2.000"},
+        {
+            "time": "2026-10-14T10:00",
+            "classifier": "t",
+            "symbol": "SPY",
+            "side": "buy",
+            "notional": "10.00",
+            "reason": "ENTER",
+        },
+        {
+            "time": "2026-10-14T10:02",
+            "classifier": "t",
+            "symbol": "SPY",
+            "side": "buy",
+            "notional": "5.00",
+            "reason": "ENTER (late fill)",
+        },
+        {
+            "time": "2026-10-14T11:00",
+            "classifier": "t",
+            "symbol": "SPY",
+            "side": "sell",
+            "notional": "15.30",
+            "reason": "target",
+            "pnl": "0.30",
+            "pnl_pct": "2.000",
+        },
     ]
     (t,) = scoreboard.closed_trades(rows, slippage_per_side_pct=0.05)
     assert t["net_usd"] == pytest.approx(0.30 - 15.0 * 0.1 / 100)

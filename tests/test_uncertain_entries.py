@@ -59,6 +59,7 @@ def filled(qty, avg):
     def go(br):
         br.set_fill(qty, avg)
         br.status = "filled"
+
     return go
 
 
@@ -178,7 +179,9 @@ def _partial_then_stopped(tmp_path, session, swept):
 
 
 @pytest.mark.parametrize("swept", [False, True])
-def test_a_late_fill_after_the_position_closed_is_one_round_trip_and_never_a_guessed_trade(tmp_path, session, swept, monkeypatch):
+def test_a_late_fill_after_the_position_closed_is_one_round_trip_and_never_a_guessed_trade(
+    tmp_path, session, swept, monkeypatch
+):
     monkeypatch.setattr(golive, "START_DATE", dt.date(2000, 1, 1))  # its trades predate the pinned start date
     book, eng, br = _partial_then_stopped(tmp_path, session, swept)
     t = rows(tmp_path)
@@ -246,9 +249,8 @@ def test_a_new_day_drops_an_unresolved_intent_and_rewrites_buys_today(tmp_path):
     assert json.loads((book.dir / "risk.json").read_text())["buys_today"] == 0
 
 
-
-
 # ---- the broker reports the order id, or a definitive no ------------------------------------
+
 
 def test_an_accepted_entry_with_its_order_id_is_adopted_without_a_lookup(tmp_path, session):
     bars = session(path=[100.0] * 390)
@@ -303,6 +305,7 @@ def _unpriced(tmp_path, session, avg_cost):
     def go(b):
         filled(0.5, 0.0)(b)
         b.positions["SPY"] = Position("SPY", 0.5, avg_cost)
+
     br.on_submit = go
     book, eng = make(tmp_path, [spec()], br=br)
     eng.start_day(day_of(bars), {})
@@ -321,7 +324,9 @@ def test_an_unpriced_market_fill_takes_the_positions_average_cost_at_once(tmp_pa
     assert list(rows(tmp_path).reason) == ["ENTER"] and book.buys_today == pytest.approx(0.5 * 100.03)
 
 
-def test_an_unpriced_market_fill_with_no_cost_is_protected_at_a_guess_that_is_not_evidence(tmp_path, session, monkeypatch):
+def test_an_unpriced_market_fill_with_no_cost_is_protected_at_a_guess_that_is_not_evidence(
+    tmp_path, session, monkeypatch
+):
     monkeypatch.setattr(golive, "START_DATE", dt.date(2000, 1, 1))  # its trades predate the pinned start date
     bars, br, book, eng = _unpriced(tmp_path, session, 0.0)
     e = book.entries["SPY"]
@@ -332,7 +337,9 @@ def test_an_unpriced_market_fill_with_no_cost_is_protected_at_a_guess_that_is_no
     assert list(t.reason) == ["ENTER (price estimated)", "manual STOP (price estimated)"] and pd.isna(t.pnl_pct.iloc[1])
     assert golive.shadow_record("t", "2000-01-01", book.dir)[0] == 0
 
+
 # ---- with the allocator (#74) ------------------------------------------------------------
+
 
 def test_an_entry_in_flight_reserves_the_allowed_size_and_counts_against_the_limits_once(tmp_path, session):
     bars = session(path=[100.0] * 390)
@@ -342,8 +349,11 @@ def test_an_entry_in_flight_reserves_the_allowed_size_and_counts_against_the_lim
     eng.start_day(day_of(bars), {})
     book.realised_today = -5.0  # 3% of 250 less 5 leaves 2.5 of stop risk: $25 at a 10% stop
     ticks(eng, bars, 0, 5)
-    row = [json.loads(x) for x in (tmp_path / "decisions" / f"{day_of(bars)}.jsonl").read_text().splitlines()
-           if json.loads(x)["q"] == "allocation"][0]
+    row = [
+        json.loads(x)
+        for x in (tmp_path / "decisions" / f"{day_of(bars)}.jsonl").read_text().splitlines()
+        if json.loads(x)["q"] == "allocation"
+    ][0]
     p = book.pending["SPY"]
     assert row["constraint"] == "aggregate stop risk" and row["allowed"] == pytest.approx(25.0, abs=0.01)
     assert p.limit == 0 and p.reserved == pytest.approx(row["allowed"], abs=0.01) and p.reserved < row["requested"]
@@ -366,7 +376,9 @@ def test_an_exited_orders_remainder_counts_nothing_but_its_late_shares_do(tmp_pa
     got = Engine._exposures(book, late)
     assert len(got) == 1 and got[0].notional == pytest.approx(0.05 * 99.95)  # untracked until it's sold
 
+
 # ---- Alpaca adapter ------------------------------------------------------------------
+
 
 class Client(FakeClient):
     def __init__(self):

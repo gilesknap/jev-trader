@@ -59,9 +59,7 @@ def check_entry(order: EntryOrder, acct: AccountView) -> None:
     if order.notional < MIN_NOTIONAL:
         raise GuardrailViolation(f"notional {order.notional:.2f} below minimum")
     if order.notional > MAX_POSITION_FRACTION * acct.equity + 1e-9:
-        raise GuardrailViolation(
-            f"notional {order.notional:.2f} exceeds {MAX_POSITION_FRACTION:.0%} of equity"
-        )
+        raise GuardrailViolation(f"notional {order.notional:.2f} exceeds {MAX_POSITION_FRACTION:.0%} of equity")
     if order.notional > acct.cash + 1e-9:
         raise GuardrailViolation(f"notional {order.notional:.2f} exceeds settled cash")
     if not order.stop_price < order.ref_price:
@@ -72,9 +70,7 @@ def check_entry(order: EntryOrder, acct: AccountView) -> None:
         raise GuardrailViolation("take-profit must be above entry reference")
 
 
-def risk_check(
-    equity: float, day_start_equity: float, nav_per_unit: float, nav_hwm: float
-) -> str | None:
+def risk_check(equity: float, day_start_equity: float, nav_per_unit: float, nav_hwm: float) -> str | None:
     """Return 'halt', 'kill' or None. Halt is sticky; kill lasts until next session."""
     if equity < EQUITY_FLOOR:
         return "halt"

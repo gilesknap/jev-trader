@@ -20,46 +20,47 @@ from test_restart_state import ticks
 
 # ---- the allocator -------------------------------------------------------------------------
 
+
 def test_individually_valid_orders_are_reduced_by_combined_stop_risk():
     held = [Exposure("TLT", 250, 25)]  # a 25% position with a 10% stop: 2.5% of equity at risk
-    assert allocate("GLD", 250, .1, 1000, 1000, 0, held) == (pytest.approx(50), "aggregate stop risk")
-    assert allocate("GLD", 250, .1, 1000, 1000, 0, []) == (250, "requested")
+    assert allocate("GLD", 250, 0.1, 1000, 1000, 0, held) == (pytest.approx(50), "aggregate stop risk")
+    assert allocate("GLD", 250, 0.1, 1000, 1000, 0, []) == (250, "requested")
 
 
 def test_pending_reservations_and_realised_loss_consume_the_budget():
     pending = Exposure("TLT", 100, 10)
-    assert allocate("GLD", 250, .1, 1000, 1000, -20, [pending])[0] == 0
-    assert allocate("GLD", 250, .1, 1000, 1000, -20, [])[0] == pytest.approx(100)  # cancelled: released
-    assert allocate("GLD", 250, .1, 1000, 1000, +50, [])[0] == 250  # gains never enlarge it...
-    assert allocate("GLD", 250, .1, 1000, 1000, +50, [Exposure("TLT", 250, 25)])[0] == pytest.approx(50)
+    assert allocate("GLD", 250, 0.1, 1000, 1000, -20, [pending])[0] == 0
+    assert allocate("GLD", 250, 0.1, 1000, 1000, -20, [])[0] == pytest.approx(100)  # cancelled: released
+    assert allocate("GLD", 250, 0.1, 1000, 1000, +50, [])[0] == 250  # gains never enlarge it...
+    assert allocate("GLD", 250, 0.1, 1000, 1000, +50, [Exposure("TLT", 250, 25)])[0] == pytest.approx(50)
 
 
 def test_budget_uses_the_smaller_of_current_and_day_start_equity():
-    assert allocate("GLD", 250, .1, 1000, 800, 0, [])[0] == pytest.approx(240)
-    assert allocate("GLD", 250, .1, 800, 1000, 0, [])[0] == pytest.approx(240)
+    assert allocate("GLD", 250, 0.1, 1000, 800, 0, [])[0] == pytest.approx(240)
+    assert allocate("GLD", 250, 0.1, 800, 1000, 0, [])[0] == pytest.approx(240)
 
 
 def test_etf_and_its_constituents_share_a_bucket():
     held = [Exposure("QQQ", 250, 1), Exposure("NVDA", 200, 1)]
-    assert allocate("MSFT", 250, .005, 1000, 1000, 0, held) == (50, "growth bucket")
+    assert allocate("MSFT", 250, 0.005, 1000, 1000, 0, held) == (50, "growth bucket")
 
 
 def test_xly_shares_the_growth_bucket_with_qqq_and_nvda():
     held = [Exposure("QQQ", 250, 1), Exposure("NVDA", 200, 1)]
-    assert allocate("XLY", 250, .005, 1000, 1000, 0, held) == (50, "growth bucket")
+    assert allocate("XLY", 250, 0.005, 1000, 1000, 0, held) == (50, "growth bucket")
 
 
 def test_broad_etfs_count_against_every_bucket():
     held = [Exposure("SPY", 250, 1), Exposure("XLF", 250, 1)]
-    assert allocate("JPM", 250, .005, 1000, 1000, 0, held) == (0, "financials bucket")
-    assert allocate("DIA", 250, .005, 1000, 1000, 0, held)[0] == 0
-    assert allocate("XOM", 250, .005, 1000, 1000, 0, held) == (250, "requested")
+    assert allocate("JPM", 250, 0.005, 1000, 1000, 0, held) == (0, "financials bucket")
+    assert allocate("DIA", 250, 0.005, 1000, 1000, 0, held)[0] == 0
+    assert allocate("XOM", 250, 0.005, 1000, 1000, 0, held) == (250, "requested")
 
 
 def test_total_equity_exposure_is_capped_but_bonds_and_gold_are_not():
     held = [Exposure("XLI", 250, 1), Exposure("COST", 250, 1), Exposure("XOM", 200, 1)]
-    assert allocate("JPM", 250, .005, 1000, 1000, 0, held) == (50, "equity exposure")
-    assert allocate("TLT", 250, .005, 1000, 1000, 0, held) == (250, "requested")
+    assert allocate("JPM", 250, 0.005, 1000, 1000, 0, held) == (50, "equity exposure")
+    assert allocate("TLT", 250, 0.005, 1000, 1000, 0, held) == (250, "requested")
 
 
 def test_every_universe_symbol_is_classified_once():
@@ -102,7 +103,9 @@ def test_fuzz_only_ever_tightens_and_every_limit_holds():
         risk = sum(max(0, x.stop_loss) for x in held) + allowed * sf + max(0, -realised)
         assert risk <= base * A.OPEN_RISK_FRACTION + 1e-6
         if sym not in A.NON_EQUITY:
-            assert sum(x.notional for x in held if x.symbol not in A.NON_EQUITY) + allowed <= A.EQUITY_CAP * equity + 1e-6
+            assert (
+                sum(x.notional for x in held if x.symbol not in A.NON_EQUITY) + allowed <= A.EQUITY_CAP * equity + 1e-6
+            )
         for members in A.BUCKETS.values():
             if sym in members or sym in A.BROAD:
                 inside = members | A.BROAD
@@ -111,6 +114,7 @@ def test_fuzz_only_ever_tightens_and_every_limit_holds():
 
 
 # ---- engine wiring -------------------------------------------------------------------------
+
 
 def decisions(tmp_path, day):
     return [json.loads(line) for line in (tmp_path / "decisions" / f"{day}.jsonl").read_text().splitlines()]
@@ -146,8 +150,11 @@ def test_limits_are_per_book(tmp_path, session):
     day = bars.index[0].date()
     paper = Book("paper", SimBroker(1000.0), tmp_path / "paper")
     sim = Book("sim:s", SimBroker(1000.0), tmp_path / "sim")
-    specs = [spec(id="p", size_fraction=0.25, stop_pct=10), spec(id="q", symbols=["TLT"], size_fraction=0.25, stop_pct=2.5),
-             spec(id="s", mode="sim", size_fraction=0.25, stop_pct=10)]
+    specs = [
+        spec(id="p", size_fraction=0.25, stop_pct=10),
+        spec(id="q", symbols=["TLT"], size_fraction=0.25, stop_pct=2.5),
+        spec(id="s", mode="sim", size_fraction=0.25, stop_pct=10),
+    ]
     eng = Engine(specs, {"shadow": paper, "live": paper, "sim:s": sim}, Always(), {"SPY", "TLT"}, tmp_path)
     eng.start_day(day, {})
     ticks_all(eng, bars, ["SPY", "TLT"], 10)
@@ -163,7 +170,11 @@ def test_exposures_count_pending_reservations_and_untracked_positions(tmp_path):
     book = Book("sim", SimBroker(1000.0), tmp_path / "sim")
     book.entries["QQQ"] = Entry("a", 1.0, 100.0, 98.0, 110.0, now)
     book.pending["NVDA"] = Pending("b", "id", 50.0, 2.0, 100.0, now, now, 5.0, 1.0, {}, "cid")
-    positions = {"QQQ": Position("QQQ", 1.0, 100.0), "NVDA": Position("NVDA", 0.5, 50.0), "XOM": Position("XOM", 2.0, 30.0)}
+    positions = {
+        "QQQ": Position("QQQ", 1.0, 100.0),
+        "NVDA": Position("NVDA", 0.5, 50.0),
+        "XOM": Position("XOM", 2.0, 30.0),
+    }
     got = {x.symbol: x for x in Engine._exposures(book, positions)}
     assert got["QQQ"] == Exposure("QQQ", 100.0, pytest.approx(2.0))
     assert got["NVDA"] == Exposure("NVDA", 100.0, 5.0)  # the whole reservation, not the part filled
@@ -182,8 +193,10 @@ def test_realised_loss_with_a_scale_out_survives_restart_and_is_counted_once(tmp
     and not zero, and size the next entry from it."""
     path = [100.0] * 10 + [100.6] * 10 + [89.0] * 10 + [100.0] * 360
     so = {"at_pct": 0.5, "fraction": 0.5, "stop_to_breakeven": False}
-    specs = lambda: [spec(size_fraction=0.25, stop_pct=10, target_pct=20, scale_out=so),  # noqa: E731
-                     spec(id="later", window=("10:05", "15:30"), size_fraction=0.25, stop_pct=10)]
+    specs = lambda: [
+        spec(size_fraction=0.25, stop_pct=10, target_pct=20, scale_out=so),  # noqa: E731
+        spec(id="later", window=("10:05", "15:30"), size_fraction=0.25, stop_pct=10),
+    ]
     bars = session(path=path)
     day = bars.index[0].date()
     book = Book("sim", SimBroker(250.0), tmp_path / "sim")
@@ -218,16 +231,26 @@ def restart_with_log(tmp_path, log, broker, day_start=260.0):
     (tmp_path / "sim" / "trades.csv").write_text(log)
     alerts = []
     book = Book("sim", broker, tmp_path / "sim")
-    eng = Engine([spec()], {"live": book, "shadow": book}, Always(), {"SPY"}, tmp_path,
-                 alert=lambda level, msg: alerts.append((level, msg)))
+    eng = Engine(
+        [spec()],
+        {"live": book, "shadow": book},
+        Always(),
+        {"SPY"},
+        tmp_path,
+        alert=lambda level, msg: alerts.append((level, msg)),
+    )
     eng.start_day(day, {})
     return book, alerts
 
 
-@pytest.mark.parametrize("log", [
-    "time,side,pnl\n2026-09-21T10:00,sell,oops\n",  # ValueError
-    "time,side,pnl\n2026-09-21T10:00,sell," + "9" * 200_000 + "\n",  # csv.Error: field larger than field limit
-], ids=["bad-number", "oversized-field"])
+@pytest.mark.parametrize(
+    "log",
+    [
+        "time,side,pnl\n2026-09-21T10:00,sell,oops\n",  # ValueError
+        "time,side,pnl\n2026-09-21T10:00,sell," + "9" * 200_000 + "\n",  # csv.Error: field larger than field limit
+    ],
+    ids=["bad-number", "oversized-field"],
+)
 def test_a_damaged_trade_log_does_not_stop_a_restart_and_only_tightens(tmp_path, log):
     book, alerts = restart_with_log(tmp_path, log, SimBroker(250.0))
     assert book.realised_today == pytest.approx(-10.0)  # equity 250 vs 260 at the open: counted as realised
@@ -253,9 +276,16 @@ def test_a_trimmed_limit_entry_keeps_the_allocator_note(tmp_path, session):
     bars = session(path=[100.0] * 390)
     day = bars.index[0].date()
     book = Book("sim", SimBroker(1000.0), tmp_path / "sim")
-    specs = [spec(id="p", size_fraction=0.25, stop_pct=10),
-             spec(id="q", symbols=["TLT"], size_fraction=0.25, stop_pct=2.5,
-                  entry_order={"type": "limit", "offset_pct": 0.05, "expire_min": 30})]
+    specs = [
+        spec(id="p", size_fraction=0.25, stop_pct=10),
+        spec(
+            id="q",
+            symbols=["TLT"],
+            size_fraction=0.25,
+            stop_pct=2.5,
+            entry_order={"type": "limit", "offset_pct": 0.05, "expire_min": 30},
+        ),
+    ]
     eng = Engine(specs, {"live": book, "shadow": book}, Always(), {"SPY", "TLT"}, tmp_path)
     eng.start_day(day, {})
     ticks_all(eng, bars, ["SPY", "TLT"], 10)
@@ -263,7 +293,7 @@ def test_a_trimmed_limit_entry_keeps_the_allocator_note(tmp_path, session):
     st = eng.states[1].symbols["TLT"]
     assert st.note.startswith("limit ") and "resting (allocator: aggregate stop risk; allowed $" in st.note
     eng.decider.entry = "WAIT"
-    bars.loc[bars.index[20]:, ["low", "close"]] = 99.9  # fills the 99.95 limit: the allocator's note stays
+    bars.loc[bars.index[20] :, ["low", "close"]] = 99.9  # fills the 99.95 limit: the allocator's note stays
     ticks_all(eng, bars, ["SPY", "TLT"], 25)
     assert st.status == "holding" and st.note.startswith("allocator: aggregate stop risk; allowed $")
 
@@ -273,15 +303,18 @@ def test_a_trim_below_a_quarter_of_the_request_is_skipped_not_placed(tmp_path, s
     bars = session(path=[100.0] * 390)
     day = bars.index[0].date()
     book = Book("sim", SimBroker(1000.0), tmp_path / "sim")
-    specs = [spec(id="p", size_fraction=0.25, stop_pct=10),
-             spec(id="q", symbols=["TLT"], size_fraction=0.25, stop_pct=10)]
+    specs = [
+        spec(id="p", size_fraction=0.25, stop_pct=10),
+        spec(id="q", symbols=["TLT"], size_fraction=0.25, stop_pct=10),
+    ]
     eng = Engine(specs, {"live": book, "shadow": book}, Always(), {"SPY", "TLT"}, tmp_path)
     eng.start_day(day, {})
     ticks_all(eng, bars, ["SPY", "TLT"], 10)
     assert "SPY" in book.entries and "TLT" not in book.entries and "TLT" not in book.pending
     note = eng.states[1].symbols["TLT"].note  # equity is a few cents under $1000 after SPY's slippage
     assert note.startswith("allocator: aggregate stop risk; allowed $49.9") and note.endswith(
-        "; skipped, under the $62.49 floor for a trimmed entry")
+        "; skipped, under the $62.49 floor for a trimmed entry"
+    )
     row = [r for r in decisions(tmp_path, day) if r["q"] == "allocation" and r["c"] == "q"][0]
     assert row["constraint"] == "aggregate stop risk"
     assert (row["requested"], row["allowed"], row["floor"]) == pytest.approx((250, 50, 62.5), abs=0.1)
@@ -294,10 +327,12 @@ def test_a_trim_under_ten_dollars_is_skipped_but_a_small_untrimmed_entry_is_not(
     day = bars.index[0].date()
     syms = ["QQQ", "NVDA", "XLY", "XOM"]
     book = Book("sim", SimBroker(250.0), tmp_path / "sim")
-    specs = [spec(id="qqq", symbols=["QQQ"], size_fraction=0.25),
-             spec(id="nvda", symbols=["NVDA"], size_fraction=0.214),  # 46.4% of the 50% growth bucket: $9 left
-             spec(id="xly", symbols=["XLY"], size_fraction=0.12),  # asks $30; the quarter floor is $7.50
-             spec(id="xom", symbols=["XOM"], size_fraction=0.03)]  # $7.50, outside every bucket: untrimmed
+    specs = [
+        spec(id="qqq", symbols=["QQQ"], size_fraction=0.25),
+        spec(id="nvda", symbols=["NVDA"], size_fraction=0.214),  # 46.4% of the 50% growth bucket: $9 left
+        spec(id="xly", symbols=["XLY"], size_fraction=0.12),  # asks $30; the quarter floor is $7.50
+        spec(id="xom", symbols=["XOM"], size_fraction=0.03),
+    ]  # $7.50, outside every bucket: untrimmed
     eng = Engine(specs, {"live": book, "shadow": book}, Always(), {"SPY", *syms}, tmp_path)
     eng.start_day(day, {})
     ticks_all(eng, bars, ["SPY", *syms], 10)

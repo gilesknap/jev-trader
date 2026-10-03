@@ -43,9 +43,19 @@ class Offline(SimBroker):
 def run(tmp_path, session, filled_at):
     br = Offline(filled_at)
     book, eng = make(tmp_path, [spec()], Always(entry="WAIT"), br)
-    book.pending["SPY"] = Pending(classifier="t", order_id="o1", limit=100.0, qty=0.5, reserved=50.0,
-                                  placed=AT(9, 40), expires=AT(15, 30), stop_pct=0.5, target_pct=1.0,
-                                  params=Engine._entry_params(spec()), client_id="c1")
+    book.pending["SPY"] = Pending(
+        classifier="t",
+        order_id="o1",
+        limit=100.0,
+        qty=0.5,
+        reserved=50.0,
+        placed=AT(9, 40),
+        expires=AT(15, 30),
+        stop_pct=0.5,
+        target_pct=1.0,
+        params=Engine._entry_params(spec()),
+        client_id="c1",
+    )
     book.save_pending()
     alerts = []
     eng.alert = lambda lvl, msg: alerts.append(msg)

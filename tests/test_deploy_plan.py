@@ -21,7 +21,19 @@ def keys(tmp_path_factory):
     os.chmod(home, 0o700)
     fprs = {}
     for name in ("github", "mallory"):
-        sh("gpg", "--homedir", str(home), "--batch", "--passphrase", "", "--quick-gen-key", f"{name} <{name}@example.com>", "ed25519", "sign", "never")
+        sh(
+            "gpg",
+            "--homedir",
+            str(home),
+            "--batch",
+            "--passphrase",
+            "",
+            "--quick-gen-key",
+            f"{name} <{name}@example.com>",
+            "ed25519",
+            "sign",
+            "never",
+        )
         out = sh("gpg", "--homedir", str(home), "--batch", "--with-colons", "--list-keys", f"{name}@example.com")
         fprs[name] = next(line.split(":")[9] for line in out.splitlines() if line.startswith("fpr"))
     pub = home / "github.gpg"
@@ -54,8 +66,17 @@ class Repo:
         self.git("checkout", "-q", "-b", f"pr{n}")
         self.commit(f"work {n}")
         self.git("checkout", "-q", "main")
-        self.git("merge", "-q", "--no-ff", f"pr{n}", "-m", subject or f"Merge pull request #{n} from o/pr{n}", "-m", title,
-                 *([f"-S{key}"] if key else []))
+        self.git(
+            "merge",
+            "-q",
+            "--no-ff",
+            f"pr{n}",
+            "-m",
+            subject or f"Merge pull request #{n} from o/pr{n}",
+            "-m",
+            title,
+            *([f"-S{key}"] if key else []),
+        )
         return self.git("rev-parse", "HEAD")
 
 
@@ -73,7 +94,9 @@ def test_signed_pr_merges_need_no_review(tmp_path, keys):
     assert p.code == 0 and [(n, t) for _, n, t in p.prs] == [(5, "Add a thing"), (6, "Fix a thing")]
 
 
-@pytest.mark.parametrize("case", ["direct push", "signed single-parent", "wrong key", "unsigned merge", "not a PR subject"])
+@pytest.mark.parametrize(
+    "case", ["direct push", "signed single-parent", "wrong key", "unsigned merge", "not a PR subject"]
+)
 def test_anything_else_needs_review(tmp_path, keys, case):
     r = Repo(tmp_path, keys[0])
     base = r.git("rev-parse", "HEAD")
@@ -115,9 +138,21 @@ def test_shipped_key_is_githubs(keys):
     from trader.deploy import KEY_FILE, WEB_FLOW_FINGERPRINTS
 
     home = keys[0]  # not the real ~/.gnupg, which even a show-only import creates and locks
-    out = subprocess.run(["gpg", "--homedir", str(home), "--batch", "--with-colons", "--import-options", "show-only",
-                          "--import", str(KEY_FILE)],
-                         capture_output=True, text=True).stdout
+    out = subprocess.run(
+        [
+            "gpg",
+            "--homedir",
+            str(home),
+            "--batch",
+            "--with-colons",
+            "--import-options",
+            "show-only",
+            "--import",
+            str(KEY_FILE),
+        ],
+        capture_output=True,
+        text=True,
+    ).stdout
     assert WEB_FLOW_FINGERPRINTS <= {line.split(":")[9] for line in out.splitlines() if line.startswith("fpr")}
 
 

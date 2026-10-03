@@ -123,8 +123,9 @@ def test_enforce_promotion_survives_a_symlinked_feature(checkout, tmp_path):
     custom = checkout / "features" / "custom"
     (custom / "gone.py").symlink_to(tmp_path / "missing.py")
     s = spec(id="idea", mode="live")
-    out = golive.enforce_promotion([s], lambda *a: None, True, dt.date(2026, 10, 19), tmp_path,
-                                   tmp_path / "promotion.json", custom)
+    out = golive.enforce_promotion(
+        [s], lambda *a: None, True, dt.date(2026, 10, 19), tmp_path, tmp_path / "promotion.json", custom
+    )
     assert [x.mode for x in out] == ["shadow"]
 
 
@@ -191,7 +192,9 @@ def test_runner_session_start_survives_symlinked_features(checkout, tmp_path, mo
     monkeypatch.setattr(config, "load_secrets", lambda: {"ALPACA_PAPER_KEY": "k", "ALPACA_PAPER_SECRET": "s"})
     monkeypatch.setattr(runner, "notify", lambda level, msg, **k: alerts.append(msg))
     monkeypatch.setattr(runner, "AlpacaBroker", FakeBroker)
-    monkeypatch.setattr(runner, "_session_today", lambda client: (now - dt.timedelta(hours=1), now + dt.timedelta(hours=1)))
+    monkeypatch.setattr(
+        runner, "_session_today", lambda client: (now - dt.timedelta(hours=1), now + dt.timedelta(hours=1))
+    )
     monkeypatch.setattr(runner, "fetch_alpaca", lambda symbols, *a, **k: {s: bars for s in symbols})
     monkeypatch.setattr(runner, "Book", lambda *a, **k: object())
     monkeypatch.setattr(runner, "reconcile_sim_accounts", lambda *a, **k: None)
@@ -250,8 +253,11 @@ def test_a_full_tmp_disables_custom_features_but_not_library_classifiers(checkou
     monkeypatch.setattr(F, "SANDBOX", None)
     alerts = []
     try:
-        report = run_gate(checkout / "features" / "custom", [(session(), session(day=dt.date(2026, 9, 18)), session())],
-                          alert=lambda lvl, msg: alerts.append(msg))
+        report = run_gate(
+            checkout / "features" / "custom",
+            [(session(), session(day=dt.date(2026, 9, 18)), session())],
+            alert=lambda lvl, msg: alerts.append(msg),
+        )
     finally:
         if F.SANDBOX is not None:
             F.SANDBOX.close()

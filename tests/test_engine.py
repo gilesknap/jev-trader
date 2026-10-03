@@ -23,10 +23,20 @@ class Always:
 
 
 def spec(**kw):
-    base = dict(id="t", family="conventional", symbols=["SPY"], window=("09:35", "15:30"), cadence_min=1, features=["ret_1m_pct"],
-                entry={"instructions": "?", "criteria": {"ENTER": "a", "WAIT": "b"}},
-                exit={"instructions": "?", "criteria": {"HOLD": "a", "EXIT": "b"}},
-                size_fraction=0.2, stop_pct=0.5, target_pct=1.0, max_trades=1)
+    base = dict(
+        id="t",
+        family="conventional",
+        symbols=["SPY"],
+        window=("09:35", "15:30"),
+        cadence_min=1,
+        features=["ret_1m_pct"],
+        entry={"instructions": "?", "criteria": {"ENTER": "a", "WAIT": "b"}},
+        exit={"instructions": "?", "criteria": {"HOLD": "a", "EXIT": "b"}},
+        size_fraction=0.2,
+        stop_pct=0.5,
+        target_pct=1.0,
+        max_trades=1,
+    )
     return ClassifierSpec(**(base | kw))
 
 
@@ -40,7 +50,9 @@ def run(tmp_path, bars, specs, decider, cash=250.0):
         now = (ts + pd.Timedelta(minutes=1)).to_pydatetime()
         eng.tick(now, {"SPY": bars.loc[:ts]}, (close - now).total_seconds() / 60)
     eng.end_day(close)
-    trades = pd.read_csv(tmp_path / "sim" / "trades.csv") if (tmp_path / "sim" / "trades.csv").exists() else pd.DataFrame()
+    trades = (
+        pd.read_csv(tmp_path / "sim" / "trades.csv") if (tmp_path / "sim" / "trades.csv").exists() else pd.DataFrame()
+    )
     return book, trades
 
 

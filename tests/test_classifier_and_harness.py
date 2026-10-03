@@ -41,14 +41,17 @@ def test_good_spec(tmp_path):
     assert load_specs(write(tmp_path, GOOD), set(F.REGISTRY), {"SPY"})[0].id == "t1"
 
 
-@pytest.mark.parametrize("mutate,msg", [
-    (lambda c: c.update(size_fraction=0.5), "size_fraction"),
-    (lambda c: c.update(symbols=["GME"]), "not in universe"),
-    (lambda c: c.update(features=["nope"]), "unknown or failed feature"),
-    (lambda c: c.update(window=["09:00", "10:00"]), "window"),
-    (lambda c: c["exit"]["criteria"].update(SELL_SHORT="x"), "HOLD and EXIT"),
-    (lambda c: c.update(stop_pct=15), "stop_pct"),
-])
+@pytest.mark.parametrize(
+    "mutate,msg",
+    [
+        (lambda c: c.update(size_fraction=0.5), "size_fraction"),
+        (lambda c: c.update(symbols=["GME"]), "not in universe"),
+        (lambda c: c.update(features=["nope"]), "unknown or failed feature"),
+        (lambda c: c.update(window=["09:00", "10:00"]), "window"),
+        (lambda c: c["exit"]["criteria"].update(SELL_SHORT="x"), "HOLD and EXIT"),
+        (lambda c: c.update(stop_pct=15), "stop_pct"),
+    ],
+)
 def test_bad_specs(tmp_path, mutate, msg):
     raw = yaml.safe_load(GOOD)
     mutate(raw["classifiers"][0])
@@ -64,7 +67,8 @@ def test_static_check_blocks_io(tmp_path):
 
 
 def test_custom_feature_loads_and_evaluates(tmp_path, session):
-    (tmp_path / "mine.py").write_text(textwrap.dedent('''
+    (tmp_path / "mine.py").write_text(
+        textwrap.dedent("""
         import numpy as np
         from trader.features import feature
 
@@ -72,7 +76,8 @@ def test_custom_feature_loads_and_evaluates(tmp_path, session):
         def f(bars, ctx):
             b = bars.iloc[-1]
             return float((b.high / b.low - 1) * 100)
-    '''))
+    """)
+    )
     names, errors = load_custom_inprocess(tmp_path)
     assert names == ["test_last_bar_range_pct"] and not errors
     s = session()

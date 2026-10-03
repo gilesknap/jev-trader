@@ -137,7 +137,9 @@ def pytest_sessionfinish(session, exitstatus):
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
     if _created_real_alerts():  # here, just before the "N passed" line, where a failure is looked for
-        terminalreporter.write_line(f"FAIL: the suite created the strategist root's alerts log {REAL_STRATEGIST_ALERTS}", red=True)
+        terminalreporter.write_line(
+            f"FAIL: the suite created the strategist root's alerts log {REAL_STRATEGIST_ALERTS}", red=True
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -152,10 +154,16 @@ def make_session(day=dt.date(2026, 9, 21), start=100.0, drift=0.0, n=390, seed=0
     idx = pd.date_range(dt.datetime.combine(day, dt.time(9, 30), ET), periods=n, freq="1min")
     closes = np.array(path, float) if path is not None else start * np.exp(np.cumsum(rng.normal(drift, 0.0005, n)))
     opens = np.r_[closes[0], closes[:-1]]
-    return pd.DataFrame({
-        "open": opens, "high": np.maximum(opens, closes) * 1.0002,
-        "low": np.minimum(opens, closes) * 0.9998, "close": closes, "volume": 1000.0,
-    }, index=idx[: len(closes)])
+    return pd.DataFrame(
+        {
+            "open": opens,
+            "high": np.maximum(opens, closes) * 1.0002,
+            "low": np.minimum(opens, closes) * 0.9998,
+            "close": closes,
+            "volume": 1000.0,
+        },
+        index=idx[: len(closes)],
+    )
 
 
 @pytest.fixture

@@ -46,15 +46,21 @@ def run(tmp_path, session, error, clock, minutes, symbols=("SPY", "QQQ"), switch
     book = Book("paper", Refusing(1000.0, error), tmp_path / "paper")
     alerts = []
     s = spec(symbols=list(symbols), cadence_min=1, max_trades=20, after_exit="rearm")
-    eng = Engine([s], {"live": book, "shadow": book}, Always(), set(symbols), tmp_path,
-                 alert=lambda level, msg: alerts.append((level, msg)))
+    eng = Engine(
+        [s],
+        {"live": book, "shadow": book},
+        Always(),
+        set(symbols),
+        tmp_path,
+        alert=lambda level, msg: alerts.append((level, msg)),
+    )
     bars = {sym: session(seed=i) for i, sym in enumerate(symbols)}
     day = bars["SPY"].index[0].date()
     eng.start_day(day, {})
     close = dt.datetime.combine(day, dt.time(16), ET)
     idx = bars["SPY"].index
     start = idx.get_loc(pd.Timestamp(dt.datetime.combine(day, dt.time(9, 35), ET)))
-    for i, ts in enumerate(idx[start:start + minutes]):
+    for i, ts in enumerate(idx[start : start + minutes]):
         if switch and i == switch[0]:
             book.broker.error = switch[1]
         clock[0] += 60
@@ -67,8 +73,13 @@ def entry_alerts(alerts, sym, text="failed"):
     return [(lvl, m) for lvl, m in alerts if f"entry {sym} " in m and text in m]
 
 
-@pytest.mark.parametrize("error, level", [(APIError(403, "account is trading_blocked"), "urgent"),
-                                          (NotFilled("order canceled with nothing filled"), "info")])
+@pytest.mark.parametrize(
+    "error, level",
+    [
+        (APIError(403, "account is trading_blocked"), "urgent"),
+        (NotFilled("order canceled with nothing filled"), "info"),
+    ],
+)
 def test_repeated_entry_failures_alert_once_per_window_per_symbol(tmp_path, session, clock, error, level):
     book, alerts = run(tmp_path, session, error, clock, minutes=25)
     for sym in ("SPY", "QQQ"):
@@ -82,8 +93,15 @@ def test_repeated_entry_failures_alert_once_per_window_per_symbol(tmp_path, sess
 
 
 def test_refusal_is_not_hidden_by_an_earlier_unfilled_alert(tmp_path, session, clock):
-    book, alerts = run(tmp_path, session, NotFilled("canceled"), clock, minutes=4, symbols=("SPY",),
-                       switch=(2, APIError(403, "asset not fractionable")))
+    book, alerts = run(
+        tmp_path,
+        session,
+        NotFilled("canceled"),
+        clock,
+        minutes=4,
+        symbols=("SPY",),
+        switch=(2, APIError(403, "asset not fractionable")),
+    )
     # a different condition alerts at once, at its own level, then is throttled in turn
     assert [lvl for lvl, _ in entry_alerts(alerts, "SPY")] == ["info", "urgent"]
 

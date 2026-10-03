@@ -91,7 +91,10 @@ def test_sell_all_rechecks_a_lagging_positions_endpoint(monkeypatch):
 
 def test_exit_fill_since_blends_every_filled_sell():
     c = FakeClient()
-    c.get_orders = lambda req: [NS(filled_qty="0.2", filled_avg_price="101"), NS(filled_qty="0.3", filled_avg_price="106"),
-                                NS(filled_qty="0", filled_avg_price=None)]
+    c.get_orders = lambda req: [
+        NS(filled_qty="0.2", filled_avg_price="101"),
+        NS(filled_qty="0.3", filled_avg_price="106"),
+        NS(filled_qty="0", filled_avg_price=None),
+    ]
     f = broker(c).exit_fill_since("SPY", dt.datetime(2026, 10, 6, 10, tzinfo=ET), None)
     assert abs(f.qty - 0.5) < 1e-12 and abs(f.price - 104.0) < 1e-9

@@ -14,7 +14,8 @@ def replay_cli(tmp_path, monkeypatch, session, capsys):
     bars = session(path=[100.0] * 30)
     day = bars.index[0].date().isoformat()
     settings = config.SETTINGS.model_copy(
-        update={"capital": config.SETTINGS.capital.model_copy(update={"replay_cash": 1234.0})})
+        update={"capital": config.SETTINGS.capital.model_copy(update={"replay_cash": 1234.0})}
+    )
     monkeypatch.setattr(config, "SETTINGS", settings)
     monkeypatch.setattr(config, "REPLAY_DIR", tmp_path / "replays")
     monkeypatch.setattr(config, "load_secrets", lambda: {})
@@ -25,7 +26,7 @@ def replay_cli(tmp_path, monkeypatch, session, capsys):
     def run(*extra):
         cli.main(["replay", "--decider", "stub", "--name", "t", "--start", day, "--end", day, *extra])
         out = capsys.readouterr().out
-        return json.loads(out[:out.rindex("}") + 1])["start_equity"]
+        return json.loads(out[: out.rindex("}") + 1])["start_equity"]
 
     return run
 

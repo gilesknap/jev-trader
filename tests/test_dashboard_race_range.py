@@ -2,6 +2,7 @@
 
 The logic is plain JavaScript in index.html; these tests run that block under node (skipped without it).
 """
+
 import json
 import re
 import shutil
@@ -18,20 +19,23 @@ pytestmark = pytest.mark.skipif(NODE is None, reason="node not installed")
 def _block() -> str:
     page = (config.CODE_ROOT / "dashboard" / "static" / "index.html").read_text()
     start = page.index("// ---- time ranges (Performance and the race) ----")
-    return page[start:page.index("// ---- end time ranges ----", start)]
+    return page[start : page.index("// ---- end time ranges ----", start)]
 
 
 def _run(expr: str):
-    r = subprocess.run([NODE, "-e", _block() + f"\nconsole.log(JSON.stringify({expr}));"],
-                       capture_output=True, text=True, timeout=30)
+    r = subprocess.run(
+        [NODE, "-e", _block() + f"\nconsole.log(JSON.stringify({expr}));"], capture_output=True, text=True, timeout=30
+    )
     assert r.returncode == 0, r.stderr
     return json.loads(r.stdout)
 
 
 DAYS = ["2026-08-20", "2026-09-21", "2026-09-25", "2026-09-29", "2026-09-30"]
-ROWS = [{"id": "a", "curve": [1.0, 1.5, 1.2, 2.0, 2.5]},
-        {"id": "b", "curve": [0.0, -0.5, -0.5, -0.5, -0.5]},   # nothing since 21 Sep
-        {"id": "c", "curve": [0.0, 0.0, 0.0, 0.3, 0.3]}]
+ROWS = [
+    {"id": "a", "curve": [1.0, 1.5, 1.2, 2.0, 2.5]},
+    {"id": "b", "curve": [0.0, -0.5, -0.5, -0.5, -0.5]},  # nothing since 21 Sep
+    {"id": "c", "curve": [0.0, 0.0, 0.0, 0.3, 0.3]},
+]
 
 
 def _win(span):

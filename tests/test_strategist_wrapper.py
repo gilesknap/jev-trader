@@ -52,7 +52,7 @@ def git(cwd, *args, env=None):
     return subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True, text=True).stdout
 
 
-TRACKED_ODD = "docs/réad me.md"   # a tracked path git quotes in plain `git status --porcelain`
+TRACKED_ODD = "docs/réad me.md"  # a tracked path git quotes in plain `git status --porcelain`
 
 
 def make_sandbox(tmp_path, split=False, code=ROOT):
@@ -64,8 +64,12 @@ def make_sandbox(tmp_path, split=False, code=ROOT):
         f.write_text(body)
         f.chmod(0o755)
     (home / ".gitconfig").write_text("[user]\n\tname = t\n\temail = t@t\n[init]\n\tdefaultBranch = main\n")
-    env = {"HOME": str(home), "PATH": "/usr/bin:/bin", "TRADER_STRATEGIST_ROOT": str(tmp_path / "repo"),
-           "XDG_STATE_HOME": str(tmp_path / "state")}
+    env = {
+        "HOME": str(home),
+        "PATH": "/usr/bin:/bin",
+        "TRADER_STRATEGIST_ROOT": str(tmp_path / "repo"),
+        "XDG_STATE_HOME": str(tmp_path / "state"),
+    }
     if split:
         (tmp_path / "config").mkdir()
         env |= {"TRADER_DATA_ROOT": str(tmp_path / "config"), "TRADER_CODE_ROOT": str(code)}
@@ -84,7 +88,7 @@ def make_sandbox(tmp_path, split=False, code=ROOT):
     (seed / "CLAUDE.md").write_text("charter\n")
     (seed / "docs").mkdir()
     (seed / TRACKED_ODD).write_text("odd\n")
-    if not split:   # monorepo: the branch carries the wrapper and the prompts
+    if not split:  # monorepo: the branch carries the wrapper and the prompts
         for d in ("scripts", "prompts"):
             (seed / d).mkdir()
         shutil.copy(WRAPPER, seed / "scripts" / "strategist.sh")
@@ -143,17 +147,17 @@ def test_reexecs_merged_wrapper_and_pushes_merge(sandbox):
     sandbox.push_main(add_marker)
     r = sandbox.run("premarket")
     assert r.returncode == 0, r.stderr
-    assert sandbox.read("marker") == "new\n"          # the merged script ran, not the old one
+    assert sandbox.read("marker") == "new\n"  # the merged script ran, not the old one
     assert sandbox.read("claude_runs") == "run\n"
     assert "--model cfg-model" in sandbox.read("claude_args")  # from config.yaml models.strategist
-    assert sandbox.read("claude_env") == ""           # internal flags don't reach the session
+    assert sandbox.read("claude_env") == ""  # internal flags don't reach the session
     assert sandbox.read("alerts") == ""
     assert "change wrapper" in git(sandbox.tmp / "origin.git", "log", "--oneline", "strategist")
     assert len(list(sandbox.logdir.glob("*-premarket.log"))) == 1
 
 
 def test_stray_child_does_not_hold_the_lock(sandbox):
-    assert sandbox.run("weekly").returncode == 0      # its fake claude leaves `sleep 3` running
+    assert sandbox.run("weekly").returncode == 0  # its fake claude leaves `sleep 3` running
     assert sandbox.run("weekly").returncode == 0
     assert sandbox.read("claude_runs") == "run\nrun\n"
 
@@ -188,8 +192,11 @@ def test_housekeeping_leaves_a_busy_checkout_alone(sandbox):
 
 
 def test_postclose_writes_the_probe_report_and_survives_its_failure(sandbox):
-    (sandbox.home / ".local" / "bin" / "uv").write_text(FAKE_UV.replace('"minutes_to_close": 400', '"minutes_to_close": -30')
-                                                        .replace('  *) echo', '  *probe-report*) echo "$*" >> "$HOME/uv_calls"; exit 1 ;;\n  *) echo'))
+    (sandbox.home / ".local" / "bin" / "uv").write_text(
+        FAKE_UV.replace('"minutes_to_close": 400', '"minutes_to_close": -30').replace(
+            "  *) echo", '  *probe-report*) echo "$*" >> "$HOME/uv_calls"; exit 1 ;;\n  *) echo'
+        )
+    )
     r = sandbox.run("postclose")
     assert r.returncode == 0, r.stderr
     calls = sandbox.read("uv_calls").splitlines()
@@ -208,11 +215,14 @@ def origin_log(sandbox):
 
 def test_run_that_pushes_itself_is_fast_forwarded_and_path_checked(sandbox):
     # The model commits and pushes strategist itself, including a path it may not change.
-    fake_claude(sandbox, """echo note >> state/note.md
+    fake_claude(
+        sandbox,
+        """echo note >> state/note.md
 mkdir -p scripts && echo evil > scripts/evil.sh
 git add -A && git commit -qm "model commit" && git push -q origin strategist
 echo later >> journal.md; mkdir -p journal && echo later > journal/d.md
-""")
+""",
+    )
     r = sandbox.run("premarket")
     assert r.returncode == 0, r.stderr
     alerts = sandbox.read("alerts")
@@ -223,12 +233,15 @@ echo later >> journal.md; mkdir -p journal && echo later > journal/d.md
     files = git(sandbox.tmp / "origin.git", "ls-tree", "-r", "--name-only", "strategist").split()
     assert "state/note.md" in files and "journal/d.md" in files
     assert "scripts/evil.sh" not in files and "journal.md" not in files
-    assert git(sandbox.repo, "rev-parse", "HEAD").strip() == log[0].split()[0]   # not diverged
+    assert git(sandbox.repo, "rev-parse", "HEAD").strip() == log[0].split()[0]  # not diverged
     assert git(sandbox.repo, "status", "--porcelain") == ""
 
 
 def test_run_that_pushes_everything_adds_no_commit(sandbox):
-    fake_claude(sandbox, 'echo note >> state/note.md\ngit add -A && git commit -qm "model commit" && git push -q origin strategist\n')
+    fake_claude(
+        sandbox,
+        'echo note >> state/note.md\ngit add -A && git commit -qm "model commit" && git push -q origin strategist\n',
+    )
     assert sandbox.run("premarket").returncode == 0
     assert sandbox.read("alerts") == ""
     log = origin_log(sandbox)
@@ -237,12 +250,15 @@ def test_run_that_pushes_everything_adds_no_commit(sandbox):
 
 
 def test_someone_else_pushing_during_the_run_is_rebased_onto(sandbox):
-    fake_claude(sandbox, f"""echo note >> state/note.md
+    fake_claude(
+        sandbox,
+        f"""echo note >> state/note.md
 git add -A && git commit -qm "model commit" && git push -q origin strategist
 echo more >> state/note2.md
 cd {sandbox.seed} && git fetch -q origin && git checkout -q -B strategist origin/strategist
 echo human > state/human.md && git add -A && git commit -qm "human commit" && git push -q origin strategist
-""")
+""",
+    )
     assert sandbox.run("premarket").returncode == 0
     assert sandbox.read("alerts") == ""
     subjects = [line.split(" ", 1)[1] for line in origin_log(sandbox)]
@@ -252,11 +268,14 @@ echo human > state/human.md && git add -A && git commit -qm "human commit" && gi
 
 
 def test_run_that_pushes_then_amends_alerts_that_origin_is_not_reverted(sandbox):
-    fake_claude(sandbox, """echo note >> state/note.md
+    fake_claude(
+        sandbox,
+        """echo note >> state/note.md
 mkdir -p scripts && echo evil > scripts/evil.sh
 git add -A && git commit -qm "model commit" && git push -q origin strategist
 git commit -q --amend -m amended
-""")
+""",
+    )
     assert sandbox.run("premarket").returncode == 0
     alerts = sandbox.read("alerts")
     assert "NOT reverted" in alerts and "scripts/evil.sh" in alerts.split("NOT reverted")[1]
@@ -264,8 +283,13 @@ git commit -q --amend -m amended
 
 # ---- both modes ----
 
-NEW_FILES = ["journal/daily/2026-10-05.md", "journal/weekly/2026-W41.md", "logs/new_equity.csv",
-             "state/new.md", "features/custom/new_feature.py"]
+NEW_FILES = [
+    "journal/daily/2026-10-05.md",
+    "journal/weekly/2026-W41.md",
+    "logs/new_equity.csv",
+    "state/new.md",
+    "features/custom/new_feature.py",
+]
 
 
 @pytest.mark.parametrize("mode", ["monorepo", "split"])
@@ -287,8 +311,11 @@ def test_run_lock_is_held_for_the_whole_run(tmp_path, mode):
     # A deploy (#169 section 6.1) refuses while the existing strategist.lock is held; it must be held
     # while claude runs, not just at the start.
     s = make_sandbox(tmp_path, split=mode == "split")
-    fake_claude(s, 'flock -n -s "$XDG_STATE_HOME/trader/strategist.lock" true && echo free >> "$HOME/probe" '
-                   '|| echo held >> "$HOME/probe"\n')
+    fake_claude(
+        s,
+        'flock -n -s "$XDG_STATE_HOME/trader/strategist.lock" true && echo free >> "$HOME/probe" '
+        '|| echo held >> "$HOME/probe"\n',
+    )
     assert s.run("weekly").returncode == 0
     assert s.read("probe") == "held\n"
 
@@ -303,6 +330,7 @@ def test_monorepo_reverts_proposals(sandbox):
 
 # ---- split mode ----
 
+
 def test_split_runs_deployed_code_without_merging_main(split):
     # Something on origin/main must not reach the data branch: there is no merge of main.
     (split.seed / "code.py").write_text("x")
@@ -312,16 +340,16 @@ def test_split_runs_deployed_code_without_merging_main(split):
     r = split.run("premarket")
     assert r.returncode == 0, r.stderr
     assert split.read("alerts") == ""
-    assert split.read("uv_calls") == ""               # no `uv run`: trader is the shim on PATH
+    assert split.read("uv_calls") == ""  # no `uv run`: trader is the shim on PATH
     assert split.read("claude_runs") == "run\n"
     args = split.read("claude_args")
     assert args.startswith("-p " + (ROOT / "prompts" / "premarket.md").read_text()[:200])
     assert f"--append-system-prompt-file {ROOT / 'CLAUDE.md'} --model cfg-model" in args
-    assert split.read("claude_env") == ""             # internal flags (STRATEGIST_COPIED too) don't leak
+    assert split.read("claude_env") == ""  # internal flags (STRATEGIST_COPIED too) don't leak
     files = git(split.tmp / "origin.git", "ls-tree", "-r", "--name-only", "strategist").split()
     assert "state/note.md" in files and "code.py" not in files
     assert "code on main" not in git(split.tmp / "origin.git", "log", "--oneline", "strategist")
-    assert list(split.logdir.glob("strategist.sh.*")) == []   # the private copy is removed
+    assert list(split.logdir.glob("strategist.sh.*")) == []  # the private copy is removed
 
 
 def test_split_pulls_origin_strategist_first(split):
@@ -336,7 +364,9 @@ def test_split_pulls_origin_strategist_first(split):
 
 
 def test_split_publishes_proposals_and_reverts_code(split):
-    fake_claude(split, "mkdir -p proposals/x scripts && echo p > proposals/x/0001-a.patch && echo e > scripts/evil.sh\n")
+    fake_claude(
+        split, "mkdir -p proposals/x scripts && echo p > proposals/x/0001-a.patch && echo e > scripts/evil.sh\n"
+    )
     assert split.run("weekly").returncode == 0
     alerts = split.read("alerts")
     assert "touched non-strategy paths (reverted): scripts/" in alerts and "proposals" not in alerts
@@ -365,9 +395,9 @@ def test_split_without_a_charter_alerts_and_does_not_run(tmp_path, charter):
     assert r.returncode == 1
     assert "CLAUDE.md or" in s.read("alerts") and "not running" in s.read("alerts")
     assert s.read("claude_runs") == ""
-    assert s.read("trader_calls") == ""   # refused before archive/compact could touch journal/ or logs/
+    assert s.read("trader_calls") == ""  # refused before archive/compact could touch journal/ or logs/
     assert git(s.repo, "status", "--porcelain", "--untracked-files=all") == ""
-    assert s.run("housekeeping").returncode == 1   # the charter is checked for every kind
+    assert s.run("housekeeping").returncode == 1  # the charter is checked for every kind
     assert s.read("trader_calls") == ""
 
 
@@ -377,7 +407,7 @@ def test_split_housekeeping_needs_no_prompt(tmp_path):
     s = make_sandbox(tmp_path, split=True, code=code)
     assert s.run("housekeeping").returncode == 0
     assert s.read("trader_calls") == "housekeeping\n" and s.read("alerts") == ""
-    assert s.run("weekly").returncode == 1   # but a strategist run does
+    assert s.run("weekly").returncode == 1  # but a strategist run does
     assert "prompts/weekly.md is missing" in s.read("alerts") and "archive" not in s.read("trader_calls")
 
 
@@ -410,9 +440,12 @@ def test_split_survives_its_script_being_replaced_mid_run(tmp_path):
     # on with the copy it started from (path check and publish included).
     code = code_copy(tmp_path)
     s = make_sandbox(tmp_path, split=True, code=code)
-    fake_claude(s, f"""echo note >> state/note.md
+    fake_claude(
+        s,
+        f"""echo note >> state/note.md
 printf '%s\\n' 'echo HIJACK >> "$HOME/hijack"; exit 7' "$(head -c 20000 /dev/zero | tr '\\0' '#')" > {code}/scripts/strategist.sh
-""")
+""",
+    )
     r = s.run("weekly")
     assert r.returncode == 0, r.stderr
     assert s.read("hijack") == "" and s.read("alerts") == ""
@@ -443,6 +476,7 @@ def test_split_housekeeping_leaves_a_busy_checkout_alone(split):
 
 
 # ---- trader's venv re-sync (split mode, #169 section 6.2 / C2) ----
+
 
 def test_split_syncs_trader_venv_first_under_the_lock(split):
     # Exactly 2-strategist.sh's command, against the deployed code, before the session lookup uses
@@ -477,19 +511,23 @@ def test_monorepo_does_not_sync_trader_venv(sandbox):
 
 # ---- the charter and prompts for the split layout (#169 C2) ----
 
+
 def test_charter_and_prompts_fit_the_split_layout():
     charter = (ROOT / "CLAUDE.md").read_text()
     prompts = {k: (ROOT / "prompts" / f"{k}.md").read_text() for k in ("premarket", "postclose", "weekly")}
     for name, text in {"CLAUDE.md": charter, **prompts}.items():
-        assert "uv run trader" not in text, name    # `trader` is the shim on PATH
-        assert "gh pr" not in text, name             # no code PRs, and the weekly is an issue
-        assert "Read CLAUDE.md" not in text, name    # the charter comes in the system prompt
+        assert "uv run trader" not in text, name  # `trader` is the shim on PATH
+        assert "gh pr" not in text, name  # no code PRs, and the weekly is an issue
+        assert "Read CLAUDE.md" not in text, name  # the charter comes in the system prompt
     for text in prompts.values():
         assert "Your charter is in your system prompt" in text
     assert "This charter is in your system prompt" in charter
     assert "`state/`, `journal/`, `features/custom/`, `logs/` and `proposals/`" in charter
     # A local clone checks ownership on the gitdir: safe.directory must name /srv/trading/main/.git.
-    assert "git -c safe.directory=/srv/trading/main/.git clone -q --no-hardlinks /srv/trading/main ~/work/<topic>" in charter
+    assert (
+        "git -c safe.directory=/srv/trading/main/.git clone -q --no-hardlinks /srv/trading/main ~/work/<topic>"
+        in charter
+    )
     assert "safe.directory=/srv/trading/main " not in charter and "`trader-test`" in charter
     assert "other than this week's" in prompts["weekly"]
     assert "Never interact with `gilesknap/jev-trader` or any other public GitHub repository" in charter
@@ -499,6 +537,7 @@ def test_charter_and_prompts_fit_the_split_layout():
 
 
 # ---- the path check's revert (F5 from the split rehearsal, #169; #177) ----
+
 
 def origin_files(s):
     return set(git(s.tmp / "origin.git", "ls-tree", "-r", "--name-only", "-z", "strategist").split("\0")) - {""}
@@ -532,12 +571,15 @@ def test_edited_tracked_and_new_untracked_outside_files_are_both_reverted(tmp_pa
 def test_paths_with_spaces_and_non_ascii_are_checked_exactly(tmp_path, mode):
     # #177: plain porcelain quotes these paths and `awk '{print $NF}'` took only their last word.
     s = make_sandbox(tmp_path, split=mode == "split")
-    fake_claude(s, f"""echo evil >> "{TRACKED_ODD}"
+    fake_claude(
+        s,
+        f"""echo evil >> "{TRACKED_ODD}"
 mkdir -p scripts && echo evil > "scripts/evil file.sh"
 echo evil > "naïve évil.txt"
 echo keep > "state/my note.md"
 mkdir -p journal && echo keep > "journal/café ☕.md"
-""")
+""",
+    )
     r = s.run("weekly")
     assert r.returncode == 0, r.stderr
     assert (s.repo / TRACKED_ODD).read_text() == "odd\n"
@@ -546,7 +588,7 @@ mkdir -p journal && echo keep > "journal/café ☕.md"
     assert "could NOT" not in alerts
     (line,) = [a for a in alerts.splitlines() if "touched non-strategy paths (reverted): " in a]
     assert TRACKED_ODD in line and "naïve évil.txt" in line and "scripts/" in line
-    assert "state/" not in line and "journal/" not in line   # allowed paths aren't named
+    assert "state/" not in line and "journal/" not in line  # allowed paths aren't named
     assert git(s.repo, "status", "--porcelain") == ""
     files = origin_files(s)
     assert {"state/my note.md", "journal/café ☕.md"} <= files
@@ -560,10 +602,13 @@ def test_renames_across_the_allowed_boundary(tmp_path, mode):
     # one (the tracked outside file comes back; its copy inside is a strategy file). Committed, so the
     # wrapper's reset turns them into a deletion plus an untracked file.
     s = make_sandbox(tmp_path, split=mode == "split")
-    fake_claude(s, """mkdir -p scripts && git mv state/s.md scripts/s.md
+    fake_claude(
+        s,
+        """mkdir -p scripts && git mv state/s.md scripts/s.md
 git mv CLAUDE.md state/charter.md
 git commit -qm renames
-""")
+""",
+    )
     r = s.run("weekly")
     assert r.returncode == 0, r.stderr
     assert not (s.repo / "scripts" / "s.md").exists()
@@ -580,8 +625,10 @@ SURVIVORS = {
     # A stale index lock: the wrapper's reset and every checkout fail, so the edit stays.
     "index lock": ("echo evil >> CLAUDE.md\ntouch .git/index.lock\n", "CLAUDE.md"),
     # The same with a staged rename out of an allowed dir: a rename entry, two paths in one record.
-    "staged rename": ("mkdir -p scripts && git mv state/s.md scripts/moved.md\ntouch .git/index.lock\n",
-                      "scripts/moved.md"),
+    "staged rename": (
+        "mkdir -p scripts && git mv state/s.md scripts/moved.md\ntouch .git/index.lock\n",
+        "scripts/moved.md",
+    ),
     # `git clean -fd` won't remove a nested repository.
     "nested repo": ("mkdir -p tools/x && git -C tools/x init -q && echo x > tools/x/f\n", "tools/"),
 }
@@ -600,21 +647,25 @@ def test_an_outside_path_that_survives_the_revert_alerts_and_is_not_published(tm
     assert "could NOT revert" in alerts and "not publishing" in alerts
     assert survivor in alerts.split("Still changed: ")[1].split(". Touched")[0]
     assert "(reverted)" not in alerts
-    assert "differs from the run" not in alerts and "Could not check" not in alerts   # the run pushed nothing
-    assert origin_log(s) == before                   # nothing published, not even state/n.md
-    assert not list(s.logdir.glob("status.*"))      # the status scratch file is removed
+    assert "differs from the run" not in alerts and "Could not check" not in alerts  # the run pushed nothing
+    assert origin_log(s) == before  # nothing published, not even state/n.md
+    assert not list(s.logdir.glob("status.*"))  # the status scratch file is removed
 
 
 @pytest.mark.parametrize("mode", ["monorepo", "split"])
 def test_show_untracked_files_no_does_not_hide_outside_files(tmp_path, mode):
     s = make_sandbox(tmp_path, split=mode == "split")
     git(s.repo, "config", "status.showUntrackedFiles", "no", env=s.env)
-    fake_claude(s, "mkdir -p scripts/deep && echo evil > scripts/deep/evil.sh && echo evil > evil.txt\necho n > state/n.md\n")
+    fake_claude(
+        s, "mkdir -p scripts/deep && echo evil > scripts/deep/evil.sh && echo evil > evil.txt\necho n > state/n.md\n"
+    )
     r = s.run("weekly")
     assert r.returncode == 0, r.stderr
     alerts = s.read("alerts")
-    assert "touched non-strategy paths (reverted): evil.txt, scripts/deep/evil.sh" in alerts and "could NOT" not in alerts
-    assert not (s.repo / "evil.txt").exists() and not (s.repo / "scripts" / "deep").exists()   # no empty dir left
+    assert (
+        "touched non-strategy paths (reverted): evil.txt, scripts/deep/evil.sh" in alerts and "could NOT" not in alerts
+    )
+    assert not (s.repo / "evil.txt").exists() and not (s.repo / "scripts" / "deep").exists()  # no empty dir left
     assert git(s.repo, "status", "--porcelain", "--untracked-files=all") == ""
     files = origin_files(s)
     assert "state/n.md" in files and not {"evil.txt", "scripts/deep/evil.sh"} & files
@@ -637,30 +688,40 @@ def test_tracked_file_replaced_by_a_directory_is_restored(tmp_path, mode):
 def test_survivor_alert_names_what_the_run_pushed_and_stops_same_day_retries(tmp_path, mode):
     # The refusal skips the publish that would revert the run's own pushes on origin: name them.
     s = make_sandbox(tmp_path, split=mode == "split")
-    fake_claude(s, """echo n > state/n.md
+    fake_claude(
+        s,
+        """echo n > state/n.md
 mkdir -p scripts && echo evil > scripts/evil.sh
 git add -A && git commit -qm "model commit" && git push -q origin strategist
 mkdir -p tools/x && git -C tools/x init -q && echo x > tools/x/f
-""")
+""",
+    )
     r = s.run("premarket")
     assert r.returncode == 1
     (line,) = [a for a in s.read("alerts").splitlines() if "could NOT revert" in a]
     assert "no retry today" in line
-    assert "differs from the run's start outside strategy paths (NOT reverted; pushed by the run, or by a human during it): scripts/evil.sh" in line
-    assert "state/n.md" not in line.split("during it): ")[1]   # allowed paths aren't named
-    r = s.run("premarket")                                     # a later tick the same day
+    assert (
+        "differs from the run's start outside strategy paths (NOT reverted; pushed by the run, or by a human during it): scripts/evil.sh"
+        in line
+    )
+    assert "state/n.md" not in line.split("during it): ")[1]  # allowed paths aren't named
+    r = s.run("premarket")  # a later tick the same day
     assert r.returncode == 0 and s.read("alerts").count("could NOT revert") == 1
     assert "already ran today" in "".join(p.read_text() for p in s.logdir.glob("*.log"))
 
 
 def test_survivor_alert_says_when_origin_cannot_be_checked(sandbox):
-    fake_claude(sandbox, f"mkdir -p tools/x && git -C tools/x init -q && echo x > tools/x/f\nmv {sandbox.tmp}/origin.git {sandbox.tmp}/gone.git\n")
+    fake_claude(
+        sandbox,
+        f"mkdir -p tools/x && git -C tools/x init -q && echo x > tools/x/f\nmv {sandbox.tmp}/origin.git {sandbox.tmp}/gone.git\n",
+    )
     assert sandbox.run("weekly").returncode == 1
     alerts = sandbox.read("alerts")
     assert "could NOT revert" in alerts and "Could not check origin/strategist" in alerts
 
 
 # ---- human-owned files inside the allowed dirs (#201) ----
+
 
 def push_steering(s, text="S1 human\n"):
     git(s.seed, "fetch", "-q", "origin", env=s.env)
@@ -705,10 +766,13 @@ def test_steering_created_or_deleted_by_the_run_is_reverted(tmp_path, mode):
 
 def test_steering_edit_the_run_pushed_itself_is_reverted_on_origin(sandbox):
     push_steering(sandbox)
-    fake_claude(sandbox, """echo mine >> state/steering.md
+    fake_claude(
+        sandbox,
+        """echo mine >> state/steering.md
 echo n > state/n.md
 git add -A && git commit -qm "model commit" && git push -q origin strategist
-""")
+""",
+    )
     assert sandbox.run("premarket").returncode == 0
     alerts = sandbox.read("alerts")
     assert "pushed non-strategy paths to origin/strategist (reverted): state/steering.md" in alerts
@@ -719,10 +783,13 @@ git add -A && git commit -qm "model commit" && git push -q origin strategist
 
 def test_human_steering_pushed_during_a_run_is_kept_and_named(sandbox):
     # Merging during a run is against the how-to; the wrapper keeps the human's commit and says so.
-    fake_claude(sandbox, f"""echo n > state/n.md
+    fake_claude(
+        sandbox,
+        f"""echo n > state/n.md
 cd {sandbox.seed} && git fetch -q origin && git checkout -q -B strategist origin/strategist
 echo human > state/steering.md && git add -A && git commit -qm "human steering" && git push -q origin strategist
-""")
+""",
+    )
     assert sandbox.run("premarket").returncode == 0
     alerts = sandbox.read("alerts")
     assert "NOT reverted" in alerts and "state/steering.md" in alerts
@@ -768,14 +835,17 @@ def test_rows_added_to_the_ledger_are_published(tmp_path, mode):
     assert origin_show(s, "logs/trials.csv") == LEDGER_TEXT + "2026-10-02T10:00:00+00:00,replay\n"
 
 
-@pytest.mark.parametrize("change", [
-    "sed -i 's/replay/probe_report/' logs/trials.csv",                  # an edited row
-    "head -c 20 logs/trials.csv > t && mv t logs/trials.csv",           # truncated
-    "rm logs/trials.csv",                                               # removed
-    "printf 'x\\n' > ~/x && rm logs/trials.csv && ln -s ~/x logs/trials.csv",  # a symlink
-    "rm logs/trials.csv && mkdir logs/trials.csv",                      # a directory
-    "echo new > logs/trials.csv && git add -A && git commit -qm c && git push -q origin strategist",
-])
+@pytest.mark.parametrize(
+    "change",
+    [
+        "sed -i 's/replay/probe_report/' logs/trials.csv",  # an edited row
+        "head -c 20 logs/trials.csv > t && mv t logs/trials.csv",  # truncated
+        "rm logs/trials.csv",  # removed
+        "printf 'x\\n' > ~/x && rm logs/trials.csv && ln -s ~/x logs/trials.csv",  # a symlink
+        "rm logs/trials.csv && mkdir logs/trials.csv",  # a directory
+        "echo new > logs/trials.csv && git add -A && git commit -qm c && git push -q origin strategist",
+    ],
+)
 def test_any_other_change_to_the_ledger_is_reverted_and_alerted(sandbox, change):
     push_ledger(sandbox)
     fake_claude(sandbox, change + "\necho n > state/n.md\n")
@@ -805,6 +875,7 @@ def test_the_first_ledger_is_published(sandbox):
 
 
 # ---- the trading day is the New York date ----
+
 
 def ny_dates():
     """Today's New York date, and the dates either side in case the run straddles midnight there."""

@@ -22,13 +22,19 @@ SCRIPT = (ROOT / "deploy" / "trading-deploy").read_text()
 pytestmark = pytest.mark.skipif(not (shutil.which("flock") and shutil.which("git")), reason="needs flock and git")
 needs_non_root = pytest.mark.skipif(os.geteuid() == 0, reason="root reads files whatever their mode")
 
-GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "t",
-           "GIT_COMMITTER_EMAIL": "t@example.com", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
+GIT_ENV = {
+    "GIT_AUTHOR_NAME": "t",
+    "GIT_AUTHOR_EMAIL": "t@example.com",
+    "GIT_COMMITTER_NAME": "t",
+    "GIT_COMMITTER_EMAIL": "t@example.com",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_NOSYSTEM": "1",
+}
 
 
 def block(start, end):
     i = SCRIPT.index(start)
-    return SCRIPT[i:SCRIPT.index(end, i)]
+    return SCRIPT[i : SCRIPT.index(end, i)]
 
 
 def helpers(**vars_):
@@ -57,6 +63,7 @@ def write(root, files):
 
 
 # ---------------------------------------------------------------- mode detection
+
 
 def test_layout_is_single_repo_without_the_config_dir(tmp_path):
     r = bash(helpers(CONFIG_DIR=tmp_path / "config") + "split_layout")
@@ -122,16 +129,36 @@ def test_unit_source_table_covers_every_unit_the_code_ships():
 @pytest.mark.skipif((ROOT / "config.yaml").exists(), reason="a monorepo checkout carries its own data")
 def test_the_code_ships_no_deployment_data():
     """Rendered files and config live only in each owner's data repo (and templates/data/), never in the code."""
-    for rel in ("config.yaml", "config/mode.yaml", "state", "deploy/systemd/trader.env",
-                *(f"deploy/systemd/{n}" for n, src in UNIT_SOURCE.items() if src == "data")):
+    for rel in (
+        "config.yaml",
+        "config/mode.yaml",
+        "state",
+        "deploy/systemd/trader.env",
+        *(f"deploy/systemd/{n}" for n, src in UNIT_SOURCE.items() if src == "data"),
+    ):
         assert not (ROOT / rel).exists(), f"{rel} belongs in the data repo"
     assert not list((ROOT / "deploy" / "systemd-trader").glob("*.timer"))
     if (ROOT / ".git").exists():  # and git ignores a rendered copy by exact name, never the static watchdog timer
-        ignored = subprocess.run(["git", "-C", str(ROOT), "check-ignore", "--no-index", "deploy/systemd/trader-runner.timer",
-                                  "deploy/systemd/trader.env", "deploy/systemd-trader/trader-strategist-weekly.timer",
-                                  "deploy/systemd/trader-watchdog.timer"], capture_output=True, text=True).stdout.split()
-        assert ignored == ["deploy/systemd/trader-runner.timer", "deploy/systemd/trader.env",
-                           "deploy/systemd-trader/trader-strategist-weekly.timer"]
+        ignored = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(ROOT),
+                "check-ignore",
+                "--no-index",
+                "deploy/systemd/trader-runner.timer",
+                "deploy/systemd/trader.env",
+                "deploy/systemd-trader/trader-strategist-weekly.timer",
+                "deploy/systemd/trader-watchdog.timer",
+            ],
+            capture_output=True,
+            text=True,
+        ).stdout.split()
+        assert ignored == [
+            "deploy/systemd/trader-runner.timer",
+            "deploy/systemd/trader.env",
+            "deploy/systemd-trader/trader-strategist-weekly.timer",
+        ]
 
 
 def test_each_unit_comes_from_its_named_source_and_services_env_never(tmp_path):
@@ -139,9 +166,17 @@ def test_each_unit_comes_from_its_named_source_and_services_env_never(tmp_path):
     for name in UNIT_SOURCE:
         write(code, {f"deploy/systemd/{name}": f"code {name}\n"})
     write(code, {"deploy/systemd/trader.env": "code env\n"})
-    write(data, {"deploy/systemd/trader-runner.timer": "data timer\n", "deploy/systemd/trader.env": "data env\n",
-                 "deploy/systemd/evil.service": "a unit the data repo must not supply\n"})
-    r = bash(helpers() + f'unit_sources {shlex.quote(str(code))} {shlex.quote(str(data))}\nprintf "%s\\n" "${{UNIT_SRC[@]}}"')
+    write(
+        data,
+        {
+            "deploy/systemd/trader-runner.timer": "data timer\n",
+            "deploy/systemd/trader.env": "data env\n",
+            "deploy/systemd/evil.service": "a unit the data repo must not supply\n",
+        },
+    )
+    r = bash(
+        helpers() + f'unit_sources {shlex.quote(str(code))} {shlex.quote(str(data))}\nprintf "%s\\n" "${{UNIT_SRC[@]}}"'
+    )
     assert r.returncode == 0, r.stderr
     got = {Path(p).name: ("code" if p.startswith(str(code) + "/") else "data") for p in r.stdout.split()}
     assert got == UNIT_SOURCE
@@ -209,7 +244,12 @@ class Rig:
         self.tmp = tmp
         self.bin = tmp / "bin"
         self.bin.mkdir()
-        for name, text in (("uv", FAKE_UV), ("trader", FAKE_TRADER), ("systemctl", FAKE_SYSTEMCTL), ("less", FAKE_LESS)):
+        for name, text in (
+            ("uv", FAKE_UV),
+            ("trader", FAKE_TRADER),
+            ("systemctl", FAKE_SYSTEMCTL),
+            ("less", FAKE_LESS),
+        ):
             (self.bin / name).write_text(text)
             (self.bin / name).chmod(0o755)
         self.log, self.review = tmp / "log", tmp / "review"
@@ -228,7 +268,9 @@ class Rig:
         self.tmpdir = tmp / "tmpdir"  # the script's $TMPDIR: every run must leave it empty
         self.tmpdir.mkdir()
         # The single-repo layout is a monorepo: its code checkout carries the config too.
-        self.code, self.code_origin = self.repo("code", CODE_FILES if split else CODE_FILES | {"config.yaml": "owner: x\n"})
+        self.code, self.code_origin = self.repo(
+            "code", CODE_FILES if split else CODE_FILES | {"config.yaml": "owner: x\n"}
+        )
         (self.code / ".venv" / "bin").mkdir(parents=True)
         shutil.copy(self.bin / "trader", self.code / ".venv" / "bin" / "trader")
         self.config = tmp / "config"
@@ -279,12 +321,24 @@ class Rig:
         return text
 
     def run(self, *args, answer="yes", **env):
-        e = {k: v for k, v in os.environ.items() if not k.startswith(("TRADER_", "GIT_"))} | GIT_ENV | {
-            "HOME": str(self.home), "TMPDIR": str(self.tmpdir), "FAKE_LOG": str(self.log), "FAKE_REVIEW": str(self.review),
-            "FAKE_TRADER": str(self.bin / "trader"), "TRADER_DEPLOY_CONFIG_DIR": str(self.config),
-            "TRADER_STRATEGIST_LOCK": str(self.lock), "FAKE_CODE_DIR": str(self.code), **{k: str(v) for k, v in env.items()}}
-        return subprocess.run(["bash", str(self.script), *args], input=answer + "\n", env=e,
-                              capture_output=True, text=True, timeout=60)
+        e = (
+            {k: v for k, v in os.environ.items() if not k.startswith(("TRADER_", "GIT_"))}
+            | GIT_ENV
+            | {
+                "HOME": str(self.home),
+                "TMPDIR": str(self.tmpdir),
+                "FAKE_LOG": str(self.log),
+                "FAKE_REVIEW": str(self.review),
+                "FAKE_TRADER": str(self.bin / "trader"),
+                "TRADER_DEPLOY_CONFIG_DIR": str(self.config),
+                "TRADER_STRATEGIST_LOCK": str(self.lock),
+                "FAKE_CODE_DIR": str(self.code),
+                **{k: str(v) for k, v in env.items()},
+            }
+        )
+        return subprocess.run(
+            ["bash", str(self.script), *args], input=answer + "\n", env=e, capture_output=True, text=True, timeout=60
+        )
 
     def logged(self):
         return self.log.read_text() if self.log.exists() else ""
@@ -317,6 +371,7 @@ def rig(tmp_path, two_repo):
 
 # ---- single-repo layout: what it always did, and never a two-repo step
 
+
 @needs_non_root
 def test_single_repo_deploy_is_unchanged_and_never_enters_two_repo_code(mono):
     target = mono.push(mono.code_origin, {"src/app.py": "VERSION = 2\n"})
@@ -328,7 +383,10 @@ def test_single_repo_deploy_is_unchanged_and_never_enters_two_repo_code(mono):
         mono.lock.parent.chmod(0o700)
     assert r.returncode == 0, r.stdout + r.stderr
     assert git(mono.code, "rev-parse", "HEAD") == target
-    assert r.stdout.splitlines()[0] == f"=== files changed since last deploy ({git(mono.code, 'rev-parse', '--short', 'HEAD@{1}')} -> {target[:7]}) ==="
+    assert (
+        r.stdout.splitlines()[0]
+        == f"=== files changed since last deploy ({git(mono.code, 'rev-parse', '--short', 'HEAD@{1}')} -> {target[:7]}) ==="
+    )
     assert "=== merged pull requests" in r.stdout and "code repo" not in r.stdout and "data repo" not in r.stdout
     assert mono.reviewed() == ""  # all merged PRs: no diff review, no prompt
     log = mono.logged()
@@ -368,13 +426,22 @@ def test_single_repo_up_to_date(mono):
 # ---- the candidate tests' environment, in both layouts
 
 LIVE_ENV = {  # what a shell with services.env loaded (or a developer's) might carry into the deploy
-    "TRADER_DATA_ROOT": "/live/config", "TRADER_STRATEGIST_ROOT": "/live/strategist", "TRADER_RUNTIME": "/live/runtime",
-    "TRADER_REPLAY_DIR": "/live/replays", "TRADER_SECRETS": "/live/env", "TRADER_CONFIG": "/live/config.yaml",
-    "TRADER_CODE_ROOT": "/live/code", "TRADER_TEST_DATA_ROOT": "/live/data", "TRADER_STRATEGIST_STAMP": "/live/.last_run",
+    "TRADER_DATA_ROOT": "/live/config",
+    "TRADER_STRATEGIST_ROOT": "/live/strategist",
+    "TRADER_RUNTIME": "/live/runtime",
+    "TRADER_REPLAY_DIR": "/live/replays",
+    "TRADER_SECRETS": "/live/env",
+    "TRADER_CONFIG": "/live/config.yaml",
+    "TRADER_CODE_ROOT": "/live/code",
+    "TRADER_TEST_DATA_ROOT": "/live/data",
+    "TRADER_STRATEGIST_STAMP": "/live/.last_run",
 }
 OTHER_ENV = {  # not TRADER_*, but they could still change what the candidate's tests run or reach
-    "PYTHONPATH": "/live/code/src", "VIRTUAL_ENV": "/live/code/.venv", "UV_PROJECT_ENVIRONMENT": "/live/code/.venv",
-    "PYTEST_ADDOPTS": "-p no:randomly", "ALPACA_API_KEY": "live-key",
+    "PYTHONPATH": "/live/code/src",
+    "VIRTUAL_ENV": "/live/code/.venv",
+    "UV_PROJECT_ENVIRONMENT": "/live/code/.venv",
+    "PYTEST_ADDOPTS": "-p no:randomly",
+    "ALPACA_API_KEY": "live-key",
 }
 TEST_ENV_NAMES = {"HOME", "USER", "LOGNAME", "PATH", "LANG", "XDG_RUNTIME_DIR", "TRADER_DATA_ROOT"}
 
@@ -402,8 +469,16 @@ def test_candidate_tests_run_with_a_clean_trader_environment(tmp_path, two_repo,
     assert switch.isdisjoint(OTHER_ENV) and switch.isdisjoint(LIVE_ENV)
     assert switch - (TEST_ENV_NAMES - {"TRADER_DATA_ROOT"}) <= {"PWD", "SHLVL", "OLDPWD", "_"}, switch
     if two_repo:  # the candidate data checks see only the TRADER_* they set, none of the caller's
-        checks = {"config": {"TRADER_CODE_ROOT", "TRADER_DATA_ROOT"},
-                  "validate": {"TRADER_CODE_ROOT", "TRADER_DATA_ROOT", "TRADER_STRATEGIST_ROOT", "TRADER_RUNTIME", "TRADER_SECRETS"}}
+        checks = {
+            "config": {"TRADER_CODE_ROOT", "TRADER_DATA_ROOT"},
+            "validate": {
+                "TRADER_CODE_ROOT",
+                "TRADER_DATA_ROOT",
+                "TRADER_STRATEGIST_ROOT",
+                "TRADER_RUNTIME",
+                "TRADER_SECRETS",
+            },
+        }
         for sub, expected in checks.items():
             env = dict(ln.split("=", 1) for ln in (tmp_path / f"log.env-{sub}").read_text().splitlines())
             assert set(env) == expected, sub
@@ -412,8 +487,11 @@ def test_candidate_tests_run_with_a_clean_trader_environment(tmp_path, two_repo,
 
 # ---- two-repo layout
 
+
 def test_two_repo_deploy_switches_both_and_installs_each_unit_from_its_source(split):
-    code_t = split.push(split.code_origin, {"src/app.py": "VERSION = 2\n", "deploy/systemd/trader-runner.timer": "stale code timer\n"})
+    code_t = split.push(
+        split.code_origin, {"src/app.py": "VERSION = 2\n", "deploy/systemd/trader-runner.timer": "stale code timer\n"}
+    )
     data_t = split.push(split.data_origin, {"deploy/systemd/trader-runner.timer": "data runner timer v2\n"})
     r = split.run(FAKE_PLAN_OUT="PR 0123456789 #9 merged")  # both repos "all merged PRs"
     assert r.returncode == 0, r.stdout + r.stderr
@@ -599,7 +677,10 @@ def test_a_failed_switch_step_prints_the_rollback(tmp_path, two_repo, rig):
         rig.push(rig.data_origin, {"config.yaml": "owner: y\n"})
     r = rig.run(FAKE_PLAN_OUT="PR 0123456789 #9 merged", FAKE_SWITCH_SYNC_RC=7)
     assert r.returncode == 7 and "PARTIAL SWITCH" in r.stderr and "exit 7" in r.stderr
-    assert f"git -C {rig.code} reset -q --hard {old_code} && (cd {rig.code} && uv sync -q --frozen --extra dev)" in r.stderr
+    assert (
+        f"git -C {rig.code} reset -q --hard {old_code} && (cd {rig.code} && uv sync -q --frozen --extra dev)"
+        in r.stderr
+    )
     assert (f"git -C {rig.config} reset -q --hard" in r.stderr) == two_repo
     if two_repo:
         assert f"git -C {rig.config} reset -q --hard {old_data}" in r.stderr
@@ -614,6 +695,7 @@ def test_failed_tests_name_both_shas_in_two_repo_mode(split):
 
 
 # ---------------------------------------------------------------- ownership pre-flight
+
 
 def test_ownership_preflight_passes_when_the_owner_owns_everything(tmp_path):
     write(tmp_path / "code", {"a/b.txt": "x", ".venv/bin/python": "x"})
@@ -667,11 +749,13 @@ def test_ownership_preflight_checks_through_a_symlinked_checkout(tmp_path):
 
 
 def test_ownership_preflight_runs_early_and_again_just_before_the_switch():
-    body = SCRIPT[SCRIPT.index("# --- end ownership pre-flight ---"):]
+    body = SCRIPT[SCRIPT.index("# --- end ownership pre-flight ---") :]
     early = body.index('if ! foreign_files "${CHECKOUTS[@]}"')
     assert body.index("split_layout ||") < early < body.index("git fetch")
     late = body.index('foreign_files "${CHECKOUTS[@]}" || exit 1')
-    assert body.index("uv run --frozen pytest") < late < body.index("lock_strategist || {") < body.index("lock_switch ||")
+    assert (
+        body.index("uv run --frozen pytest") < late < body.index("lock_strategist || {") < body.index("lock_switch ||")
+    )
     assert 'CHECKOUTS=("$CODE_DIR"); (( SPLIT )) && CHECKOUTS+=("$CONFIG_DIR")' in body
 
 

@@ -68,8 +68,23 @@ def test_counts_survive_a_restart(tmp_path, session):
 def test_a_damaged_tally_is_dropped_on_restart(tmp_path, session):
     bars = session(path=[100.0] * 390)
     day = bars.index[0].date()
-    (tmp_path / "classifier_state.json").write_text(json.dumps({"day": day.isoformat(), "states": {"t": {"SPY": {
-        "status": "armed", "trades": 0, "counts": {"checks": "lots", "no_trigger": 3}, "last_trigger": "x"}}}}))
+    (tmp_path / "classifier_state.json").write_text(
+        json.dumps(
+            {
+                "day": day.isoformat(),
+                "states": {
+                    "t": {
+                        "SPY": {
+                            "status": "armed",
+                            "trades": 0,
+                            "counts": {"checks": "lots", "no_trigger": 3},
+                            "last_trigger": "x",
+                        }
+                    }
+                },
+            }
+        )
+    )
     _, eng = make(tmp_path, [spec()])
     eng.start_day(day, {})
     st = eng.states[0].symbols["SPY"]
@@ -90,22 +105,48 @@ def test_a_new_day_starts_from_zero(tmp_path, session):
 def test_summary_lines():
     assert why_summary({}) == "Not checked yet today."
     assert why_summary({"counts": {"checks": 5, "no_trigger": 3, "asked_entry": 2}}) == (
-        "Checked 5 times; asked Jev twice. The trigger didn't pass on 3 of the checks.")
+        "Checked 5 times; asked Jev twice. The trigger didn't pass on 3 of the checks."
+    )
     assert why_summary({"counts": {"checks": 4, "skip_symbol_busy": 4, "skip_outside_window": 9}}) == (
-        "Checked 4 times; Jev not asked. Skipped: the account already held or was buying the stock (4).")
+        "Checked 4 times; Jev not asked. Skipped: the account already held or was buying the stock (4)."
+    )
     assert why_summary({"counts": {"checks": 1, "asked_entry": 1, "jev_error": 1}}) == (
-        "Checked once; asked Jev once. Jev failed to answer once.")
-    x = {"counts": {"checks": 2, "no_trigger": 2}, "last_trigger": {"at": "10:42", "conditions": [
-        ["or15_break_pct", ">", 0, -0.12, False], ["above_vwap", ">", 0, 1.0, True], ["gap_pct", "<", 2, None, False]]}}
-    assert why_summary(x) == ("Checked twice; the trigger never passed. Last miss at 10:42: "
-                              "or15_break_pct = -0.12 (needs > 0); gap_pct = unavailable (needs < 2).")
+        "Checked once; asked Jev once. Jev failed to answer once."
+    )
+    x = {
+        "counts": {"checks": 2, "no_trigger": 2},
+        "last_trigger": {
+            "at": "10:42",
+            "conditions": [
+                ["or15_break_pct", ">", 0, -0.12, False],
+                ["above_vwap", ">", 0, 1.0, True],
+                ["gap_pct", "<", 2, None, False],
+            ],
+        },
+    }
+    assert why_summary(x) == (
+        "Checked twice; the trigger never passed. Last miss at 10:42: "
+        "or15_break_pct = -0.12 (needs > 0); gap_pct = unavailable (needs < 2)."
+    )
 
 
 def test_malformed_status_never_breaks_the_page():
-    status = {"classifiers": [
-        {"id": "a", "mode": "shadow", "symbols": {"SPY": {"counts": {"checks": 1, "no_trigger": 1},
-                                                          "last_trigger": {"conditions": [["f", ">", "x", 1, False]]}}}},
-        {"id": "p", "mode": "probe", "symbols": {"SPY": {}}}, "junk"]}
+    status = {
+        "classifiers": [
+            {
+                "id": "a",
+                "mode": "shadow",
+                "symbols": {
+                    "SPY": {
+                        "counts": {"checks": 1, "no_trigger": 1},
+                        "last_trigger": {"conditions": [["f", ">", "x", 1, False]]},
+                    }
+                },
+            },
+            {"id": "p", "mode": "probe", "symbols": {"SPY": {}}},
+            "junk",
+        ]
+    }
     out = _with_why(status)
     assert out["classifiers"][0]["symbols"]["SPY"]["why"] == ""
     assert "why" not in out["classifiers"][1]["symbols"]["SPY"]

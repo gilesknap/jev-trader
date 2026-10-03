@@ -65,14 +65,34 @@ def check_openrouter(key: str) -> list[tuple[str, str, bool]]:
     burn = max(float(k.get("usage_weekly") or 0) / 7, 1e-6)
     days = remaining / burn
     if remaining < LOW_CREDIT_USD or days < LOW_DAYS:
-        out.append(("openrouter_credit",
-                    f"OpenRouter credit ${remaining:.2f} (~{min(days, 9999):.0f} days at ${burn:.3f}/day). Top up or enable auto top-up.",
-                    remaining < 1 or days < URGENT_DAYS))
-    if k.get("limit") is not None and k.get("limit_remaining") is not None and float(k["limit_remaining"]) < LOW_CREDIT_USD:
-        out.append(("openrouter_limit", f"OpenRouter key spend limit nearly used: ${float(k['limit_remaining']):.2f} left. Raise it.", True))
+        out.append(
+            (
+                "openrouter_credit",
+                f"OpenRouter credit ${remaining:.2f} (~{min(days, 9999):.0f} days at ${burn:.3f}/day). Top up or enable auto top-up.",
+                remaining < 1 or days < URGENT_DAYS,
+            )
+        )
+    if (
+        k.get("limit") is not None
+        and k.get("limit_remaining") is not None
+        and float(k["limit_remaining"]) < LOW_CREDIT_USD
+    ):
+        out.append(
+            (
+                "openrouter_limit",
+                f"OpenRouter key spend limit nearly used: ${float(k['limit_remaining']):.2f} left. Raise it.",
+                True,
+            )
+        )
     d = _days_until(k.get("expires_at"))
     if d is not None and d < LOW_DAYS:
-        out.append(("openrouter_key_expiry", f"OpenRouter API key expires in {d:.0f} days. Create a new key and update both .env files.", d < URGENT_DAYS))
+        out.append(
+            (
+                "openrouter_key_expiry",
+                f"OpenRouter API key expires in {d:.0f} days. Create a new key and update both .env files.",
+                d < URGENT_DAYS,
+            )
+        )
     return out
 
 
@@ -84,9 +104,13 @@ def check_github() -> list[tuple[str, str, bool]]:
         if line.lower().startswith("github-authentication-token-expiration:"):
             d = _days_until(line.split(":", 1)[1].strip())
             if d is not None and d < LOW_DAYS:
-                return [("github_token_expiry",
-                         f"GitHub token expires in {d:.0f} days. Regenerate it (repo {config.SETTINGS.owner.github_repo}: Contents + Pull requests + Issues RW) and run `gh auth login` as trader.",
-                         d < URGENT_DAYS)]
+                return [
+                    (
+                        "github_token_expiry",
+                        f"GitHub token expires in {d:.0f} days. Regenerate it (repo {config.SETTINGS.owner.github_repo}: Contents + Pull requests + Issues RW) and run `gh auth login` as trader.",
+                        d < URGENT_DAYS,
+                    )
+                ]
     return []
 
 
@@ -105,14 +129,24 @@ def _anonymous_remote_main(repo: Path) -> str:
     trader's token or SSH identity, and an auth prompt fails instead of hanging. Only command-line config
     applies (no global, system or repo config, so no credential helper, insteadOf or sshCommand)."""
     git = ["git", "-c", f"safe.directory={repo}", "-C", str(repo)]
-    url = subprocess.run(git + ["config", "--get", "remote.origin.url"], capture_output=True, text=True,
-                         check=True).stdout.strip()
+    url = subprocess.run(
+        git + ["config", "--get", "remote.origin.url"], capture_output=True, text=True, check=True
+    ).stdout.strip()
     if not url.startswith("https://"):
-        raise ValueError(f"the code checkout's origin {url!r} isn't an https URL; the split layout reads the "
-                         "public code repo anonymously over https")
+        raise ValueError(
+            f"the code checkout's origin {url!r} isn't an https URL; the split layout reads the "
+            "public code repo anonymously over https"
+        )
     env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
-    return subprocess.run(["git", "-c", "credential.helper=", *_ANON_GIT_CONFIG, "ls-remote", url, "refs/heads/main"],
-                          capture_output=True, text=True, check=True, timeout=60, cwd="/", env=env).stdout.split()[0]
+    return subprocess.run(
+        ["git", "-c", "credential.helper=", *_ANON_GIT_CONFIG, "ls-remote", url, "refs/heads/main"],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+        cwd="/",
+        env=env,
+    ).stdout.split()[0]
 
 
 def _undeployed_for(state: dict, key: str, deployed: str, remote: str) -> float | None:
@@ -131,13 +165,25 @@ def check_undeployed(state: dict) -> list[tuple[str, str, bool]]:
     if data is None:  # monorepo: one repo, compared with origin main as seen from the strategist checkout
         try:
             deployed = _head(MAIN)
-            remote = subprocess.run(["git", "ls-remote", "origin", "refs/heads/main"], capture_output=True, text=True,
-                                    check=True, timeout=60, cwd=config.STRATEGIST_ROOT).stdout.split()[0]
+            remote = subprocess.run(
+                ["git", "ls-remote", "origin", "refs/heads/main"],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=60,
+                cwd=config.STRATEGIST_ROOT,
+            ).stdout.split()[0]
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, IndexError) as e:
             return [("deploy_check", f"Couldn't compare deployed code with main: {e}", False)]
         hours = _undeployed_for(state, "undeployed_since", deployed, remote)
         if hours is not None and hours >= UNDEPLOYED_HOURS:
-            return [("undeployed", f"main has changes merged {hours / 24:.0f} days ago that aren't deployed. Run: sudo -u runner trading-deploy", False)]
+            return [
+                (
+                    "undeployed",
+                    f"main has changes merged {hours / 24:.0f} days ago that aren't deployed. Run: sudo -u runner trading-deploy",
+                    False,
+                )
+            ]
         return []
     # Split layout: the code (MAIN) against the public code repo's main, read anonymously; the deployment
     # config (DATA_ROOT) against the data repo's main, which the strategist checkout's origin also is.
@@ -145,17 +191,37 @@ def check_undeployed(state: dict) -> list[tuple[str, str, bool]]:
     try:
         hours = _undeployed_for(state, "undeployed_since", _head(MAIN), _anonymous_remote_main(MAIN))
         if hours is not None and hours >= UNDEPLOYED_HOURS:
-            out.append(("undeployed", f"The code repo's main has changes merged {hours / 24:.0f} days ago that aren't deployed. Run: sudo -u runner trading-deploy", False))
+            out.append(
+                (
+                    "undeployed",
+                    f"The code repo's main has changes merged {hours / 24:.0f} days ago that aren't deployed. Run: sudo -u runner trading-deploy",
+                    False,
+                )
+            )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, IndexError, ValueError) as e:
         out.append(("deploy_check", f"Couldn't compare deployed code with the code repo's main: {e}", False))
     try:
-        remote = subprocess.run(["git", "ls-remote", "origin", "refs/heads/main"], capture_output=True, text=True,
-                                check=True, timeout=60, cwd=config.STRATEGIST_ROOT).stdout.split()[0]
+        remote = subprocess.run(
+            ["git", "ls-remote", "origin", "refs/heads/main"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=60,
+            cwd=config.STRATEGIST_ROOT,
+        ).stdout.split()[0]
         hours = _undeployed_for(state, "undeployed_config_since", _head(data), remote)
         if hours is not None and hours >= UNDEPLOYED_HOURS:
-            out.append(("undeployed_config", f"The data repo's main (deployment config) has changes merged {hours / 24:.0f} days ago that aren't deployed. Run: sudo -u runner trading-deploy", False))
+            out.append(
+                (
+                    "undeployed_config",
+                    f"The data repo's main (deployment config) has changes merged {hours / 24:.0f} days ago that aren't deployed. Run: sudo -u runner trading-deploy",
+                    False,
+                )
+            )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, IndexError) as e:
-        out.append(("config_deploy_check", f"Couldn't compare the deployed config with the data repo's main: {e}", False))
+        out.append(
+            ("config_deploy_check", f"Couldn't compare the deployed config with the data repo's main: {e}", False)
+        )
     return out
 
 
@@ -171,8 +237,12 @@ def run() -> list[str]:
     last = state.setdefault("last_alert", {})
     problems = []
     secrets = config.load_secrets()
-    for check in (lambda: check_openrouter(secrets["OPENROUTER_API_KEY"]), check_github,
-                  lambda: check_undeployed(state), check_disk):
+    for check in (
+        lambda: check_openrouter(secrets["OPENROUTER_API_KEY"]),
+        check_github,
+        lambda: check_undeployed(state),
+        check_disk,
+    ):
         try:
             problems += check()
         except Exception as e:  # a broken check must not hide the others

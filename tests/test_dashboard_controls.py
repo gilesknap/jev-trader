@@ -42,7 +42,12 @@ def _page_fetch(path: str) -> dict:
     """The fetch options index.html's own STOP/HOLD button sends to `path`. Deliberately pinned
     to the page's literal call: reformatting it fails this loudly, so update the regex with it."""
     page = (config.CODE_ROOT / "dashboard" / "static" / "index.html").read_text()
-    m = re.search(r'api\("' + re.escape(path) + r'", \{ method: "(\w+)", headers: (\{[^}]*\}), body: JSON\.stringify\((\{[^}]*\})\)', page)
+    m = re.search(
+        r'api\("'
+        + re.escape(path)
+        + r'", \{ method: "(\w+)", headers: (\{[^}]*\}), body: JSON\.stringify\((\{[^}]*\})\)',
+        page,
+    )
     assert m, f"no fetch of {path} found in index.html"
     to_json = lambda js: json.loads(re.sub(r'(\w[\w-]*|"[^"]*"): ', lambda k: json.dumps(k[1].strip('"')) + ": ", js))
     return {"method": m[1], "headers": to_json(m[2]), "body": to_json(m[3])}
@@ -52,8 +57,13 @@ def _page_fetch(path: str) -> dict:
 def test_real_page_through_tailscale_serve_succeeds(acted, client, path, word):
     sent = _page_fetch(path)
     assert sent["body"] == {"confirm": word}
-    browser = {"Origin": SITE, "Referer": SITE + "/", "Sec-Fetch-Site": "same-origin",
-               "Sec-Fetch-Mode": "cors", "Sec-Fetch-Dest": "empty"}
+    browser = {
+        "Origin": SITE,
+        "Referer": SITE + "/",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Dest": "empty",
+    }
     r = client.request(sent["method"], path, content=json.dumps(sent["body"]), headers={**browser, **sent["headers"]})
     assert r.status_code == 200, r.text
     assert acted == [word]
@@ -76,7 +86,9 @@ def test_cross_site_form_post_refused(acted, client, path, word, fetch_site, enc
 @pytest.mark.parametrize("path,word", CONTROLS)
 @pytest.mark.parametrize("fetch_site", ["cross-site", "same-site"])
 def test_json_from_another_site_refused(acted, client, path, word, fetch_site):
-    r = client.post(path, json={"confirm": word}, headers={"Origin": "https://other.tailnet.ts.net", "Sec-Fetch-Site": fetch_site})
+    r = client.post(
+        path, json={"confirm": word}, headers={"Origin": "https://other.tailnet.ts.net", "Sec-Fetch-Site": fetch_site}
+    )
     assert r.status_code == 403
     assert acted == []
 

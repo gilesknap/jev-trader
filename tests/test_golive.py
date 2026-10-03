@@ -24,16 +24,42 @@ def write_book(book, days=10, trades_per_day=2, pnl_pct=0.3, classifier="idea", 
     start = TEST_START_DATE  # the date the autouse fixture pins golive.START_DATE to
     sessions = [start + dt.timedelta(days=i) for i in range(40) if (start + dt.timedelta(days=i)).weekday() < 5][:days]
     with (book / "trades.csv").open("w", newline="") as f:
-        w = csv.DictWriter(f, ["time", "book", "classifier", "symbol", "side", "qty", "price", "notional", "reason", "pnl", "pnl_pct"])
+        w = csv.DictWriter(
+            f, ["time", "book", "classifier", "symbol", "side", "qty", "price", "notional", "reason", "pnl", "pnl_pct"]
+        )
         w.writeheader()
         for d in sessions:
             for _ in range(trades_per_day):
-                w.writerow({"time": f"{d}T11:00-04:00", "book": "paper", "classifier": classifier, "symbol": "SPY",
-                            "side": "sell", "qty": "0.1", "price": "600", "notional": "60", "reason": "x",
-                            "pnl": "0.1", "pnl_pct": str(pnl_pct)})
-                w.writerow({"time": f"{d}T11:00-04:00", "book": "paper", "classifier": "control_orb", "symbol": "QQQ",
-                            "side": "sell", "qty": "0.1", "price": "600", "notional": "60", "reason": "x",
-                            "pnl": "5", "pnl_pct": "5.0"})
+                w.writerow(
+                    {
+                        "time": f"{d}T11:00-04:00",
+                        "book": "paper",
+                        "classifier": classifier,
+                        "symbol": "SPY",
+                        "side": "sell",
+                        "qty": "0.1",
+                        "price": "600",
+                        "notional": "60",
+                        "reason": "x",
+                        "pnl": "0.1",
+                        "pnl_pct": str(pnl_pct),
+                    }
+                )
+                w.writerow(
+                    {
+                        "time": f"{d}T11:00-04:00",
+                        "book": "paper",
+                        "classifier": "control_orb",
+                        "symbol": "QQQ",
+                        "side": "sell",
+                        "qty": "0.1",
+                        "price": "600",
+                        "notional": "60",
+                        "reason": "x",
+                        "pnl": "5",
+                        "pnl_pct": "5.0",
+                    }
+                )
     with (book / "equity.csv").open("w") as f:
         f.write("time,equity,nav,hwm\n")
         for d in sessions:
@@ -48,13 +74,16 @@ def test_gate_passes_and_excludes_control(env):
     assert abs(g.expectancy_pct - 0.2) < 1e-9  # 0.3% minus 0.1% round-trip slippage; control trades ignored
 
 
-@pytest.mark.parametrize("kw,reason", [
-    (dict(days=9), "trading days"),
-    (dict(trades_per_day=1), "strategist trades"),
-    (dict(pnl_pct=0.08), "expectancy"),
-    (dict(worst=-5.5), "a day hit"),
-    (dict(classifier="control_other"), "strategist trades"),
-])
+@pytest.mark.parametrize(
+    "kw,reason",
+    [
+        (dict(days=9), "trading days"),
+        (dict(trades_per_day=1), "strategist trades"),
+        (dict(pnl_pct=0.08), "expectancy"),
+        (dict(worst=-5.5), "a day hit"),
+        (dict(classifier="control_other"), "strategist trades"),
+    ],
+)
 def test_gate_blocks(env, kw, reason):
     book, _ = env
     write_book(book, **kw)
@@ -113,16 +142,25 @@ DAYS = [dt.date(2026, 10, 19) + dt.timedelta(days=i) for i in range(30)]
 def arm(book, note, sessions_done=0):
     """A passing book, armed on DAYS[0] with `sessions_done` veto sessions already counted."""
     write_book(book)
-    golive.save_state({"status": "armed", "armed_on": DAYS[0].isoformat(), "last_session": DAYS[sessions_done].isoformat(),
-                       "sessions_left": golive.VETO_SESSIONS - sessions_done})
+    golive.save_state(
+        {
+            "status": "armed",
+            "armed_on": DAYS[0].isoformat(),
+            "last_session": DAYS[sessions_done].isoformat(),
+            "sessions_left": golive.VETO_SESSIONS - sessions_done,
+        }
+    )
     return 1 + sessions_done  # index of the next unused session
 
 
-@pytest.mark.parametrize("breakage,reason", [
-    (lambda book: write_book(book, pnl_pct=0.05), "expectancy"),          # a losing veto session
-    (lambda book: write_book(book, worst=-5.5), "a day hit"),               # a kill-switch day
-    (lambda book: (book / "risk.json").write_text('{"halted": true}'), "paper book halted"),
-])
+@pytest.mark.parametrize(
+    "breakage,reason",
+    [
+        (lambda book: write_book(book, pnl_pct=0.05), "expectancy"),  # a losing veto session
+        (lambda book: write_book(book, worst=-5.5), "a day hit"),  # a kill-switch day
+        (lambda book: (book / "risk.json").write_text('{"halted": true}'), "paper book halted"),
+    ],
+)
 def test_veto_window_disarms_when_gate_fails(env, breakage, reason):
     book, _ = env
     sent = []
@@ -162,7 +200,9 @@ def test_repass_starts_a_fresh_full_window(env):
     for k in range(golive.VETO_SESSIONS):
         assert golive.resolve_mode(note, lambda: 250.0, session=DAYS[20]) == "paper"
         golive.after_session(note, session=DAYS[i + 2 + k])
-    assert golive.resolve_mode(note, lambda: 250.0, session=DAYS[20]) == "live"  # a continuously eligible window still completes
+    assert (
+        golive.resolve_mode(note, lambda: 250.0, session=DAYS[20]) == "live"
+    )  # a continuously eligible window still completes
 
 
 def test_bad_evidence_fails_closed_and_alerts_once(env):
@@ -229,15 +269,20 @@ def test_live_equity_error_stays_paper_without_raising(env):
 
     def boom():
         raise ConnectionError("alpaca down")
+
     assert golive.resolve_mode(note, boom, session=DAYS[20]) == "paper"
     assert golive.load_state()["status"] == "armed"
 
 
 def _hold_mid_evaluation(monkeypatch, passed):
     """A human presses HOLD LIVE while the runner is evaluating the gate."""
+
     def gate(*a, **k):
         golive.hold(lambda *x: None, by="human")
-        return golive.GateResult(passed, 10, 20, 0.2 if passed else -0.1, -1, [] if passed else ["expectancy after slippage not positive"])
+        return golive.GateResult(
+            passed, 10, 20, 0.2 if passed else -0.1, -1, [] if passed else ["expectancy after slippage not positive"]
+        )
+
     monkeypatch.setattr(golive, "evaluate_gate", gate)
 
 
@@ -271,7 +316,14 @@ def test_hold_during_after_session_is_never_overwritten(env, monkeypatch, sessio
 
 # ---- #115: a corrupt golive.json fails closed to paper and never raises ----
 
-CORRUPT = ["{not json", "", "[1, 2]", '{"status": "LIVE"}', '{"sessions_left": 1}', '{"status": "armed", "sessions_left": "0"}']
+CORRUPT = [
+    "{not json",
+    "",
+    "[1, 2]",
+    '{"status": "LIVE"}',
+    '{"sessions_left": 1}',
+    '{"status": "armed", "sessions_left": "0"}',
+]
 
 
 @pytest.mark.parametrize("text", CORRUPT)
@@ -314,8 +366,11 @@ def test_hold_on_corrupt_state_vetoes_and_keeps_the_file(env):
         golive.STATE_FILE.write_text(f"{{corrupt {i}")
         assert golive.hold(lambda lvl, msg: sent.append(msg), by="human") == "held (was corrupt)"
         st = golive.load_state()
-        assert st["status"] == "vetoed" and st["vetoed_from"] == "corrupt" and set(st) == {
-            "status", "vetoed_on", "vetoed_by", "vetoed_from", "corrupt_file"}
+        assert (
+            st["status"] == "vetoed"
+            and st["vetoed_from"] == "corrupt"
+            and set(st) == {"status", "vetoed_on", "vetoed_by", "vetoed_from", "corrupt_file"}
+        )
         assert (golive.STATE_FILE.parent / st["corrupt_file"]).read_text() == f"{{corrupt {i}"
     kept = sorted(golive.STATE_FILE.parent.glob("golive.json.corrupt-*"))
     assert len(kept) == golive.KEEP_CORRUPT and kept[-1].read_text() == f"{{corrupt {golive.KEEP_CORRUPT + 1}"
@@ -338,7 +393,11 @@ def test_golive_cli_and_dashboard_survive_corrupt_state(env, capsys):
     golive.STATE_FILE.write_text("{not json")
     cli.cmd_golive_status(None)
     out = json.loads(capsys.readouterr().out)
-    assert out["effective"] == "paper" and out["state"]["status"] == "corrupt" and "JSONDecodeError" in out["state"]["error"]
+    assert (
+        out["effective"] == "paper"
+        and out["state"]["status"] == "corrupt"
+        and "JSONDecodeError" in out["state"]["error"]
+    )
     assert dashboard._golive_summary().startswith("CORRUPT golive.json")
 
 
@@ -350,8 +409,9 @@ def test_dashboard_hold_live_on_corrupt_state(env, monkeypatch):
     monkeypatch.setattr(alerts, "notify", lambda *a, **k: None)
     monkeypatch.setattr(dashboard, "USERS", {"me@example.com"})
     golive.STATE_FILE.write_text("{not json")
-    r = TestClient(dashboard.app).post("/api/hold-live", json={"confirm": "HOLD"},
-                                       headers={"Tailscale-User-Login": "me@example.com"})
+    r = TestClient(dashboard.app).post(
+        "/api/hold-live", json={"confirm": "HOLD"}, headers={"Tailscale-User-Login": "me@example.com"}
+    )
     assert r.status_code == 200 and golive.load_state()["status"] == "vetoed"
 
 
@@ -369,6 +429,7 @@ def test_failed_write_leaves_corrupt_file_in_place(env, monkeypatch, act):
         if self.suffix == ".tmp":
             raise OSError(errno.ENOSPC, "No space left on device")
         return real(self, *a, **k)
+
     golive.STATE_FILE.write_text("{corrupt")
     monkeypatch.setattr(pathlib.Path, "write_text", enospc)
     with pytest.raises(OSError):
@@ -383,6 +444,7 @@ def test_failed_set_aside_still_writes_a_clean_state(env, monkeypatch, act, stat
 
     def refuse(self, *a, **k):
         raise OSError("copy refused")
+
     golive.STATE_FILE.write_text("{corrupt")
     monkeypatch.setattr(pathlib.Path, "write_bytes", refuse)
     act()
@@ -429,8 +491,11 @@ def test_state_is_stamped_with_the_new_york_session_date_not_the_servers(env, mo
     import types
 
     for module in (golive, golive.config):  # session_date is config.ny_today
-        monkeypatch.setattr(module, "dt", types.SimpleNamespace(datetime=_LateEvening, date=_UTCDate,
-                                                                timedelta=dt.timedelta, UTC=dt.UTC))
+        monkeypatch.setattr(
+            module,
+            "dt",
+            types.SimpleNamespace(datetime=_LateEvening, date=_UTCDate, timedelta=dt.timedelta, UTC=dt.UTC),
+        )
     note = lambda *a: None
     day = dt.date(2026, 11, 3)
     assert golive.session_date() == day

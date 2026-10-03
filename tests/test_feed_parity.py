@@ -20,7 +20,9 @@ NOW = dt.datetime.combine(DAY, dt.time(9, 20), ET)
 
 def feeds(sip_vol=10_000.0, iex_vol=200.0, iex_px=1.01):
     """Two days of bars per feed: SIP with all the volume, IEX a 2% slice at slightly off prices."""
-    sip = pd.concat([make_session(day=PREV, seed=1).assign(volume=sip_vol), make_session(day=DAY, seed=2).assign(volume=sip_vol)])
+    sip = pd.concat(
+        [make_session(day=PREV, seed=1).assign(volume=sip_vol), make_session(day=DAY, seed=2).assign(volume=sip_vol)]
+    )
     iex = sip.assign(volume=iex_vol, close=sip.close * iex_px, high=sip.high * iex_px, low=sip.low * iex_px)
     return sip, iex
 
@@ -34,6 +36,7 @@ def fake_fetch(sip, iex, fail_iex=False):
             raise ConnectionError("iex 503")
         b = iex if feed == "iex" else sip
         return {s: b[(b.index >= start) & (b.index < end)] for s in symbols}
+
     return fetch, calls
 
 
@@ -95,6 +98,7 @@ def test_failed_iex_history_leaves_volume_nan_not_sips(monkeypatch):
 def test_failed_sip_history_alerts_and_returns_nothing(monkeypatch):
     def fetch(*a, **k):
         raise ConnectionError("sip 503")
+
     monkeypatch.setattr(runner, "fetch_alpaca", fetch)
     alerts = []
     assert runner.prev_day_bars(["AAA"], DAY, NOW, {}, alert=lambda level, msg: alerts.append(msg)) == {}
@@ -108,8 +112,11 @@ def test_iex_gaps_count_as_no_volume_and_a_missing_symbol_or_session_is_nan():
     # The live stream and alpaca-py index in microseconds; history in nanoseconds: still aligned.
     sparse.index = sparse.index.as_unit("us")
     sparse = pd.concat([sparse, sparse.iloc[[0]]])  # a repeated minute: the last copy counts, once
-    prev = prior_sessions({"AAA": {PREV: p}, "BBB": {PREV: p}, "CCC": {PREV: p}}, DAY,
-                          volume_from={"AAA": {PREV: sparse}, "CCC": {DAY: sparse}})
+    prev = prior_sessions(
+        {"AAA": {PREV: p}, "BBB": {PREV: p}, "CCC": {PREV: p}},
+        DAY,
+        volume_from={"AAA": {PREV: sparse}, "CCC": {DAY: sparse}},
+    )
     assert (prev["AAA"].volume.iloc[10:20] == 0).all() and prev["AAA"].volume.sum() == 200.0 * (len(p) - 10)
     assert prev["BBB"].volume.isna().all()  # the feed has no bars for the symbol
     assert prev["CCC"].volume.isna().all()  # the feed lacks that session
@@ -137,6 +144,7 @@ def test_a_failure_combining_the_feeds_alerts_and_never_stops_startup(monkeypatc
         if volume_from:
             raise ValueError("cannot reindex")
         return real(sessions, day, volume_from)
+
     monkeypatch.setattr(runner, "prior_sessions", flaky)
     alerts = []
     prev = runner.prev_day_bars(["AAA"], DAY, NOW, {}, alert=lambda level, msg: alerts.append(msg))["AAA"]

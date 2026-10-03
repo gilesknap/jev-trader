@@ -24,9 +24,7 @@ def session_bounds(day: dt.date, close_time: dt.time = dt.time(16, 0)):
 def _alpaca_client(secrets: dict[str, str]):
     from alpaca.data.historical import StockHistoricalDataClient
 
-    return StockHistoricalDataClient(
-        secrets["ALPACA_PAPER_KEY"], secrets["ALPACA_PAPER_SECRET"]
-    )
+    return StockHistoricalDataClient(secrets["ALPACA_PAPER_KEY"], secrets["ALPACA_PAPER_SECRET"])
 
 
 def fetch_alpaca(
@@ -65,8 +63,13 @@ def fetch_yfinance(symbols: list[str], days: int = 7) -> dict[str, pd.DataFrame]
 
     out: dict[str, pd.DataFrame] = {}
     raw = yf.download(
-        symbols, period=f"{days}d", interval="1m", group_by="ticker",
-        auto_adjust=False, progress=False, prepost=False,
+        symbols,
+        period=f"{days}d",
+        interval="1m",
+        group_by="ticker",
+        auto_adjust=False,
+        progress=False,
+        prepost=False,
     )
     for sym in symbols:
         sub = raw[sym] if len(symbols) > 1 else raw
@@ -90,8 +93,11 @@ def split_sessions(bars: pd.DataFrame) -> dict[dt.date, pd.DataFrame]:
     return {d: g for d, g in rth.groupby(rth.index.date)}
 
 
-def prior_sessions(sessions: dict[str, dict[dt.date, pd.DataFrame]], day: dt.date,
-                   volume_from: dict[str, dict[dt.date, pd.DataFrame]] | None = None) -> dict[str, pd.DataFrame]:
+def prior_sessions(
+    sessions: dict[str, dict[dt.date, pd.DataFrame]],
+    day: dt.date,
+    volume_from: dict[str, dict[dt.date, pd.DataFrame]] | None = None,
+) -> dict[str, pd.DataFrame]:
     """Each symbol's last session before `day`: the features' `prev_day`. Prices are always
     `sessions`' (SIP's, with the official close). When today's bars come from another feed (live
     IEX), pass that feed's sessions as `volume_from`: the volume column is then taken from it, so
@@ -109,8 +115,9 @@ def prior_sessions(sessions: dict[str, dict[dt.date, pd.DataFrame]], day: dt.dat
             other = volume_from.get(s, {}).get(d)
             if other is not None:
                 other = other[~other.index.duplicated(keep="last")]  # as the live stream keeps a repeated minute
-            prev = prev.assign(volume=float("nan") if other is None
-                               else other.volume.reindex(prev.index, fill_value=0).astype(float))
+            prev = prev.assign(
+                volume=float("nan") if other is None else other.volume.reindex(prev.index, fill_value=0).astype(float)
+            )
         out[s] = prev
     return out
 
@@ -137,7 +144,9 @@ def gate_samples(sessions_for, lookbacks=GATE_LOOKBACKS) -> list[tuple]:
         if len(spy) >= 3:
             break
     else:
-        raise GateSampleError(f"custom-feature gate: only {len(spy)} SPY session(s) of sample bars in the last {lookback} days")
+        raise GateSampleError(
+            f"custom-feature gate: only {len(spy)} SPY session(s) of sample bars in the last {lookback} days"
+        )
     days = sorted(spy)[-3:]
     samples = []
     for sym in ("SPY", "QQQ"):

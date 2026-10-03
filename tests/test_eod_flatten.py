@@ -19,8 +19,14 @@ def _setup(tmp_path, session, **book_kw):
     alerts.clear()
     bars = session(path=[100.0] * 390)
     book = Book("sim", SimBroker(250), tmp_path / "sim")
-    eng = Engine([spec()], {"live": book, "shadow": book}, Always(), {"SPY"}, tmp_path,
-                 alert=lambda level, msg: alerts.append((level, msg)))
+    eng = Engine(
+        [spec()],
+        {"live": book, "shadow": book},
+        Always(),
+        {"SPY"},
+        tmp_path,
+        alert=lambda level, msg: alerts.append((level, msg)),
+    )
     day = bars.index[0].date()
     eng.start_day(day, {})
     return eng, book, bars, dt.datetime.combine(day, dt.time(16), ET)
@@ -75,8 +81,14 @@ def test_one_books_failure_does_not_block_another_books_flatten(tmp_path, sessio
     bars = session(path=[100.0] * 390)
     bad = Book("paper", SimBroker(250), tmp_path / "paper")
     good = Book("live", SimBroker(250), tmp_path / "live")
-    eng = Engine([spec(id="a", mode="live"), spec(id="b", mode="shadow")], {"live": good, "shadow": bad},
-                 Always(), {"SPY"}, tmp_path, alert=lambda level, msg: alerts.append((level, msg)))
+    eng = Engine(
+        [spec(id="a", mode="live"), spec(id="b", mode="shadow")],
+        {"live": good, "shadow": bad},
+        Always(),
+        {"SPY"},
+        tmp_path,
+        alert=lambda level, msg: alerts.append((level, msg)),
+    )
     day = bars.index[0].date()
     eng.start_day(day, {})
     close = dt.datetime.combine(day, dt.time(16), ET)
@@ -122,8 +134,14 @@ def test_raising_alerts_cannot_skip_any_books_flatten(tmp_path, session):
     bars = session(path=[100.0] * 390)
     first = Book("live", SimBroker(250), tmp_path / "live")
     second = Book("paper", SimBroker(250), tmp_path / "paper")
-    eng = Engine([spec(id="a", mode="live"), spec(id="b", mode="shadow")], {"live": first, "shadow": second},
-                 Always(), {"SPY"}, tmp_path, alert=_disk_full)
+    eng = Engine(
+        [spec(id="a", mode="live"), spec(id="b", mode="shadow")],
+        {"live": first, "shadow": second},
+        Always(),
+        {"SPY"},
+        tmp_path,
+        alert=_disk_full,
+    )
     day = bars.index[0].date()
     eng.start_day(day, {})
     close = dt.datetime.combine(day, dt.time(16), ET)

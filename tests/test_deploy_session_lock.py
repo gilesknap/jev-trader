@@ -22,9 +22,11 @@ pytestmark = pytest.mark.skipif(not shutil.which("flock"), reason="needs flock")
 def deploy_functions(lock, state="inactive"):
     """The script's session-lock block, pointed at a temp lock, with a fake systemctl."""
     start = SCRIPT.index("# --- session lock")
-    block = SCRIPT[start:SCRIPT.index("# --- end session lock ---", start)]
-    return (f"set -euo pipefail\n{block}\nLOCK={shlex.quote(str(lock))}\n"
-            f"systemctl() {{ {'return 1' if state is None else f'echo {shlex.quote(state)}'}; }}\n")
+    block = SCRIPT[start : SCRIPT.index("# --- end session lock ---", start)]
+    return (
+        f"set -euo pipefail\n{block}\nLOCK={shlex.quote(str(lock))}\n"
+        f"systemctl() {{ {'return 1' if state is None else f'echo {shlex.quote(state)}'}; }}\n"
+    )
 
 
 def runner_argv(lock, marker):
@@ -38,7 +40,9 @@ def runner_argv(lock, marker):
 
 
 def deploy(lock, body, state="inactive"):
-    return subprocess.run(["bash", "-c", deploy_functions(lock, state) + body], capture_output=True, text=True, timeout=20)
+    return subprocess.run(
+        ["bash", "-c", deploy_functions(lock, state) + body], capture_output=True, text=True, timeout=20
+    )
 
 
 def wait_for(path, secs=5.0):
@@ -101,8 +105,19 @@ def test_lock_switch_refuses_when_systemd_says_the_runner_is_up_even_without_the
     assert r.returncode != 0 and "trader-runner is activating" in r.stderr
 
 
-@pytest.mark.parametrize("state, idle", [("inactive", True), ("failed", True), ("active", False), ("activating", False),
-                                         ("deactivating", False), ("reloading", False), ("", False), (None, False)])
+@pytest.mark.parametrize(
+    "state, idle",
+    [
+        ("inactive", True),
+        ("failed", True),
+        ("active", False),
+        ("activating", False),
+        ("deactivating", False),
+        ("reloading", False),
+        ("", False),
+        (None, False),
+    ],
+)
 def test_runner_idle_only_when_systemd_says_so(tmp_path, state, idle):
     r = deploy(tmp_path / "session.lock", "runner_idle", state=state)
     assert (r.returncode == 0) == idle
@@ -112,16 +127,24 @@ def test_runner_idle_only_when_systemd_says_so(tmp_path, state, idle):
 
 def test_lock_is_held_only_around_the_switch():
     """#82's trap: holding the lock through the pager, the prompt or the tests delayed the session."""
+
     def at(s, frm=0):
         return SCRIPT.index(s, frm)
+
     main = at("# --- end session lock ---")
     assert at("runner_idle || exit 1", main) < at("git fetch", main)  # fail fast, holding nothing
-    assert "lock_switch" not in SCRIPT[main:at("uv run --frozen pytest", main)]
-    for step in ("less -R", 'read -r -p', "uv run --frozen pytest"):
+    assert "lock_switch" not in SCRIPT[main : at("uv run --frozen pytest", main)]
+    for step in ("less -R", "read -r -p", "uv run --frozen pytest"):
         assert at(step, main) < at("lock_switch ||", main)
     switch = at("lock_switch ||", main)
-    assert switch < at("git reset -q --hard", main) < at("uv sync -q --frozen --extra dev\n", switch) \
-        < at("daemon-reload", switch) < at("unlock_switch", switch) < at("restart trader-dashboard", switch)
+    assert (
+        switch
+        < at("git reset -q --hard", main)
+        < at("uv sync -q --frozen --extra dev\n", switch)
+        < at("daemon-reload", switch)
+        < at("unlock_switch", switch)
+        < at("restart trader-dashboard", switch)
+    )
 
 
 # ---- the strategist-run interlock (#169 6.1, items 19-20): in the same block, so sliced the same way ----
@@ -132,19 +155,23 @@ needs_non_root = pytest.mark.skipif(os.geteuid() == 0, reason="root reads files 
 
 def interlock(tmp_path, strategist_lock, body):
     """The block with the strategist lock pointed at a temp path."""
-    script = deploy_functions(tmp_path / "session.lock") + f"STRATEGIST_LOCK={shlex.quote(str(strategist_lock))}\n" + body
+    script = (
+        deploy_functions(tmp_path / "session.lock") + f"STRATEGIST_LOCK={shlex.quote(str(strategist_lock))}\n" + body
+    )
     return subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=20)
 
 
 def hold(path, marker):
     """A strategist run as the wrapper takes it: flock -n -o on the lock for the whole run."""
-    return subprocess.Popen(["flock", "-n", "-o", str(path), "sh", "-c", f"touch {shlex.quote(str(marker))}; sleep 30"],
-                            start_new_session=True)
+    return subprocess.Popen(
+        ["flock", "-n", "-o", str(path), "sh", "-c", f"touch {shlex.quote(str(marker))}; sleep 30"],
+        start_new_session=True,
+    )
 
 
 def test_interlock_default_path_is_the_wrappers_lock():
     start = SCRIPT.index("# --- session lock")
-    block = SCRIPT[start:SCRIPT.index("# --- end session lock ---", start)]
+    block = SCRIPT[start : SCRIPT.index("# --- end session lock ---", start)]
     assert f'STRATEGIST_LOCK="${{TRADER_STRATEGIST_LOCK:-{STRATEGIST_DEFAULT}}}"' in block
     wrapper = (ROOT / "scripts" / "strategist.sh").read_text()
     assert 'LOGDIR="${XDG_STATE_HOME:-$HOME/.local/state}/trader"' in wrapper and '"$LOGDIR/strategist.lock"' in wrapper
@@ -159,10 +186,12 @@ def test_interlock_free_lock_is_taken_and_blocks_a_run_until_released(tmp_path):
     lock = tmp_path / "strategist.lock"
     lock.touch(mode=0o640)
     ran = tmp_path / "ran"
-    body = (f"lock_strategist\n"
-            f"flock -n {shlex.quote(str(lock))} touch {shlex.quote(str(ran))} || echo run-skipped\n"
-            f"unlock_strategist\n"
-            f"flock -n {shlex.quote(str(lock))} touch {shlex.quote(str(ran))}\n")
+    body = (
+        f"lock_strategist\n"
+        f"flock -n {shlex.quote(str(lock))} touch {shlex.quote(str(ran))} || echo run-skipped\n"
+        f"unlock_strategist\n"
+        f"flock -n {shlex.quote(str(lock))} touch {shlex.quote(str(ran))}\n"
+    )
     r = interlock(tmp_path, lock, body)
     assert r.returncode == 0, r.stderr
     assert "run-skipped" in r.stdout and ran.exists()
@@ -222,15 +251,24 @@ def test_interlock_refuses_a_symlink_or_non_file(tmp_path):
 
 
 def test_unlock_strategist_is_a_noop_when_nothing_was_taken(tmp_path):
-    assert interlock(tmp_path, tmp_path / "absent.lock", "lock_strategist\nunlock_strategist\nunlock_strategist").returncode == 0
+    assert (
+        interlock(
+            tmp_path, tmp_path / "absent.lock", "lock_strategist\nunlock_strategist\nunlock_strategist"
+        ).returncode
+        == 0
+    )
 
 
 def test_strategist_lock_is_taken_only_around_the_switch_and_only_in_the_two_repo_layout():
     main = SCRIPT.index("# --- end two-repo helpers ---")
     body = SCRIPT[main:]
     take = body.index("lock_strategist || {")
-    assert body.index("uv run --frozen pytest") < take < body.index("lock_switch ||") < body.index("git reset -q --hard")
-    assert body.rfind("if (( SPLIT )); then", 0, take) > body.rfind("fi\n", 0, take), "the switch-time take is split-only"
+    assert (
+        body.index("uv run --frozen pytest") < take < body.index("lock_switch ||") < body.index("git reset -q --hard")
+    )
+    assert body.rfind("if (( SPLIT )); then", 0, take) > body.rfind("fi\n", 0, take), (
+        "the switch-time take is split-only"
+    )
     assert body.index("unlock_switch") < body.index("if (( SPLIT )); then unlock_strategist; fi")
     early = body.index("if lock_strategist; then unlock_strategist")
     assert body.index("if (( SPLIT )); then") < early < body.index("git fetch")

@@ -26,7 +26,11 @@ from trader import config, safeio
 STATIC = config.CODE_ROOT / "dashboard" / "static"
 JOURNAL_KINDS = ("daily", "weekly", "monthly", "yearly")
 MAX_POINTS = 2000
-USERS = {u.strip() for u in os.environ.get("TRADER_DASHBOARD_USERS", ",".join(config.SETTINGS.dashboard.users)).split(",") if u.strip()}
+USERS = {
+    u.strip()
+    for u in os.environ.get("TRADER_DASHBOARD_USERS", ",".join(config.SETTINGS.dashboard.users)).split(",")
+    if u.strip()
+}
 ALLOW_LOCAL = os.environ.get("TRADER_DASHBOARD_ALLOW_LOCAL") == "1"
 
 app = FastAPI(title="trader dashboard", docs_url=None, redoc_url=None, openapi_url=None)
@@ -96,7 +100,9 @@ def _source_dir(source: str) -> tuple[Path, list[Path]]:
     if source not in _replay_ids():
         raise HTTPException(404, "unknown source")
     base = config.REPLAY_DIR / source
-    books = sorted(d for d in base.iterdir() if d.is_dir() and ((d / "equity.csv").exists() or (d / "trades.csv").exists()))
+    books = sorted(
+        d for d in base.iterdir() if d.is_dir() and ((d / "equity.csv").exists() or (d / "trades.csv").exists())
+    )
     return base, books
 
 
@@ -135,8 +141,7 @@ def _equity_points(rows: list[dict]) -> list:
     if not pts:
         return []
     cutoff = (dt.date.fromisoformat(pts[-1][0][:10]) - dt.timedelta(days=DETAIL_DAYS - 1)).isoformat()
-    out = [p for i, p in enumerate(pts)
-           if p[0][:10] >= cutoff or i + 1 == len(pts) or pts[i + 1][0][:10] != p[0][:10]]
+    out = [p for i, p in enumerate(pts) if p[0][:10] >= cutoff or i + 1 == len(pts) or pts[i + 1][0][:10] != p[0][:10]]
     return _downsample(out)
 
 
@@ -205,14 +210,17 @@ def why_summary(x: dict) -> str:
     if no_trig and isinstance(trig, dict) and isinstance(trig.get("conditions"), list):
         failed = [c for c in trig["conditions"] if isinstance(c, list) and len(c) == 5 and not c[4]]
         if failed:
-            out += f" Last miss at {trig.get('at', '?')}: " + "; ".join(
-                f"{f} = {_num_text(v)} (needs {op} {need:g})" for f, op, need, v, _ in failed) + "."
+            out += (
+                f" Last miss at {trig.get('at', '?')}: "
+                + "; ".join(f"{f} = {_num_text(v)} (needs {op} {need:g})" for f, op, need, v, _ in failed)
+                + "."
+            )
     return out
 
 
 def _with_why(status: dict | None) -> dict | None:
     """status.json with a `why` line on each trading rule's stocks (probes are summarised elsewhere)."""
-    for c in (status.get("classifiers") or [] if isinstance(status, dict) else []):
+    for c in status.get("classifiers") or [] if isinstance(status, dict) else []:
         if isinstance(c, dict) and c.get("mode") != "probe" and isinstance(c.get("symbols"), dict):
             for x in c["symbols"].values():
                 if isinstance(x, dict):
@@ -236,7 +244,9 @@ def _age_seconds(path: Path) -> float | None:
 def _git(*args: str, root: Path | None = None) -> str | None:
     """Output of a read-only git command in the deployed checkout (or `root`), or None."""
     try:
-        r = subprocess.run(["git", "-C", str(root or config.CODE_ROOT), *args], capture_output=True, text=True, timeout=5)
+        r = subprocess.run(
+            ["git", "-C", str(root or config.CODE_ROOT), *args], capture_output=True, text=True, timeout=5
+        )
     except (OSError, subprocess.SubprocessError):
         return None
     return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else None
@@ -272,56 +282,140 @@ def links(repo: str | None, sha: str | None, data: dict | None = None) -> list[d
     The GitHub group is built from the git remote, so the repo is never typed twice. In the split layout,
     `data` is {"repo", "sha"} for the private data repo and its deployed config commit; `repo` is the code."""
     groups = [
-        {"title": "Alpaca (the broker)", "hint": "Positions, orders and activity are in each dashboard's left menu; "
-                                                 "Account › Configure and Funds & Wallet are on the live one.", "links": [
-            ("Paper dashboard", "https://app.alpaca.markets/paper/dashboard/overview", "practice account: positions, orders, activity"),
-            ("Live dashboard", "https://app.alpaca.markets/brokerage/dashboard/overview", "real money: deposits, withdrawals, settings"),
-            ("Alpaca status", "https://status.alpaca.markets/", "is Alpaca itself having problems?"),
-        ]},
-        {"title": "OpenRouter (pays for Jev)", "hint": "Each Jev decision is billed here, a fraction of a cent.", "links": [
-            ("Credits", "https://openrouter.ai/settings/credits", "balance and top-up"),
-            ("Activity", "https://openrouter.ai/activity", "spend per day and per key"),
-            ("API keys", "https://openrouter.ai/settings/keys", "limits and expiry"),
-        ]},
+        {
+            "title": "Alpaca (the broker)",
+            "hint": "Positions, orders and activity are in each dashboard's left menu; "
+            "Account › Configure and Funds & Wallet are on the live one.",
+            "links": [
+                (
+                    "Paper dashboard",
+                    "https://app.alpaca.markets/paper/dashboard/overview",
+                    "practice account: positions, orders, activity",
+                ),
+                (
+                    "Live dashboard",
+                    "https://app.alpaca.markets/brokerage/dashboard/overview",
+                    "real money: deposits, withdrawals, settings",
+                ),
+                ("Alpaca status", "https://status.alpaca.markets/", "is Alpaca itself having problems?"),
+            ],
+        },
+        {
+            "title": "OpenRouter (pays for Jev)",
+            "hint": "Each Jev decision is billed here, a fraction of a cent.",
+            "links": [
+                ("Credits", "https://openrouter.ai/settings/credits", "balance and top-up"),
+                ("Activity", "https://openrouter.ai/activity", "spend per day and per key"),
+                ("API keys", "https://openrouter.ai/settings/keys", "limits and expiry"),
+            ],
+        },
     ]
     if data is None and repo:  # monorepo: code and notes in one repo
         gh = f"https://github.com/{repo}"
-        groups.append({"title": "GitHub (code and the strategist's notes)", "hint": "Your weekly job: merge the weekly PR "
-                                                                              "and answer needs-human issues.", "links": [
-            ("Repository", gh, repo),
-            ("Docs: operations", f"{gh}/blob/main/docs/how-to/daily-operations.md", "deploying, controls, alerts"),
-            ("Pull requests", f"{gh}/pulls", "weekly PR and proposal/* changes to review"),
-            ("Issues: needs-human", f"{gh}/issues?q=is%3Aissue+is%3Aopen+label%3Aneeds-human", "things the strategist asked you for"),
-            ("Weekly journal", f"{gh}/tree/strategist/journal/weekly", "the strategist's retrospectives"),
-            ("Current strategy", f"{gh}/blob/strategist/state/strategy.md", "on the strategist branch"),
-            *([("Not yet deployed", f"{gh}/compare/{sha}...main", "commits on main the runner isn't running")] if sha else []),
-        ]})
+        groups.append(
+            {
+                "title": "GitHub (code and the strategist's notes)",
+                "hint": "Your weekly job: merge the weekly PR and answer needs-human issues.",
+                "links": [
+                    ("Repository", gh, repo),
+                    (
+                        "Docs: operations",
+                        f"{gh}/blob/main/docs/how-to/daily-operations.md",
+                        "deploying, controls, alerts",
+                    ),
+                    ("Pull requests", f"{gh}/pulls", "weekly PR and proposal/* changes to review"),
+                    (
+                        "Issues: needs-human",
+                        f"{gh}/issues?q=is%3Aissue+is%3Aopen+label%3Aneeds-human",
+                        "things the strategist asked you for",
+                    ),
+                    ("Weekly journal", f"{gh}/tree/strategist/journal/weekly", "the strategist's retrospectives"),
+                    ("Current strategy", f"{gh}/blob/strategist/state/strategy.md", "on the strategist branch"),
+                    *(
+                        [("Not yet deployed", f"{gh}/compare/{sha}...main", "commits on main the runner isn't running")]
+                        if sha
+                        else []
+                    ),
+                ],
+            }
+        )
     if data is not None:
         if repo:
             gh = f"https://github.com/{repo}"
-            groups.append({"title": "GitHub: the code", "hint": "Public. Code changes are reviewed and merged here, "
-                                                               "then deployed with trading-deploy.", "links": [
-                ("Repository", gh, repo),
-                ("Docs: operations", f"{gh}/blob/main/docs/how-to/daily-operations.md", "deploying, controls, alerts"),
-                *([("Not yet deployed", f"{gh}/compare/{sha}...main", "code on main the runner isn't running")] if sha else []),
-            ]})
+            groups.append(
+                {
+                    "title": "GitHub: the code",
+                    "hint": "Public. Code changes are reviewed and merged here, then deployed with trading-deploy.",
+                    "links": [
+                        ("Repository", gh, repo),
+                        (
+                            "Docs: operations",
+                            f"{gh}/blob/main/docs/how-to/daily-operations.md",
+                            "deploying, controls, alerts",
+                        ),
+                        *(
+                            [
+                                (
+                                    "Not yet deployed",
+                                    f"{gh}/compare/{sha}...main",
+                                    "code on main the runner isn't running",
+                                )
+                            ]
+                            if sha
+                            else []
+                        ),
+                    ],
+                }
+            )
         dgh = f"https://github.com/{data['repo']}"
-        groups.append({"title": "GitHub: your data (config and the strategist's notes)",
-                       "hint": "Your weekly job: read the weekly issue and answer needs-human issues.", "links": [
-            ("Repository", dgh, data["repo"]),
-            ("Issues: weekly", f"{dgh}/issues?q=is%3Aissue+label%3Aweekly", "the strategist's weekly reports"),
-            ("Issues: needs-human", f"{dgh}/issues?q=is%3Aissue+is%3Aopen+label%3Aneeds-human", "things the strategist asked you for, including code proposals"),
-            ("Pull requests", f"{dgh}/pulls", "config changes to main to review"),
-            ("Weekly journal", f"{dgh}/tree/strategist/journal/weekly", "the strategist's retrospectives"),
-            ("Current strategy", f"{dgh}/blob/strategist/state/strategy.md", "on the strategist branch"),
-            *([("Config not yet deployed", f"{dgh}/compare/{data['sha']}...main", "config on main the runner isn't using")]
-              if data.get("sha") else []),
-        ]})
-    groups.append({"title": "Other", "hint": "", "links": [
-        ("Tailscale admin", "https://login.tailscale.com/admin/machines", "who and what can reach this dashboard"),
-        ("Claude usage (Max plan)", "https://claude.ai/settings/usage", "the strategist runs on your subscription"),
-        ("Anthropic console", "https://platform.claude.com/usage", "API usage, if a key is ever used"),
-    ]})
+        groups.append(
+            {
+                "title": "GitHub: your data (config and the strategist's notes)",
+                "hint": "Your weekly job: read the weekly issue and answer needs-human issues.",
+                "links": [
+                    ("Repository", dgh, data["repo"]),
+                    ("Issues: weekly", f"{dgh}/issues?q=is%3Aissue+label%3Aweekly", "the strategist's weekly reports"),
+                    (
+                        "Issues: needs-human",
+                        f"{dgh}/issues?q=is%3Aissue+is%3Aopen+label%3Aneeds-human",
+                        "things the strategist asked you for, including code proposals",
+                    ),
+                    ("Pull requests", f"{dgh}/pulls", "config changes to main to review"),
+                    ("Weekly journal", f"{dgh}/tree/strategist/journal/weekly", "the strategist's retrospectives"),
+                    ("Current strategy", f"{dgh}/blob/strategist/state/strategy.md", "on the strategist branch"),
+                    *(
+                        [
+                            (
+                                "Config not yet deployed",
+                                f"{dgh}/compare/{data['sha']}...main",
+                                "config on main the runner isn't using",
+                            )
+                        ]
+                        if data.get("sha")
+                        else []
+                    ),
+                ],
+            }
+        )
+    groups.append(
+        {
+            "title": "Other",
+            "hint": "",
+            "links": [
+                (
+                    "Tailscale admin",
+                    "https://login.tailscale.com/admin/machines",
+                    "who and what can reach this dashboard",
+                ),
+                (
+                    "Claude usage (Max plan)",
+                    "https://claude.ai/settings/usage",
+                    "the strategist runs on your subscription",
+                ),
+                ("Anthropic console", "https://platform.claude.com/usage", "API usage, if a key is ever used"),
+            ],
+        }
+    )
     for g in groups:
         g["links"] = [{"label": label, "url": url, "hint": hint} for label, url, hint in g["links"]]
     return groups
@@ -343,16 +437,18 @@ def sources():
         d = config.REPLAY_DIR / rid
         summ = _json(d / "summary.json") or {}
         st = _json(d / "status.json") or {}
-        replays.append({
-            "id": rid,
-            # actual sessions traded, not the requested range (which may include weekends)
-            "start": min(summ.get("days") or {"": 0}) or summ.get("start"),
-            "end": max(summ.get("days") or {"": 0}) or summ.get("end"),
-            "days": len(summ.get("days", {})) or None,
-            "pnl": round(summ["final_equity"] - summ["start_equity"], 2) if "final_equity" in summ else None,
-            "classifiers": [c["id"] for c in st.get("classifiers", [])],
-            "running": not summ,
-        })
+        replays.append(
+            {
+                "id": rid,
+                # actual sessions traded, not the requested range (which may include weekends)
+                "start": min(summ.get("days") or {"": 0}) or summ.get("start"),
+                "end": max(summ.get("days") or {"": 0}) or summ.get("end"),
+                "days": len(summ.get("days", {})) or None,
+                "pnl": round(summ["final_equity"] - summ["start_equity"], 2) if "final_equity" in summ else None,
+                "classifiers": [c["id"] for c in st.get("classifiers", [])],
+                "running": not summ,
+            }
+        )
     return {"sources": ["live", *(r["id"] for r in replays)], "replays": replays, "mode": config.account_mode()}
 
 
@@ -399,7 +495,9 @@ def scoreboard(source: str = "live", all_days: bool | None = None):
     base, book_dirs = _source_dir(source)
     status = _json(base / "status.json") or {}
     # Probes never trade, so they aren't on the scoreboard.
-    today = [c for c in status.get("classifiers") or [] if isinstance(c, dict) and c.get("id") and c.get("mode") != "probe"]
+    today = [
+        c for c in status.get("classifiers") or [] if isinstance(c, dict) and c.get("id") and c.get("mode") != "probe"
+    ]
     if source == "live" and not today:  # before the open the runner hasn't loaded them yet
         today = _classifiers_file()
     families = {c["id"]: c.get("family") for c in today}
@@ -407,7 +505,11 @@ def scoreboard(source: str = "live", all_days: bool | None = None):
     if source == "live":  # the runner's promotion record remembers retired classifiers' families
         promo = _json(config.RUNTIME_DIR / "promotion.json") or {}
         families = {k: v.get("family") for k, v in promo.items() if isinstance(v, dict)} | families
-        since = {k: v["since"] for k, v in promo.items() if isinstance(v, dict) and isinstance(v.get("since"), str) and v["since"]}
+        since = {
+            k: v["since"]
+            for k, v in promo.items()
+            if isinstance(v, dict) and isinstance(v.get("since"), str) and v["since"]
+        }
         hashes = {k: v["hash"] for k, v in promo.items() if isinstance(v, dict) and isinstance(v.get("hash"), str)}
     sim_ids = {c["id"] for c in today if c.get("mode") == "sim"}
     if all_days is None:
@@ -422,11 +524,16 @@ def scoreboard(source: str = "live", all_days: bool | None = None):
         # On the live board sim classifiers trade only their own accounts, so they're listed under "sim".
         current = {c["id"] for c in today} - (sim_ids if source == "live" else set())
         books[d.name] = SB.build(
-            _csv(d / "trades.csv"), families, current, _num(eq[0].get("equity")) if eq else None,
+            _csv(d / "trades.csv"),
+            families,
+            current,
+            _num(eq[0].get("equity")) if eq else None,
             since=since if d.name == "paper" else None,  # the promotion record is kept on paper
             spec_hashes=hashes if d.name == "paper" else None,
             slippage_per_side_pct=SB.SLIPPAGE_PER_SIDE_PCT if source == "live" else 0.0,  # sim fills include it
-            from_date=from_date, equity=eq, benchmark=bench,
+            from_date=from_date,
+            equity=eq,
+            benchmark=bench,
         )
     if _sim_dirs(source) or (source == "live" and sim_ids):
         from trader.broker import SIM_START_CASH
@@ -434,10 +541,21 @@ def scoreboard(source: str = "live", all_days: bool | None = None):
         # Every sim account starts with the same cash, so % of it compares rules fairly. The
         # simulated fills (market and limit entries, and every exit) already include slippage, and
         # none of this counts towards promotion.
-        books["sim"] = SB.build(_sim_trades(source), families, sim_ids, SIM_START_CASH, since=None,
-                                slippage_per_side_pct=0.0, from_date=from_date)
-    return {"source": source, "books": books,
-            "experiment_start": SB.EXPERIMENT_START.isoformat() if source == "live" else None, "all_days": all_days}
+        books["sim"] = SB.build(
+            _sim_trades(source),
+            families,
+            sim_ids,
+            SIM_START_CASH,
+            since=None,
+            slippage_per_side_pct=0.0,
+            from_date=from_date,
+        )
+    return {
+        "source": source,
+        "books": books,
+        "experiment_start": SB.EXPERIMENT_START.isoformat() if source == "live" else None,
+        "all_days": all_days,
+    }
 
 
 def _num(v) -> float | None:
@@ -457,9 +575,11 @@ def _classifiers_file() -> list[dict]:
         return []
     if not isinstance(raw, dict) or not isinstance(raw.get("classifiers") or [], list):
         return []
-    return [{"id": c["id"], "family": "control" if c.get("control") else c.get("family"), "mode": c.get("mode", "shadow")}
-            for c in raw.get("classifiers") or []
-            if isinstance(c, dict) and c.get("id") and c.get("enabled", True) and c.get("mode") != "probe"]
+    return [
+        {"id": c["id"], "family": "control" if c.get("control") else c.get("family"), "mode": c.get("mode", "shadow")}
+        for c in raw.get("classifiers") or []
+        if isinstance(c, dict) and c.get("id") and c.get("enabled", True) and c.get("mode") != "probe"
+    ]
 
 
 PROBE_REPORT = "logs/probe_report.json"  # written by the post-close wrapper (trader probe-report --out)
@@ -495,8 +615,12 @@ def rules():
     except (OSError, ValueError, yaml.YAMLError) as e:  # ValueError: refused by safeio, or not UTF-8
         return {"date": None, "classifiers": [], "problems": [], "error": f"couldn't read classifiers.yaml: {e}"}
     if not isinstance(raw, dict) or not isinstance(raw.get("classifiers") or [], list):
-        return {"date": None, "classifiers": [], "problems": [],
-                "error": "classifiers.yaml should be a mapping with a `classifiers:` list"}
+        return {
+            "date": None,
+            "classifiers": [],
+            "problems": [],
+            "error": "classifiers.yaml should be a mapping with a `classifiers:` list",
+        }
     out, problems, seen = [], [], set()
     try:
         universe = set(config.universe())
@@ -532,12 +656,24 @@ def overview():
     deployed = deployed_commit()
     root = data_root()
     if root is None:  # monorepo: the data is in the code repo
-        return {"repo": repo, "data_repo": repo, "split": False, "deployed": deployed, "config": None,
-                "links": links(repo, deployed and deployed["sha"])}
+        return {
+            "repo": repo,
+            "data_repo": repo,
+            "split": False,
+            "deployed": deployed,
+            "config": None,
+            "links": links(repo, deployed and deployed["sha"]),
+        }
     data_repo = config.SETTINGS.owner.github_repo
     cfg = deployed_commit(root)
-    return {"repo": repo, "data_repo": data_repo, "split": True, "deployed": deployed, "config": cfg,
-            "links": links(repo, deployed and deployed["sha"], {"repo": data_repo, "sha": cfg and cfg["sha"]})}
+    return {
+        "repo": repo,
+        "data_repo": data_repo,
+        "split": True,
+        "deployed": deployed,
+        "config": cfg,
+        "links": links(repo, deployed and deployed["sha"], {"repo": data_repo, "sha": cfg and cfg["sha"]}),
+    }
 
 
 @app.get("/api/docs")
@@ -597,8 +733,12 @@ def today_read():
         return {"today": today, "name": None, "is_today": False, "sections": {}}
     name = names[0]
     text = _strategist_text(config.STRATEGIST_ROOT / "journal" / "daily" / name) or ""
-    return {"today": today, "name": name, "is_today": name == f"{today}.md",
-            "sections": {k: journal_section(text, h) for k, h in DAILY_SECTIONS.items()}}
+    return {
+        "today": today,
+        "name": name,
+        "is_today": name == f"{today}.md",
+        "sections": {k: journal_section(text, h) for k, h in DAILY_SECTIONS.items()},
+    }
 
 
 def _strategist_stamp() -> Path:
@@ -612,7 +752,9 @@ def health():
     try:
         from zoneinfo import ZoneInfo  # New York time with its offset, like every other time on the page
 
-        last_run = dt.datetime.fromtimestamp(stamp.stat().st_mtime, ZoneInfo("America/New_York")).isoformat(timespec="minutes")
+        last_run = dt.datetime.fromtimestamp(stamp.stat().st_mtime, ZoneInfo("America/New_York")).isoformat(
+            timespec="minutes"
+        )
     except OSError:
         last_run = None
     disk = shutil.disk_usage(config.RUNTIME_DIR if config.RUNTIME_DIR.exists() else config.CODE_ROOT)

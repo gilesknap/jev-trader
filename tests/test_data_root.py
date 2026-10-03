@@ -52,6 +52,7 @@ def code_root(tmp_path_factory):
     yield CODE
     CODE, CODE_ENV = ROOT, {}
 
+
 SHOW = """
 import json
 from trader import config as c
@@ -103,9 +104,12 @@ def _data_root(tmp_path: Path, mode: str | None = "paper", repo: str = "someone/
 def _old_layout(code: Path) -> dict:
     """What every path was before DATA_ROOT existed, all derived from CODE_ROOT."""
     return {
-        "CODE_ROOT": str(code), "STRATEGIST_ROOT": str(code),
-        "RUNTIME_DIR": str(code / "runtime"), "REPLAY_DIR": str(code / "runtime" / "replay"),
-        "STRATEGIST_STAMP": str(code / ".last_run"), "POSTCLOSE_STAMP": str(code / ".last_postclose"),
+        "CODE_ROOT": str(code),
+        "STRATEGIST_ROOT": str(code),
+        "RUNTIME_DIR": str(code / "runtime"),
+        "REPLAY_DIR": str(code / "runtime" / "replay"),
+        "STRATEGIST_STAMP": str(code / ".last_run"),
+        "POSTCLOSE_STAMP": str(code / ".last_postclose"),
         "STRATEGIST_ALERTS": str(code / "strategist-alerts.log"),
         "CLASSIFIERS_FILE": str(code / "state" / "classifiers.yaml"),
         "CUSTOM_FEATURES_DIR": str(code / "features" / "custom"),
@@ -116,6 +120,7 @@ def _old_layout(code: Path) -> dict:
 
 
 # ---- no-op in today's layout --------------------------------------------------------------
+
 
 @pytest.mark.parametrize("data_env", [None, "", "same"], ids=["unset", "empty", "equal-to-code-root"])
 def test_unset_data_root_changes_no_path(tmp_path, data_env):
@@ -131,8 +136,13 @@ def test_unset_data_root_changes_no_path(tmp_path, data_env):
 
 
 def test_existing_overrides_still_win_without_data_root(tmp_path):
-    got = _paths(tmp_path, TRADER_STRATEGIST_ROOT=str(tmp_path / "s"), TRADER_RUNTIME=str(tmp_path / "rt"),
-                 TRADER_SECRETS=str(tmp_path / "sec"), TRADER_CONFIG=str(CODE / "config.yaml"))
+    got = _paths(
+        tmp_path,
+        TRADER_STRATEGIST_ROOT=str(tmp_path / "s"),
+        TRADER_RUNTIME=str(tmp_path / "rt"),
+        TRADER_SECRETS=str(tmp_path / "sec"),
+        TRADER_CONFIG=str(CODE / "config.yaml"),
+    )
     assert got["STRATEGIST_ROOT"] == str(tmp_path / "s")
     assert got["CLASSIFIERS_FILE"] == str(tmp_path / "s" / "state" / "classifiers.yaml")
     assert got["RUNTIME_DIR"] == str(tmp_path / "rt") and got["REPLAY_DIR"] == str(tmp_path / "rt" / "replay")
@@ -141,6 +151,7 @@ def test_existing_overrides_still_win_without_data_root(tmp_path):
 
 
 # ---- what TRADER_DATA_ROOT moves ----------------------------------------------------------
+
 
 def test_data_root_moves_config_mode_and_env_fallback_only(tmp_path):
     data = _data_root(tmp_path)
@@ -178,8 +189,10 @@ def test_a_relative_data_root_is_made_absolute_once_at_import(tmp_path):
     got = _paths(tmp_path, cwd=tmp_path, TRADER_DATA_ROOT="data")
     assert got["DATA_ROOT"] == str(data) and got["SETTINGS_FILE"] == str(data / "config.yaml")
     assert got["MODE_FILE"] == str(data / "config" / "mode.yaml") and got["repo"] == "someone/their-data"
-    code = ("import os; from trader import config as c; os.chdir('/'); "
-            "print(c.DATA_ROOT, c.split_mode(), c.load_settings().owner.github_repo)")
+    code = (
+        "import os; from trader import config as c; os.chdir('/'); "
+        "print(c.DATA_ROOT, c.split_mode(), c.load_settings().owner.github_repo)"
+    )
     r = _run(["-c", code], tmp_path, cwd=tmp_path, TRADER_DATA_ROOT="data")
     assert r.returncode == 0 and r.stdout.split() == [str(data), "True", "someone/their-data"], r.stderr
 
@@ -209,6 +222,7 @@ def test_missing_config_names_trader_data_root(tmp_path):
 
 # ---- split mode: the mode file is mandatory -----------------------------------------------
 
+
 def test_split_mode_requires_the_mode_file(tmp_path, monkeypatch):
     absent = tmp_path / "config" / "mode.yaml"
     monkeypatch.setattr(config, "MODE_FILE", absent)
@@ -219,6 +233,7 @@ def test_split_mode_requires_the_mode_file(tmp_path, monkeypatch):
     with pytest.raises(config.SettingsError, match="mode.yaml is missing"):
         config.require_mode_file(tmp_path, config.CODE_ROOT)
     from trader import golive
+
     assert golive.override() == "auto"
     monkeypatch.setattr(config, "DATA_ROOT", tmp_path)
     assert config.split_mode()
@@ -246,6 +261,7 @@ def test_golive_command_refuses_a_split_data_root_without_mode_file(tmp_path):
 
 
 # ---- render-deploy: templates from code, config and output under data ---------------------
+
 
 def test_render_deploy_reads_templates_from_code_and_config_from_data(tmp_path):
     data = _data_root(tmp_path)
@@ -280,7 +296,8 @@ def test_cli_render_deploy_writes_and_checks_under_the_data_root(tmp_path, how):
     r = _run([*cmd, *flag], tmp_path, **env)
     assert r.returncode == 0 and "updated:" in r.stdout, r.stderr
     assert sorted(str(p.relative_to(data)) for p in data.rglob("*.timer")) == sorted(
-        p for p in config.DEPLOY_TEMPLATES.values() if p.endswith(".timer"))
+        p for p in config.DEPLOY_TEMPLATES.values() if p.endswith(".timer")
+    )
     assert (data / "deploy" / "systemd" / "trader.env").exists()
     r = _run([*cmd, "--check", *flag], tmp_path, **env)
     assert r.returncode == 0 and "match" in r.stdout, r.stderr
@@ -301,4 +318,3 @@ def test_cli_render_deploy_refuses_a_data_root_without_mode_file(tmp_path):
     r = _run(["-m", "trader.cli", "config", "render-deploy", "--check", "--data-root", str(data)], tmp_path)
     assert r.returncode != 0 and "mode.yaml is missing" in r.stderr
     assert not (data / "deploy").exists()
-

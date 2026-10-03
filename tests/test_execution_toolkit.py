@@ -35,6 +35,7 @@ def trades(tmp_path):
 
 # ---- trailing stop -------------------------------------------------------------------
 
+
 def test_trailing_stop_ratchets_up_and_exits_at_the_raised_stop(tmp_path, session):
     path = [100.0] * 10 + [100.0 + 0.1 * i for i in range(1, 21)] + [101.0] * 360  # up to 102, then back
     book, t = run(tmp_path, session(path=path), [spec(trail_pct=0.5, target_pct=5)], Always())
@@ -71,6 +72,7 @@ def test_trail_never_lowers_the_stop(tmp_path, session):
 
 # ---- time stop -------------------------------------------------------------------------
 
+
 def test_time_stop(tmp_path, session):
     book, t = run(tmp_path, session(path=[100.0] * 390), [spec(max_hold_min=30)], Always())
     assert list(t.reason) == ["ENTER", "time stop"]
@@ -98,8 +100,20 @@ def test_sim_limit_fill_pays_the_same_slippage_as_a_market_entry():
     t0 = dt.datetime(2026, 10, 5, 10, 0, tzinfo=ET)
     oid = b.buy_limit("SPY", 2.0, 99.0, t0, "c")
     idx = pd.date_range(t0, periods=2, freq="1min")
-    b.update_bars({"SPY": pd.DataFrame({"open": [99.5, 98.5], "high": [99.6, 98.6], "low": [99.4, 98.0],
-                                        "close": [99.5, 98.5], "volume": [1, 1]}, index=idx)})
+    b.update_bars(
+        {
+            "SPY": pd.DataFrame(
+                {
+                    "open": [99.5, 98.5],
+                    "high": [99.6, 98.6],
+                    "low": [99.4, 98.0],
+                    "close": [99.5, 98.5],
+                    "volume": [1, 1],
+                },
+                index=idx,
+            )
+        }
+    )
     st = b.order_state(oid)
     assert st.status == "filled" and st.price == pytest.approx(98.5 * 1.0005)  # gapped below: the open, plus slippage
     assert b.positions["SPY"].avg_price == pytest.approx(st.price)
@@ -111,6 +125,7 @@ def test_sim_limit_fill_pays_the_same_slippage_as_a_market_entry():
 def test_a_broker_limit_fill_is_still_booked_no_higher_than_its_limit(tmp_path, session):
     """Only the simulated broker's haircut may lift a limit fill above the limit: a real broker's
     fill reported above it (a rounding artefact) is booked at the limit, as before."""
+
     class Real(SimBroker):
         name = "fake-real"
         limit_slippage = 0.0
@@ -202,10 +217,15 @@ def test_partial_limit_fill_at_expiry_keeps_the_filled_part(tmp_path, session):
 
 # ---- sizing and stops --------------------------------------------------------------------
 
+
 def test_risk_sizing_uses_the_stop_distance_and_is_capped(tmp_path, session):
-    _, t = run(tmp_path / "a", session(path=[100.0] * 390), [spec(risk_pct=0.05, stop_pct=0.5, size_fraction=0.25)], Always())
+    _, t = run(
+        tmp_path / "a", session(path=[100.0] * 390), [spec(risk_pct=0.05, stop_pct=0.5, size_fraction=0.25)], Always()
+    )
     assert float(t.notional.iloc[0]) == pytest.approx(25.0, abs=0.02)  # 250 x 0.05% / 0.5%
-    _, t = run(tmp_path / "b", session(path=[100.0] * 390), [spec(risk_pct=1.0, stop_pct=0.5, size_fraction=0.25)], Always())
+    _, t = run(
+        tmp_path / "b", session(path=[100.0] * 390), [spec(risk_pct=1.0, stop_pct=0.5, size_fraction=0.25)], Always()
+    )
     assert float(t.notional.iloc[0]) == pytest.approx(62.5, abs=0.02)  # capped by size_fraction
 
 
@@ -224,6 +244,7 @@ def test_atr_stop_distance_is_capped_at_stop_pct(tmp_path, session):
 
 
 # ---- scale out -----------------------------------------------------------------------------
+
 
 def test_scale_out_banks_part_and_the_round_trip_is_one_trade(tmp_path, session):
     path = [100.0] * 10 + [100.6] * 20 + [100.0] * 360
@@ -255,14 +276,29 @@ def test_entry_rules_are_frozen_at_entry_and_persist(tmp_path, session):
     ticks(eng, bars, 0, 6)
     book2 = Book("sim", book.broker, tmp_path / "sim")  # restart; the spec could have changed meanwhile
     e = book2.entries["SPY"]
-    assert (e.trail_pct, e.max_hold_min, e.scale_fraction) == (0.4, 90, 0.5) and e.scale_at == pytest.approx(e.price * 1.005)
+    assert (e.trail_pct, e.max_hold_min, e.scale_fraction) == (0.4, 90, 0.5) and e.scale_at == pytest.approx(
+        e.price * 1.005
+    )
 
 
 def test_old_entries_json_still_loads(tmp_path):
     d = tmp_path / "sim"
     d.mkdir()
-    (d / "entries.json").write_text(json.dumps({"SPY": {"classifier": "t", "qty": 0.5, "price": 100.0, "stop": 99.5,
-                                                        "target": 101.0, "time": "2026-10-06T10:00:00-04:00", "stop_id": "s1"}}))
+    (d / "entries.json").write_text(
+        json.dumps(
+            {
+                "SPY": {
+                    "classifier": "t",
+                    "qty": 0.5,
+                    "price": 100.0,
+                    "stop": 99.5,
+                    "target": 101.0,
+                    "time": "2026-10-06T10:00:00-04:00",
+                    "stop_id": "s1",
+                }
+            }
+        )
+    )
     e = Book("sim", SimBroker(250.0), d).entries["SPY"]
     assert (e.init_stop, e.high, e.orig_qty, e.server_stop, e.scale_at) == (99.5, 100.0, 0.5, 99.5, None)
 
@@ -275,6 +311,7 @@ def test_unset_toolkit_fields_leave_existing_spec_identity_unchanged():
 
 
 # ---- Alpaca order paths ------------------------------------------------------------------
+
 
 def test_alpaca_move_stop_falls_back_to_cancel_and_replace():
     c = FakeClient()
@@ -318,7 +355,9 @@ def test_startup_keeps_todays_limit_fill_and_drops_stale_limits(tmp_path):
     br.positions = {"SPY": Position("SPY", 0.5, 99.95)}  # today's limit filled while the runner was down
     book = Book("paper", br, tmp_path / "paper")
     now = dt.datetime.now(ET)
-    mk = lambda oid, placed: Pending("t", oid, 99.95, 0.5, 49.98, placed, placed + dt.timedelta(minutes=5), 0.5, 1.0, {}, "c")
+    mk = lambda oid, placed: Pending(
+        "t", oid, 99.95, 0.5, 49.98, placed, placed + dt.timedelta(minutes=5), 0.5, 1.0, {}, "c"
+    )
     book.pending = {"SPY": mk("today", now), "QQQ": mk("old", now - dt.timedelta(days=1))}
     reconcile_at_startup(book, lambda *a: None)
     assert "SPY" in br.positions and not hasattr(br, "cancelled")  # not treated as an orphan
@@ -352,6 +391,7 @@ def test_trailing_stop_moves_the_server_side_stop(tmp_path, session):
 
 
 # ---- review round 1 (#41) ----------------------------------------------------------------
+
 
 def test_limit_fill_reported_before_its_price_opens_at_the_limit(tmp_path, session):
     from trader.broker import OrderState
@@ -453,7 +493,9 @@ def test_exit_found_in_order_history_keeps_its_own_fill_time():
     c = FakeClient()
     at = dt.datetime(2026, 10, 5, 19, 58, tzinfo=dt.UTC)  # 15:58 ET on the previous session
     c.get_orders = lambda req: [NS(filled_qty="0.5", filled_avg_price="101", filled_at=at)]
-    f = broker(c).exit_fill_since("SPY", dt.datetime(2026, 10, 5, 10, tzinfo=ET), dt.datetime(2026, 10, 6, 9, 25, tzinfo=ET))
+    f = broker(c).exit_fill_since(
+        "SPY", dt.datetime(2026, 10, 5, 10, tzinfo=ET), dt.datetime(2026, 10, 6, 9, 25, tzinfo=ET)
+    )
     assert f.time == at and f.time.isoformat().startswith("2026-10-05T15:58")
 
 
@@ -492,8 +534,21 @@ def test_flatten_keeps_a_limit_whose_cancel_is_not_final(tmp_path, session):
 def test_state_files_written_by_other_versions_still_load(tmp_path):
     d = tmp_path / "sim"
     d.mkdir()
-    (d / "entries.json").write_text(json.dumps({"SPY": {"classifier": "t", "qty": 0.5, "price": 100.0, "stop": 99.5,
-                                                        "target": 101.0, "time": "2026-10-06T10:00:00-04:00", "from_the_future": 1}}))
+    (d / "entries.json").write_text(
+        json.dumps(
+            {
+                "SPY": {
+                    "classifier": "t",
+                    "qty": 0.5,
+                    "price": 100.0,
+                    "stop": 99.5,
+                    "target": 101.0,
+                    "time": "2026-10-06T10:00:00-04:00",
+                    "from_the_future": 1,
+                }
+            }
+        )
+    )
     book = Book("sim", SimBroker(250.0), d)
     book.save_entries()
     assert "SPY" in book.entries and not (d / "entries.json.tmp").exists()

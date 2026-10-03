@@ -23,18 +23,73 @@ import pandas as pd
 from trader import features as F
 
 ALLOWED_MODULES = {"math", "statistics", "numpy", "pandas"}
-ALLOWED_FROM = {"math": None, "statistics": None, "numpy": None, "pandas": None,
-                "__future__": {"annotations"}, "trader.features": {"feature"}}
+ALLOWED_FROM = {
+    "math": None,
+    "statistics": None,
+    "numpy": None,
+    "pandas": None,
+    "__future__": {"annotations"},
+    "trader.features": {"feature"},
+}
 BANNED_NAMES = {
-    "open", "exec", "eval", "compile", "__import__", "globals", "locals", "vars", "dir",
-    "getattr", "setattr", "delattr", "input", "breakpoint", "exit", "quit", "help",
-    "type", "object", "memoryview", "super", "classmethod", "staticmethod", "property", "print",
+    "open",
+    "exec",
+    "eval",
+    "compile",
+    "__import__",
+    "globals",
+    "locals",
+    "vars",
+    "dir",
+    "getattr",
+    "setattr",
+    "delattr",
+    "input",
+    "breakpoint",
+    "exit",
+    "quit",
+    "help",
+    "type",
+    "object",
+    "memoryview",
+    "super",
+    "classmethod",
+    "staticmethod",
+    "property",
+    "print",
 }
 # Attribute names that reach I/O, processes or module internals from numpy/pandas objects.
-BANNED_ATTRS = {"io", "os", "sys", "lib", "ctypes", "compat", "util", "testing", "api", "core",
-                "plotting", "errors", "system", "popen", "subprocess", "load", "loads", "save",
-                "savez", "savetxt", "loadtxt", "genfromtxt", "memmap", "fromfile", "tofile",
-                "DataSource", "show_versions", "eval", "query"}
+BANNED_ATTRS = {
+    "io",
+    "os",
+    "sys",
+    "lib",
+    "ctypes",
+    "compat",
+    "util",
+    "testing",
+    "api",
+    "core",
+    "plotting",
+    "errors",
+    "system",
+    "popen",
+    "subprocess",
+    "load",
+    "loads",
+    "save",
+    "savez",
+    "savetxt",
+    "loadtxt",
+    "genfromtxt",
+    "memmap",
+    "fromfile",
+    "tofile",
+    "DataSource",
+    "show_versions",
+    "eval",
+    "query",
+}
 ALLOWED_TO = {"to_numpy", "to_list", "tolist"}
 
 
@@ -62,19 +117,31 @@ def static_check(path: Path) -> list[str]:
             else:
                 allowed = ALLOWED_FROM[mod]
                 for a in node.names:
-                    if (allowed is not None and a.name not in allowed) or a.name == "*" or a.name in BANNED_ATTRS \
-                            or a.name.startswith(("_", "read_")):
+                    if (
+                        (allowed is not None and a.name not in allowed)
+                        or a.name == "*"
+                        or a.name in BANNED_ATTRS
+                        or a.name.startswith(("_", "read_"))
+                    ):
                         problems.append(f"from {mod} import {a.name} not allowed (line {line})")
         elif isinstance(node, ast.Name) and (node.id in BANNED_NAMES or node.id.startswith("__")):
             problems.append(f"use of {node.id} not allowed (line {line})")
         elif isinstance(node, ast.Attribute):
             a = node.attr
-            if a.startswith("_") or a in BANNED_ATTRS or a.startswith("read_") \
-                    or (a.startswith("to_") and a not in ALLOWED_TO):
+            if (
+                a.startswith("_")
+                or a in BANNED_ATTRS
+                or a.startswith("read_")
+                or (a.startswith("to_") and a not in ALLOWED_TO)
+            ):
                 problems.append(f"attribute .{a} not allowed (line {line})")
         elif isinstance(node, (ast.Global, ast.Nonlocal)):
             problems.append(f"global/nonlocal not allowed (line {line})")
-        elif isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.startswith(("/", "http:", "https:", "file:")):
+        elif (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and node.value.startswith(("/", "http:", "https:", "file:"))
+        ):
             problems.append(f"path/URL string literal not allowed (line {line})")
     return problems
 
@@ -132,8 +199,9 @@ def _session_clock(bars: pd.DataFrame) -> tuple[list[float], float]:
 SPEED_BUDGET_S = 0.005
 
 
-def evaluate(names: list[str], sessions: list[tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]],
-             budget_s: float | None = None) -> dict[str, str]:
+def evaluate(
+    names: list[str], sessions: list[tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]], budget_s: float | None = None
+) -> dict[str, str]:
     """sessions: (bars, prev_day, spy) per day. Returns name -> error for failures. `budget_s`:
     the speed limit, SPEED_BUDGET_S by default (the sandbox passes the runner's)."""
     budget_s = SPEED_BUDGET_S if budget_s is None else budget_s

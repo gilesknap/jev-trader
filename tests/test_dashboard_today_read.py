@@ -33,7 +33,9 @@ def test_sections_are_cut_at_the_next_section():
     assert journal_section(ENTRY, "Weekly") is None
 
 
-@pytest.mark.parametrize("heading", ["## pre-market", "## PRE-MARKET (09:05 ET)", "## Premarket", "##  Pre market read"])
+@pytest.mark.parametrize(
+    "heading", ["## pre-market", "## PRE-MARKET (09:05 ET)", "## Premarket", "##  Pre market read"]
+)
 def test_headings_match_case_insensitively_by_prefix(heading):
     assert journal_section(f"# Day\n{heading}\nES -0.6%.\n# Next\nx", "Pre-market") == "ES -0.6%."
 
@@ -74,7 +76,12 @@ def test_no_entry_today_shows_the_latest_and_says_so(daily, client):
 
 
 def test_no_entries_at_all(daily, client):
-    assert client.get("/api/today-read").json() == {"today": "2026-10-02", "name": None, "is_today": False, "sections": {}}
+    assert client.get("/api/today-read").json() == {
+        "today": "2026-10-02",
+        "name": None,
+        "is_today": False,
+        "sections": {},
+    }
 
 
 def test_a_symlinked_entry_is_never_followed(daily, client, tmp_path):

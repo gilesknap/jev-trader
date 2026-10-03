@@ -76,7 +76,12 @@ def test_monorepo_alerts_after_two_days_with_todays_message(mono):
     assert state["undeployed_since"]["sha"] == sha
     _age(state, "undeployed_since", 49)
     assert housekeeping.check_undeployed(state) == [
-        ("undeployed", "main has changes merged 2 days ago that aren't deployed. Run: sudo -u runner trading-deploy", False)]
+        (
+            "undeployed",
+            "main has changes merged 2 days ago that aren't deployed. Run: sudo -u runner trading-deploy",
+            False,
+        )
+    ]
 
 
 def test_monorepo_does_not_read_trader_data_root_pointing_at_main(mono, monkeypatch):
@@ -172,7 +177,7 @@ def test_split_reads_the_code_repo_anonymously(split, monkeypatch):
 
     monkeypatch.setattr(housekeeping.subprocess, "run", spy)
     assert housekeeping.check_undeployed({}) == []
-    (cmd, kw), = [(c, k) for c, k in calls if "ls-remote" in c and CODE_URL in c]
+    ((cmd, kw),) = [(c, k) for c, k in calls if "ls-remote" in c and CODE_URL in c]
     assert cmd[:3] == ["git", "-c", "credential.helper="]
     # Run from / with no global or system config and no -C: neither the code checkout's nor any repo's
     # config (credential helpers, insteadOf, sshCommand) applies, only the command line.

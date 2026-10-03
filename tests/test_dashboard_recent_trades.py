@@ -1,4 +1,5 @@
 """The Trades page gets every fill from today plus a bounded tail of earlier ones, and is told how many it misses."""
+
 import csv
 
 import pytest
@@ -43,7 +44,9 @@ def test_a_replay_keeps_its_latest_day_whole():
 
 def test_rows_without_a_time_are_dropped():
     assert recent_trades([{"symbol": "SPY"}, _t("2026-09-30T10:00-04:00")], "2026-09-30") == (
-        [_t("2026-09-30T10:00-04:00")], 0)
+        [_t("2026-09-30T10:00-04:00")],
+        0,
+    )
 
 
 def _write(path, rows):

@@ -26,8 +26,23 @@ NON_EQUITY = {"TLT", "GLD"}  # treasuries and gold: outside the equity cap and e
 BUCKETS = {
     # QQQ, XLK, SMH and XLY are dominated by these mega-caps: XLK by AAPL/MSFT/NVDA/AVGO (and
     # PLTR), SMH by NVDA/AMD/AVGO, XLY by AMZN/TSLA, QQQ by all of them plus GOOGL/META/NFLX.
-    "growth": {"QQQ", "XLK", "SMH", "XLY", "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META",
-               "TSLA", "AMD", "AVGO", "NFLX", "PLTR"},
+    "growth": {
+        "QQQ",
+        "XLK",
+        "SMH",
+        "XLY",
+        "AAPL",
+        "MSFT",
+        "NVDA",
+        "AMZN",
+        "GOOGL",
+        "META",
+        "TSLA",
+        "AMD",
+        "AVGO",
+        "NFLX",
+        "PLTR",
+    },
     "financials": {"XLF", "JPM", "BAC"},  # JPM and BAC are among XLF's largest holdings
     "health": {"XLV", "LLY", "UNH"},  # LLY and UNH are among XLV's largest holdings
     "energy": {"XLE", "XOM"},  # XOM is XLE's largest holding
@@ -51,8 +66,15 @@ class Exposure:
     stop_loss: float  # USD lost if the stop fills at its price
 
 
-def allocate(symbol: str, desired: float, stop_fraction: float, equity: float, day_start: float,
-             realised: float, exposures: list[Exposure]) -> tuple[float, str]:
+def allocate(
+    symbol: str,
+    desired: float,
+    stop_fraction: float,
+    equity: float,
+    day_start: float,
+    realised: float,
+    exposures: list[Exposure],
+) -> tuple[float, str]:
     """Return (allowed USD, binding constraint); "requested" when nothing binds."""
     base = min(equity, day_start) if day_start > 0 else equity
     budget = base * OPEN_RISK_FRACTION - max(0.0, -realised)

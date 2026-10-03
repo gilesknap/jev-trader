@@ -63,7 +63,9 @@ def test_if_the_retry_fails_too_the_shares_keep_a_server_stop(tmp_path, clock, s
     assert e.qty == pytest.approx(1.0 - sold) and v.alive() == {e.stop_id: pytest.approx(1.0 - sold)}
     assert e.stop_id not in ("s1", "p1") and v.orders["p1"]["status"] == "canceled"
     booked = trade_rows(tmp_path) if sold else []
-    assert [(r["side"], r["qty"], r["price"]) for r in booked] == ([("sell_part", "0.300000", "98.0000")] if sold else [])
+    assert [(r["side"], r["qty"], r["price"]) for r in booked] == (
+        [("sell_part", "0.300000", "98.0000")] if sold else []
+    )
     v.closes = [(1.0 - sold, 99.0)]
     eng._exit(book, "SPY", e, 99.4, T0 + dt.timedelta(minutes=1), "classifier EXIT")
     r = trade_rows(tmp_path)[-1]

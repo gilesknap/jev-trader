@@ -60,6 +60,7 @@ def _fetch_within(timeout: float, *args, **kw) -> dict[str, pd.DataFrame]:
             out["bars"] = fetch_alpaca(*args, **kw)
         except Exception as e:
             out["error"] = e
+
     call = threading.Thread(target=run, daemon=True)
     call.start()
     call.join(timeout)
@@ -137,17 +138,25 @@ def _session_for_run(client):
     else:
         saved = _saved_session(today)
         if saved is None:
-            _calendar_alert("down", f"calendar unreadable at runner start ({err!r}) and no session times saved "
-                                    "today: the runner can't start and retries every 30 s. Anything held has only "
-                                    "its server-side stop, and there is no EOD flatten; check Alpaca.")
+            _calendar_alert(
+                "down",
+                f"calendar unreadable at runner start ({err!r}) and no session times saved "
+                "today: the runner can't start and retries every 30 s. Anything held has only "
+                "its server-side stop, and there is no EOD flatten; check Alpaca.",
+            )
             raise err
-        _calendar_alert("reused", f"calendar unreadable at runner start ({err!r}): reusing today's saved session "
-                                  f"times (open {saved[0]:%H:%M}, close {saved[1]:%H:%M} ET)")
+        _calendar_alert(
+            "reused",
+            f"calendar unreadable at runner start ({err!r}): reusing today's saved session "
+            f"times (open {saved[0]:%H:%M}, close {saved[1]:%H:%M} ET)",
+        )
         return saved
     if session is not None:
         try:
-            _atomic_json(config.RUNTIME_DIR / "session.json", {"day": today.isoformat(), "open": session[0].isoformat(),
-                                                               "close": session[1].isoformat()})
+            _atomic_json(
+                config.RUNTIME_DIR / "session.json",
+                {"day": today.isoformat(), "open": session[0].isoformat(), "close": session[1].isoformat()},
+            )
         except Exception as e:  # only a later calendar outage needs it
             notify("info", f"couldn't save today's session times ({e!r}): a restart needs the calendar")
     return session
@@ -160,8 +169,11 @@ def _recent_calendar(client, today: dt.date, alert=notify) -> Calendar:
     try:
         return fetch_calendar(client, today - dt.timedelta(days=max(GATE_LOOKBACKS) + 2), today)
     except Exception as e:
-        alert("info", f"couldn't read the recent exchange calendar ({e!r}): an early close in the last few "
-                      "days is treated as a full session for prior-day features and the feature gate")
+        alert(
+            "info",
+            f"couldn't read the recent exchange calendar ({e!r}): an early close in the last few "
+            "days is treated as a full session for prior-day features and the feature gate",
+        )
         return Calendar()
 
 
@@ -175,9 +187,13 @@ def _load_specs(file, secrets, calendar: Calendar | None = None, now: dt.datetim
     end = now - dt.timedelta(minutes=20)
 
     def sessions_for(days):  # completed sessions only: a mid-session restart's partial today is no sample
-        return {s: {d: b for d, b in calendar.trim(split_sessions(bars)).items() if d < now.date()}
-                for s, bars in _fetch_within(STARTUP_FETCH_TIMEOUT_S, ["SPY", "QQQ"], end - dt.timedelta(days=days),
-                                             end, secrets).items()}
+        return {
+            s: {d: b for d, b in calendar.trim(split_sessions(bars)).items() if d < now.date()}
+            for s, bars in _fetch_within(
+                STARTUP_FETCH_TIMEOUT_S, ["SPY", "QQQ"], end - dt.timedelta(days=days), end, secrets
+            ).items()
+        }
+
     try:
         samples = gate_samples(sessions_for)
     except GateSampleError:
@@ -198,8 +214,11 @@ def _specs_for_session(file, secrets, calendar: Calendar, alert=notify) -> list:
     try:
         return _load_specs(file, secrets, calendar)
     except GateSampleError as e:
-        alert("urgent", f"custom-feature gate couldn't run, trading nothing today: {e}. A market-data "
-                        "problem, not classifiers.yaml")
+        alert(
+            "urgent",
+            f"custom-feature gate couldn't run, trading nothing today: {e}. A market-data "
+            "problem, not classifiers.yaml",
+        )
     except Exception as e:
         alert("urgent", f"classifiers.yaml invalid, trading nothing today: {e}")
     return []
@@ -209,8 +228,11 @@ def _alert_dropped(dropped: dict[str, str], alert=notify) -> None:
     """A rule with an unknown key is left out for the day, loudly; the rest still trade (#150)."""
     for cid, why in dropped.items():
         bench = " This is the control benchmark: it isn't running today." if cid.startswith("control_") else ""
-        alert("urgent", f"classifier {cid} not trading today: {why}. Fix state/classifiers.yaml; "
-                        f"the other classifiers trade as normal.{bench}")
+        alert(
+            "urgent",
+            f"classifier {cid} not trading today: {why}. Fix state/classifiers.yaml; "
+            f"the other classifiers trade as normal.{bench}",
+        )
 
 
 def _exclude_prelaunch_specs(specs, session: dt.date, alert=notify):
@@ -221,8 +243,11 @@ def _exclude_prelaunch_specs(specs, session: dt.date, alert=notify):
         return specs
     retired = [spec.id for spec in specs if spec.id.startswith("test_")]
     if retired:
-        alert("urgent", "Disabled pre-launch plumbing rules from experiment start (remove them from "
-                        "state/classifiers.yaml; the test_ prefix is reserved): " + ", ".join(retired))
+        alert(
+            "urgent",
+            "Disabled pre-launch plumbing rules from experiment start (remove them from "
+            "state/classifiers.yaml; the test_ prefix is reserved): " + ", ".join(retired),
+        )
     return [spec for spec in specs if not spec.id.startswith("test_")]
 
 
@@ -262,20 +287,34 @@ def stream_bars(rows: dict[str, list], tick: dt.datetime) -> dict[str, pd.DataFr
     """The stream's rows as bars: one per minute (a repeated minute keeps the last), in order,
     and only bars that closed before `tick`. Call it under the rows lock."""
     return {
-        s: pd.DataFrame(r, columns=BAR_COLS).drop_duplicates("ts", keep="last").set_index("ts").sort_index()
+        s: pd.DataFrame(r, columns=BAR_COLS)
+        .drop_duplicates("ts", keep="last")
+        .set_index("ts")
+        .sort_index()
         .loc[lambda d, t=tick: d.index < t]
-        for s, r in rows.items() if r
+        for s, r in rows.items()
+        if r
     }
 
 
-def catch_up_bars(rows: dict[str, list], lock, base: list[str], extra: list[str], open_: dt.datetime,
-                  tick: dt.datetime, secrets, alert=notify) -> None:
+def catch_up_bars(
+    rows: dict[str, list],
+    lock,
+    base: list[str],
+    extra: list[str],
+    open_: dt.datetime,
+    tick: dt.datetime,
+    secrets,
+    alert=notify,
+) -> None:
     """Today's IEX bars from the open to `tick`, added to the stream's rows: once, at the first
     tick of a stream that subscribed late (under 90 s before the open). It runs after the subscription, so no minute
     falls between the two; a minute both have is the same bar (stream_bars keeps one). Each fetch
     gets CATCH_UP_TIMEOUT_S. Never raises: a failure alerts and those symbols start from live bars."""
-    for syms, why in ((base, "features and stops may be missing today's earlier bars"),
-                      (extra, "their stops may be missing today's earlier bars")):  # held from before: a rejected one mustn't stop the rest
+    for syms, why in (
+        (base, "features and stops may be missing today's earlier bars"),
+        (extra, "their stops may be missing today's earlier bars"),
+    ):  # held from before: a rejected one mustn't stop the rest
         if not syms:
             continue
         try:
@@ -296,8 +335,9 @@ class RestBars:
     on the stream's own SPY bars. A failed or slow fetch alerts (throttled) and leaves things as
     before: the server-side stops and the kill switch."""
 
-    def __init__(self, fetch, open_: dt.datetime, alert_every, timeout: float = REST_POLL_TIMEOUT_S,
-                 clock=time.monotonic):
+    def __init__(
+        self, fetch, open_: dt.datetime, alert_every, timeout: float = REST_POLL_TIMEOUT_S, clock=time.monotonic
+    ):
         self.fetch, self.open_, self.alert_every, self.timeout, self.clock = fetch, open_, alert_every, timeout, clock
         # Never pruned: at most a session of 1-minute bars for the few symbols held during outages.
         self.bars: dict[str, pd.DataFrame] = {}
@@ -309,13 +349,20 @@ class RestBars:
         now = self.clock()
         self._calls = [(t, at) for t, at in self._calls if t.is_alive()]
         if any(now - at < REST_HUNG_S for _, at in self._calls) or len(self._calls) >= REST_MAX_CALLS:
-            self.alert_every("rest-bars", "urgent", "REST bars for held positions: an earlier fetch is still "
-                             "running; stops rely on the server-side stop and the kill switch", 1800)
+            self.alert_every(
+                "rest-bars",
+                "urgent",
+                "REST bars for held positions: an earlier fetch is still "
+                "running; stops rely on the server-side stop and the kill switch",
+                1800,
+            )
             return
         syms = sorted(held)
         # From the oldest of the held symbols' latest known bars (stream or REST); the open if one has none.
-        latest = [max((b.index[-1] for b in (stream.get(s), self.bars.get(s)) if b is not None and len(b)),
-                      default=None) for s in syms]
+        latest = [
+            max((b.index[-1] for b in (stream.get(s), self.bars.get(s)) if b is not None and len(b)), default=None)
+            for s in syms
+        ]
         start = self.open_ if None in latest else max(self.open_, min(latest))
         out: dict = {}
 
@@ -324,14 +371,20 @@ class RestBars:
                 out["bars"] = self.fetch(syms, start, tick)
             except Exception as e:
                 out["error"] = e
+
         call = threading.Thread(target=run, daemon=True)  # daemon: a hung call can't block exit
         call.start()
         self._calls.append((call, now))
         call.join(self.timeout)
         if "bars" not in out:
             why = repr(out["error"]) if "error" in out else f"no answer in {self.timeout:g} s"
-            self.alert_every("rest-bars", "urgent", f"market data stale and REST bars for held {syms} failed "
-                             f"({why}); stops rely on the server-side stop and the kill switch", 1800)
+            self.alert_every(
+                "rest-bars",
+                "urgent",
+                f"market data stale and REST bars for held {syms} failed "
+                f"({why}); stops rely on the server-side stop and the kill switch",
+                1800,
+            )
             return
         for s, b in out["bars"].items():
             if s in held:
@@ -350,8 +403,9 @@ class RestBars:
         return m[~m.index.duplicated(keep="last")].sort_index()
 
 
-def tick_bars(engine: Engine, rest: RestBars, live: dict[str, pd.DataFrame], tick: dt.datetime,
-              minutes_to_close: float) -> tuple[dict[str, pd.DataFrame], pd.DataFrame]:
+def tick_bars(
+    engine: Engine, rest: RestBars, live: dict[str, pd.DataFrame], tick: dt.datetime, minutes_to_close: float
+) -> tuple[dict[str, pd.DataFrame], pd.DataFrame]:
     """The tick's bars (the stream's, plus REST bars for paper/live holdings while it's stale)
     and the stream's own SPY bars, which alone decide staleness: none from the stream is stale,
     even if SPY was polled over REST. Never raises."""
@@ -365,8 +419,9 @@ def tick_bars(engine: Engine, rest: RestBars, live: dict[str, pd.DataFrame], tic
     return bars, live.get("SPY", pd.DataFrame())
 
 
-def prev_day_bars(symbols: list[str], day: dt.date, now: dt.datetime, secrets, alert=notify,
-                  calendar: Calendar | None = None) -> dict[str, pd.DataFrame]:
+def prev_day_bars(
+    symbols: list[str], day: dt.date, now: dt.datetime, secrets, alert=notify, calendar: Calendar | None = None
+) -> dict[str, pd.DataFrame]:
     """The features' prev_day for each symbol: the last session before `day`, with SIP's prices
     (the official close, for gap and prior-day levels) and IEX's volume, the feed the live bars
     come from, so volume ratios compare like with like. These feed prev-day features only, so a
@@ -375,22 +430,31 @@ def prev_day_bars(symbols: list[str], day: dt.date, now: dt.datetime, secrets, a
     calendar = calendar or Calendar()
     start, end = now - dt.timedelta(days=7), now - dt.timedelta(minutes=16)
     try:
-        sip = {s: calendar.trim(split_sessions(b))
-               for s, b in _fetch_within(STARTUP_FETCH_TIMEOUT_S, symbols, start, end, secrets).items()}
+        sip = {
+            s: calendar.trim(split_sessions(b))
+            for s, b in _fetch_within(STARTUP_FETCH_TIMEOUT_S, symbols, start, end, secrets).items()
+        }
     except Exception as e:
         alert("urgent", f"could not fetch recent history at startup: {e!r}; prev-day features are NaN today")
         return {}
     try:
-        iex = {s: calendar.trim(split_sessions(b))
-               for s, b in _fetch_within(STARTUP_FETCH_TIMEOUT_S, symbols, start, end, secrets, feed="iex").items()}
+        iex = {
+            s: calendar.trim(split_sessions(b))
+            for s, b in _fetch_within(STARTUP_FETCH_TIMEOUT_S, symbols, start, end, secrets, feed="iex").items()
+        }
     except Exception as e:
-        alert("urgent", f"could not fetch recent IEX history at startup: {e!r}; prior-session volume is NaN today "
-                        "(rel_volume_15m and the like); price levels are unaffected")
+        alert(
+            "urgent",
+            f"could not fetch recent IEX history at startup: {e!r}; prior-session volume is NaN today "
+            "(rel_volume_15m and the like); price levels are unaffected",
+        )
         iex = None  # said once above; not again per symbol
     try:
         prev = prior_sessions(sip, day, volume_from=iex or {})
     except Exception as e:  # never a startup crash loop over context data
-        alert("urgent", f"could not combine prior-session prices and IEX volume: {e!r}; prior-session volume is NaN today")
+        alert(
+            "urgent", f"could not combine prior-session prices and IEX volume: {e!r}; prior-session volume is NaN today"
+        )
         prev, iex = prior_sessions(sip, day, volume_from={}), None
     # A symbol either feed returned nothing for is NaN in silence otherwise: name them, once.
     missing = sorted(set(symbols) - set(prev))
@@ -399,8 +463,11 @@ def prev_day_bars(symbols: list[str], day: dt.date, now: dt.datetime, secrets, a
     if iex is not None:
         no_volume = sorted(s for s, b in prev.items() if b.volume.isna().all())
         if no_volume:
-            alert("info", f"no IEX bars for the prior session of {no_volume}: their prior-session volume is NaN "
-                          "today (rel_volume_15m and the like); price levels are unaffected")
+            alert(
+                "info",
+                f"no IEX bars for the prior session of {no_volume}: their prior-session volume is NaN "
+                "today (rel_volume_15m and the like); price levels are unaffected",
+            )
     return prev
 
 
@@ -441,19 +508,24 @@ def wind_down_live_book(secrets, alert=notify) -> Book | None:
     try:
         broker = AlpacaBroker(secrets["ALPACA_LIVE_KEY"], secrets["ALPACA_LIVE_SECRET"], paper=False)
     except Exception as e:
-        alert("urgent", f"[live] paper today, and the live broker couldn't be set up ({e!r}): anything the live "
-                        "account holds is unmanaged today. Check Alpaca now.")
+        alert(
+            "urgent",
+            f"[live] paper today, and the live broker couldn't be set up ({e!r}): anything the live "
+            "account holds is unmanaged today. Check Alpaca now.",
+        )
         return None
     held: list[str] | None = None
     try:
         held = sorted(broker.get_positions())
     except Exception as e:
-        alert("urgent", f"[live] paper today, and the live positions couldn't be read ({e!r}): the live book "
-                        "winds down anyway, closing anything it finds after the open")
+        alert(
+            "urgent",
+            f"[live] paper today, and the live positions couldn't be read ({e!r}): the live book "
+            "winds down anyway, closing anything it finds after the open",
+        )
     if held == [] and not _tracks_anything(d):
         return None  # the usual paper day: no live book, nothing created on disk
-    unmanaged = (f"live positions {held if held is not None else '(unknown)'} are unmanaged today. "
-                 "Check Alpaca now.")
+    unmanaged = f"live positions {held if held is not None else '(unknown)'} are unmanaged today. Check Alpaca now."
     try:
         book = Book("live", broker, d)
     except Exception as e:
@@ -469,8 +541,11 @@ def wind_down_live_book(secrets, alert=notify) -> Book | None:
         except Exception as e2:
             alert("urgent", f"[live] paper today, and the live book couldn't be opened ({e2!r}): {unmanaged}")
             return None
-        alert("urgent", f"[live] the live book's tracking files were unreadable ({e!r}); set aside as {aside}. "
-                        "Its positions are closed as untracked (no trade rows).")
+        alert(
+            "urgent",
+            f"[live] the live book's tracking files were unreadable ({e!r}); set aside as {aside}. "
+            "Its positions are closed as untracked (no trade rows).",
+        )
     try:
         _apply_cashflows(book, broker)  # as on a live day, so its NAV marks stay right
     except Exception as e:
@@ -478,10 +553,20 @@ def wind_down_live_book(secrets, alert=notify) -> Book | None:
     if not book.blocked:  # a halt flattens the same way, and stays for the human to clear
         book.blocked = WIND_DOWN
     tracked = sorted(set(book.entries) | set(book.pending))
-    what = (f"still holds {held}" if held else f"still tracks {tracked}" if tracked
-            else "may hold positions (unreadable)" if held is None else "holds no positions now")
-    alert("urgent", f"[live] paper today, but the live account {what}: closing everything it holds at the first "
-                    "minute after the open. No new live trades.")
+    what = (
+        f"still holds {held}"
+        if held
+        else f"still tracks {tracked}"
+        if tracked
+        else "may hold positions (unreadable)"
+        if held is None
+        else "holds no positions now"
+    )
+    alert(
+        "urgent",
+        f"[live] paper today, but the live account {what}: closing everything it holds at the first "
+        "minute after the open. No new live trades.",
+    )
     return book
 
 
@@ -501,9 +586,12 @@ def _unloadable_tracking(d) -> list[str]:
     """The live book's tracking files (entries.json, pending.json) that won't load as Book loads them."""
     from trader.engine import Entry, Pending, _known
 
-    loaders = {"entries.json": lambda o: Entry(**_known(Entry, o | {"time": dt.datetime.fromisoformat(o["time"])})),
-               "pending.json": lambda o: Pending(**_known(Pending, o | {k: dt.datetime.fromisoformat(o[k])
-                                                                         for k in ("placed", "expires")}))}
+    loaders = {
+        "entries.json": lambda o: Entry(**_known(Entry, o | {"time": dt.datetime.fromisoformat(o["time"])})),
+        "pending.json": lambda o: Pending(
+            **_known(Pending, o | {k: dt.datetime.fromisoformat(o[k]) for k in ("placed", "expires")})
+        ),
+    }
     bad = []
     for name, load in loaders.items():
         p = d / name
@@ -553,8 +641,11 @@ def count_live_session(mode: str, day: dt.date, live_dir, alert=None) -> None:
             risk.pop("last_live_session", None)  # a same-day return to live counts as its session 1
             _atomic_json(p, risk)
     except Exception as e:
-        (alert or notify)("urgent", f"[live] could not reset the half-size week count in {p}: {e!r}. "
-                                    "Set live_sessions to 0 there before the account goes live again.")
+        (alert or notify)(
+            "urgent",
+            f"[live] could not reset the half-size week count in {p}: {e!r}. "
+            "Set live_sessions to 0 there before the account goes live again.",
+        )
 
 
 def _record_missed_demotion(golive, session: dt.date) -> None:
@@ -571,8 +662,11 @@ def _record_missed_demotion(golive, session: dt.date) -> None:
         if p.exists() and json.loads(p.read_text()).get("halted"):
             golive.after_session(notify, live_book_halted=True, session=session)
     except Exception as e:
-        notify("urgent", f"post-close check for a missed live-halt demotion failed: {e!r}. If the live book is "
-                         "halted, run `trader hold-live` before clearing it.")
+        notify(
+            "urgent",
+            f"post-close check for a missed live-halt demotion failed: {e!r}. If the live book is "
+            "halted, run `trader hold-live` before clearing it.",
+        )
 
 
 def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
@@ -603,10 +697,15 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
         for kind, is_paper in (("PAPER", True), ("LIVE", False)):
             if secrets.get(f"ALPACA_{kind}_KEY"):
                 try:
-                    held = AlpacaBroker(secrets[f"ALPACA_{kind}_KEY"], secrets[f"ALPACA_{kind}_SECRET"], is_paper).get_positions()
+                    held = AlpacaBroker(
+                        secrets[f"ALPACA_{kind}_KEY"], secrets[f"ALPACA_{kind}_SECRET"], is_paper
+                    ).get_positions()
                     if held:
-                        notify("urgent", f"[{kind.lower()}] runner started after the close and positions are still held: "
-                                         f"{sorted(held)}. The runner closes them after tomorrow's open; check Alpaca now.")
+                        notify(
+                            "urgent",
+                            f"[{kind.lower()}] runner started after the close and positions are still held: "
+                            f"{sorted(held)}. The runner closes them after tomorrow's open; check Alpaca now.",
+                        )
                 except Exception as e:
                     notify("urgent", f"[{kind.lower()}] post-close position check failed: {e}")
         _record_missed_demotion(golive, open_.date())
@@ -631,10 +730,17 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
     status = config.RUNTIME_DIR / "status.json"
     while dt.datetime.now(ET) < open_ - dt.timedelta(minutes=2):
         status.parent.mkdir(parents=True, exist_ok=True)
-        status.write_text(json.dumps({
-            "updated": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
-            "phase": "waiting for open", "open": open_.isoformat(), "books": {}, "classifiers": [],
-        }))
+        status.write_text(
+            json.dumps(
+                {
+                    "updated": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
+                    "phase": "waiting for open",
+                    "open": open_.isoformat(),
+                    "books": {},
+                    "classifiers": [],
+                }
+            )
+        )
         time.sleep(30)
 
     recent = _recent_calendar(paper.client, open_.date(), notify)
@@ -655,6 +761,7 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
 
     decider = StubDecider() if decider_name == "stub" else JevClient(secrets["OPENROUTER_API_KEY"])
     universe = set(config.universe())
+
     def engine_alert(level, msg):  # a sim account's trouble is news, not a page
         notify("info" if msg.startswith("[sim:") else level, msg)
 
@@ -708,8 +815,9 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
     # connected by then (the margin covers a slow websocket connect); any later one catches up.
     caught_up = dt.datetime.now(ET) < open_ - dt.timedelta(seconds=90)
 
-    rest = RestBars(lambda syms, start, end: fetch_alpaca(syms, start, end, secrets, feed="iex"),
-                    open_, engine._alert_every)
+    rest = RestBars(
+        lambda syms, start, end: fetch_alpaca(syms, start, end, secrets, feed="iex"), open_, engine._alert_every
+    )
     tick_failures = 0
     while True:
         now = dt.datetime.now(ET)
@@ -754,8 +862,11 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
             engine_alert("urgent", f"[{b.name}] could not check positions at the close: {e}")
             continue
         if held:
-            engine_alert("urgent", f"[{b.name}] still holding at the close: {sorted(held)}. Nothing is sent after "
-                                   "the bell; close them in Alpaca now.")
+            engine_alert(
+                "urgent",
+                f"[{b.name}] still holding at the close: {sorted(held)}. Nothing is sent after "
+                "the bell; close them in Alpaca now.",
+            )
     summary = engine.end_day(close)
     parts = []
     sims = {n: s for n, s in summary.items() if n.startswith("sim:")}
@@ -763,14 +874,22 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
         if name in sims:
             continue
         pnl = "day P&L unknown (start equity unreadable)" if s["day_pnl"] is None else f"{s['day_pnl']:+.2f}"
-        parts.append(f"{name}: {pnl} ({s['trades']} trades, {s['wins']}W/{s['trades'] - s['wins']}L) · equity ${s['equity']:.2f}")
+        parts.append(
+            f"{name}: {pnl} ({s['trades']} trades, {s['wins']}W/{s['trades'] - s['wins']}L) · equity ${s['equity']:.2f}"
+        )
     if sims:  # one line for all the experiments, not one per account
-        parts.append(f"sim ({len(sims)} accounts): {sum(s['day_pnl'] or 0 for s in sims.values()):+.2f}, "
-                     f"{sum(s['trades'] for s in sims.values())} trades")
+        parts.append(
+            f"sim ({len(sims)} accounts): {sum(s['day_pnl'] or 0 for s in sims.values()):+.2f}, "
+            f"{sum(s['trades'] for s in sims.values())} trades"
+        )
     halted = "live" in books and books["live"] is not books["shadow"] and books["live"].blocked == "halt"
     st = golive.after_session(notify, live_book_halted=halted, session=open_.date())
     if st["status"] == "pending" and st.get("last_gate"):
-        parts.append("go-live gate: " + ", ".join(st["last_gate"]["blocking"]) if st["last_gate"]["blocking"] else "go-live gate: passing")
+        parts.append(
+            "go-live gate: " + ", ".join(st["last_gate"]["blocking"])
+            if st["last_gate"]["blocking"]
+            else "go-live gate: passing"
+        )
     notify("info", " | ".join(parts), title="Daily P&L")
     from trader.compact import compact
 
@@ -795,15 +914,22 @@ def _open_sim_book(key: str, d: Path, alert, quarantine: Path) -> Book | None:
             dest = quarantine / f"{d.name}-{dt.datetime.now(ET):%Y%m%dT%H%M%S}"
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(d), str(dest))
-            alert("urgent", f"[{key}] sim account unreadable ({e!r}): moved to {dest}; it restarts with fresh cash. Paper and live are unaffected.")
+            alert(
+                "urgent",
+                f"[{key}] sim account unreadable ({e!r}): moved to {dest}; it restarts with fresh cash. Paper and live are unaffected.",
+            )
             return Book(key, PersistentSimBroker(d / "sim_state.json"), d)
         except Exception as e2:
-            alert("urgent", f"[{key}] sim account unusable ({e2!r}): that sim rule is off today. Paper and live are unaffected.")
+            alert(
+                "urgent",
+                f"[{key}] sim account unusable ({e2!r}): that sim rule is off today. Paper and live are unaffected.",
+            )
             return None
 
 
-def sim_books(specs, root: Path | None = None, alert=lambda level, msg: None,
-              quarantine: Path | None = None) -> dict[str, Book]:
+def sim_books(
+    specs, root: Path | None = None, alert=lambda level, msg: None, quarantine: Path | None = None
+) -> dict[str, Book]:
     """One simulated account per `mode: sim` classifier, under books/sim/<id>/. Its cash and any
     open positions persist there, so it carries over between days and survives a restart. A sim
     classifier whose account can't be opened is left out (the caller drops the spec)."""
@@ -837,7 +963,12 @@ def reconcile_sim_accounts(root: Path, today: dt.date, alert, quarantine: Path |
         for sym, e in list(b.entries.items()):
             if e.time.date() < today:
                 fill = b.broker.sell_all(sym, e.price, now, f"stale-{sym}") or Fill(sym, "sell", e.qty, e.price, now)
-                b.record_exit(sym, e, fill, f"left open since {e.time:%Y-%m-%d}: closed at startup at its entry price (real exit unknown)")
+                b.record_exit(
+                    sym,
+                    e,
+                    fill,
+                    f"left open since {e.time:%Y-%m-%d}: closed at startup at its entry price (real exit unknown)",
+                )
                 alert("info", f"[{b.name}] {sym} was still open from {e.time:%Y-%m-%d}; closed at its entry price")
         for sym, pos in list(b.broker.get_positions().items()):
             if sym not in b.entries and sym not in b.pending:
@@ -868,16 +999,25 @@ def session_symbols(specs, books: list[Book], alert=notify) -> tuple[list[str], 
                 else:
                     held.add(sym)
         except Exception as e:
-            alert("urgent", f"[{b.name}] could not read positions at startup: {e}; an untracked holding "
-                            "gets no market data today (it is still closed after the open)")
+            alert(
+                "urgent",
+                f"[{b.name}] could not read positions at startup: {e}; an untracked holding "
+                "gets no market data today (it is still closed after the open)",
+            )
     room = max(0, STREAM_SYMBOL_LIMIT - len(base))
     wanted = sorted(tracked - set(base)) + sorted(held - tracked - set(base))
     extra, dropped = wanted[:room], wanted[room:]
     if skipped:
-        alert("urgent", f"holding non-equity {sorted(set(skipped))}: no market data for it; it is still sold after the open")
+        alert(
+            "urgent",
+            f"holding non-equity {sorted(set(skipped))}: no market data for it; it is still sold after the open",
+        )
     if dropped:
-        alert("urgent", f"held {dropped} left out of market data (the stream takes {STREAM_SYMBOL_LIMIT} symbols); "
-                        "a tracked one keeps its server-side stop (where Alpaca took one), its time stop and the EOD flatten")
+        alert(
+            "urgent",
+            f"held {dropped} left out of market data (the stream takes {STREAM_SYMBOL_LIMIT} symbols); "
+            "a tracked one keeps its server-side stop (where Alpaca took one), its time stop and the EOD flatten",
+        )
     return base, extra
 
 
@@ -903,19 +1043,31 @@ def reconcile_at_startup(b: Book, alert) -> None:
         for sym in sorted(set(b.entries) - set(held)):
             e = b.entries[sym]
             try:  # a failed lookup is not "no fill" (#131)
-                fill = b.broker.stop_fill(e.stop_id, now, strict=True) \
-                    or b.broker.exit_fill_since(sym, e.exits_since(), now, strict=True)
+                fill = b.broker.stop_fill(e.stop_id, now, strict=True) or b.broker.exit_fill_since(
+                    sym, e.exits_since(), now, strict=True
+                )
             except Exception as ex:  # kept tracked (never sold): the engine looks again each tick (Engine._vanished)
                 b.unresolved[sym] = (1, True)
-                alert("info", f"[{b.name}] {sym} closed while the runner was down but its exit fill couldn't be read "
-                              f"({ex}); looking again each minute once the session is open")
+                alert(
+                    "info",
+                    f"[{b.name}] {sym} closed while the runner was down but its exit fill couldn't be read "
+                    f"({ex}); looking again each minute once the session is open",
+                )
                 continue
             if fill is not None:
                 b.record_exit(sym, e, fill, "closed while runner down")
             else:  # a guess, so not evidence; at the stop, so today's loss budget sees a loss (#117)
-                b.record_exit(sym, e, Fill(sym, "sell", e.qty, e.stop, now), "closed while runner down (recorded at stop)",
-                              estimated=True)
-                alert("urgent", f"[{b.name}] {sym} closed while the runner was down and its exit price is unknown; recorded at the stop ({e.stop:.2f})")
+                b.record_exit(
+                    sym,
+                    e,
+                    Fill(sym, "sell", e.qty, e.stop, now),
+                    "closed while runner down (recorded at stop)",
+                    estimated=True,
+                )
+                alert(
+                    "urgent",
+                    f"[{b.name}] {sym} closed while the runner was down and its exit price is unknown; recorded at the stop ({e.stop:.2f})",
+                )
         b.save_entries()
     except Exception as e:
         alert("urgent", f"[{b.name}] startup reconciliation failed: {e}")
@@ -936,7 +1088,9 @@ def request_stop() -> str:
             key = secrets.get(f"ALPACA_{kind}_KEY")
             if key:
                 try:
-                    AlpacaBroker(key, secrets[f"ALPACA_{kind}_SECRET"], paper).client.close_all_positions(cancel_orders=True)
+                    AlpacaBroker(key, secrets[f"ALPACA_{kind}_SECRET"], paper).client.close_all_positions(
+                        cancel_orders=True
+                    )
                     msg += f"; daemon stale, flattened {kind.lower()} directly"
                 except Exception as e:
                     msg += f"; direct flatten of {kind.lower()} failed: {e}"
@@ -1018,7 +1172,8 @@ def session_info() -> dict | None:
         return None
     now = dt.datetime.now(ET)
     return {
-        "open": s[0].isoformat(), "close": s[1].isoformat(),
+        "open": s[0].isoformat(),
+        "close": s[1].isoformat(),
         "minutes_to_open": round((s[0] - now).total_seconds() / 60),
         "minutes_to_close": round((s[1] - now).total_seconds() / 60),
     }
@@ -1092,10 +1247,21 @@ def watchdog(now: dt.datetime | None = None) -> str:
     except Exception as e:
         last_close, calendar_error = None, e
     if last_close and strategist_overdue(_postclose_stamp_mtime(), last_close, now):
-        problems.append((f"strategist-{last_close:%Y-%m-%d}",
-                         f"no post-close strategist run since the {last_close:%a %d %b} session", 8 * 86400))
+        problems.append(
+            (
+                f"strategist-{last_close:%Y-%m-%d}",
+                f"no post-close strategist run since the {last_close:%a %d %b} session",
+                8 * 86400,
+            )
+        )
     if calendar_error is not None:
-        problems.append(("calendar", f"calendar lookup failed; heartbeat and/or post-close checks skipped: {calendar_error}", 3 * 3600))
+        problems.append(
+            (
+                "calendar",
+                f"calendar lookup failed; heartbeat and/or post-close checks skipped: {calendar_error}",
+                3 * 3600,
+            )
+        )
     state = config.RUNTIME_DIR / "watchdog.json"
     last = json.loads(state.read_text()) if state.exists() else {}
     ts = now.timestamp()

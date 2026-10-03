@@ -40,7 +40,9 @@ def test_sandbox_hides_secrets_network_and_env(tmp_path, monkeypatch):
     secret = tmp_path / "secret.env"
     secret.write_text("ALPACA_LIVE_KEY=hunter2\n")
     monkeypatch.setenv("ALPACA_LIVE_KEY", "hunter2")
-    r = run_in_sandbox(tmp_path, f'''
+    r = run_in_sandbox(
+        tmp_path,
+        f'''
         import os, socket
         results = []
         for path in ["{secret}", os.path.expanduser("~runner/.config/trading/env"), "/srv/trading/runtime/golive.json"]:
@@ -54,7 +56,8 @@ def test_sandbox_hides_secrets_network_and_env(tmp_path, monkeypatch):
             results.append("blocked")
         results.append("ENV" if "hunter2" in str(os.environ) else "blocked")
         print(",".join(results))
-    ''')
+    ''',
+    )
     assert r.returncode == 0, r.stderr
     assert r.stdout.strip() == "blocked,blocked,blocked,blocked,blocked"
 
@@ -64,12 +67,15 @@ def test_sandbox_cannot_write_code_root(tmp_path):
     (tmp_path / "custom").mkdir()
     from trader import config
 
-    r = run_in_sandbox(tmp_path, f'''
+    r = run_in_sandbox(
+        tmp_path,
+        f'''
         try:
             open("{config.CODE_ROOT}/pwned", "w"); print("WROTE")
         except OSError:
             print("blocked")
-    ''')
+    ''',
+    )
     assert r.stdout.strip() == "blocked"
     assert not (config.CODE_ROOT / "pwned").exists()
 
@@ -81,9 +87,25 @@ def _legacy_bwrap_cmd(custom_dir, code_root):
     cutover (#169 C2): they only prove A2 is a no-op in the monorepo layout.
     """
     code_root, custom_dir = Path(code_root).resolve(), Path(custom_dir).resolve()
-    cmd = ["bwrap", "--die-with-parent", "--new-session", "--unshare-all", "--clearenv",
-           "--ro-bind", "/usr", "/usr", "--ro-bind", "/etc", "/etc",
-           "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp"]
+    cmd = [
+        "bwrap",
+        "--die-with-parent",
+        "--new-session",
+        "--unshare-all",
+        "--clearenv",
+        "--ro-bind",
+        "/usr",
+        "/usr",
+        "--ro-bind",
+        "/etc",
+        "/etc",
+        "--proc",
+        "/proc",
+        "--dev",
+        "/dev",
+        "--tmpfs",
+        "/tmp",
+    ]
     for link in ("bin", "lib", "lib64", "sbin"):
         p = Path("/") / link
         if p.is_symlink():
@@ -93,9 +115,22 @@ def _legacy_bwrap_cmd(custom_dir, code_root):
     cmd += ["--ro-bind", str(code_root), str(code_root)]
     if custom_dir.exists() and not custom_dir.is_relative_to(code_root):
         cmd += ["--ro-bind", str(custom_dir), str(custom_dir)]
-    cmd += ["--setenv", "PATH", "/usr/bin", "--setenv", "HOME", "/tmp",
-            "--setenv", "PYTHONDONTWRITEBYTECODE", "1", "--setenv", "OMP_NUM_THREADS", "1",
-            "--chdir", "/tmp"]
+    cmd += [
+        "--setenv",
+        "PATH",
+        "/usr/bin",
+        "--setenv",
+        "HOME",
+        "/tmp",
+        "--setenv",
+        "PYTHONDONTWRITEBYTECODE",
+        "1",
+        "--setenv",
+        "OMP_NUM_THREADS",
+        "1",
+        "--chdir",
+        "/tmp",
+    ]
     python = str(code_root / ".venv" / "bin" / "python")
     if not Path(python).exists():
         python = sys.executable
@@ -147,7 +182,7 @@ def test_bwrap_cmd_binds_out_of_tree_venv_read_only(tmp_path):
     _assert_locked_down(cmd)
     # Everything else is exactly the legacy argv plus the one bind and the new interpreter.
     i = cmd.index(str(venv)) - 1
-    assert cmd[:i] + cmd[i + 3:-4] == _legacy_bwrap_cmd(custom, code)[:-4]
+    assert cmd[:i] + cmd[i + 3 : -4] == _legacy_bwrap_cmd(custom, code)[:-4]
 
 
 def test_bwrap_cmd_binds_base_interpreter_outside_usr(tmp_path):
@@ -232,10 +267,13 @@ def test_bwrap_cmd_defaults_to_running_interpreter(tmp_path):
 def test_sandbox_runs_on_the_callers_environment(tmp_path):
     """The venv's python symlink resolves inside the sandbox and its packages import."""
     (tmp_path / "custom").mkdir()
-    r = run_in_sandbox(tmp_path, '''
+    r = run_in_sandbox(
+        tmp_path,
+        """
         import sys, numpy, pandas, trader.features
         print(sys.prefix)
-    ''')
+    """,
+    )
     assert r.returncode == 0, r.stderr
     assert Path(r.stdout.strip()).resolve() == Path(sys.prefix).resolve()
 
@@ -268,11 +306,29 @@ def test_worker_never_imports_trader_config(tmp_path, session):
     (custom / "good.py").write_text(GOOD)
     s = session()
     enc = encode_bars(s)
-    reqs = [{"id": 1, "nonce": "a", "op": "load", "dir": str(custom), "samples": [[enc, enc, enc]]},
-            {"id": 2, "nonce": "b", "op": "compute", "names": ["sb_last_range_pct"], "bars": encode_bars(s.iloc[:61]),
-             "prev": enc, "spy": enc, "mso": 60, "mtc": 330}]
-    r = subprocess.run([sys.executable, "-I", "-c", NO_CONFIG_WORKER], input="".join(json.dumps(q) + "\n" for q in reqs),
-                       capture_output=True, text=True, timeout=120, env={}, cwd=tmp_path)
+    reqs = [
+        {"id": 1, "nonce": "a", "op": "load", "dir": str(custom), "samples": [[enc, enc, enc]]},
+        {
+            "id": 2,
+            "nonce": "b",
+            "op": "compute",
+            "names": ["sb_last_range_pct"],
+            "bars": encode_bars(s.iloc[:61]),
+            "prev": enc,
+            "spy": enc,
+            "mso": 60,
+            "mtc": 330,
+        },
+    ]
+    r = subprocess.run(
+        [sys.executable, "-I", "-c", NO_CONFIG_WORKER],
+        input="".join(json.dumps(q) + "\n" for q in reqs),
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env={},
+        cwd=tmp_path,
+    )
     assert r.returncode == 0, r.stderr
     load, comp = (json.loads(line) for line in r.stdout.splitlines())
     assert load["features"] == ["sb_last_range_pct"] and not load["errors"], load
@@ -337,28 +393,33 @@ def test_custom_features_see_real_timestamps(tmp_path, session, unit):
     sb.start([(s, prev, s)])
     try:
         assert sb.names == {"sb_last_bar_clock", "sb_ctx_clock"} and not sb.broken, sb.errors
-        out = sb.compute(["sb_last_bar_clock", "sb_ctx_clock"], s.iloc[:91], F.FeatureContext(prev, s.iloc[:76], 90, 300))
+        out = sb.compute(
+            ["sb_last_bar_clock", "sb_ctx_clock"], s.iloc[:91], F.FeatureContext(prev, s.iloc[:76], 90, 300)
+        )
         assert out["sb_last_bar_clock"] == pytest.approx(11.00)  # bar 90 opens at 11:00 NY
         assert out["sb_ctx_clock"] == pytest.approx(45 * 100 + 18)  # SPY's bar 75 is 10:45; prev day the 18th
     finally:
         sb.close()
 
 
-@pytest.mark.parametrize("src", [
-    "import trader.housekeeping",
-    "import os",
-    "from trader.features import harness",
-    "from trader import features",
-    "import pandas as pd\nx = pd.read_fwf('x')",
-    "import pandas as pd\npd.io.common.os.system('id')",
-    "import numpy as np\nnp.lib.format",
-    "import numpy as np\nnp.load('x')",
-    "p = '/home/runner/.config/trading/env'",
-    "x = (1).__class__",
-    "t = type(1)",
-    "import importlib",
-    "from . import x",
-])
+@pytest.mark.parametrize(
+    "src",
+    [
+        "import trader.housekeeping",
+        "import os",
+        "from trader.features import harness",
+        "from trader import features",
+        "import pandas as pd\nx = pd.read_fwf('x')",
+        "import pandas as pd\npd.io.common.os.system('id')",
+        "import numpy as np\nnp.lib.format",
+        "import numpy as np\nnp.load('x')",
+        "p = '/home/runner/.config/trading/env'",
+        "x = (1).__class__",
+        "t = type(1)",
+        "import importlib",
+        "from . import x",
+    ],
+)
 def test_static_check_blocks_known_bypasses(tmp_path, src):
     f = tmp_path / "evil.py"
     f.write_text(src + "\n")
@@ -394,7 +455,7 @@ def test_sandbox_end_to_end_matches_inprocess(tmp_path, session):
 def test_hung_feature_fails_closed(tmp_path, session):
     d = tmp_path / "custom"
     d.mkdir()
-    (d / "hang.py").write_text(GOOD.replace('b = bars.iloc[-1]', 'while True:\n        pass'))
+    (d / "hang.py").write_text(GOOD.replace("b = bars.iloc[-1]", "while True:\n        pass"))
     sent = []
     sb = FeatureSandbox(d, alert=lambda lvl, msg: sent.append(msg), gate_timeout=3)
     s = session()
@@ -428,8 +489,11 @@ def test_stdout_writes_cannot_corrupt_the_protocol(tmp_path, session):
     d.mkdir()
     # An empty frame's info() still writes several lines to stdout. The gate's speed budget is relaxed
     # in tests (conftest), so only the protocol is under test here, not how fast the host is.
-    (d / "noisy.py").write_text(GOOD.replace('b = bars.iloc[-1]', 'pd.DataFrame().info()\n    b = bars.iloc[-1]')
-                                .replace("import numpy as np", "import numpy as np\nimport pandas as pd"))
+    (d / "noisy.py").write_text(
+        GOOD.replace("b = bars.iloc[-1]", "pd.DataFrame().info()\n    b = bars.iloc[-1]").replace(
+            "import numpy as np", "import numpy as np\nimport pandas as pd"
+        )
+    )
     s = session()
     sb = FeatureSandbox(d)
     sb.start([(s, s, s)])
@@ -452,7 +516,7 @@ def test_print_is_rejected_statically(tmp_path):
 def test_memory_limit_applies_in_worker(tmp_path, session):
     d = tmp_path / "custom"
     d.mkdir()
-    (d / "hog.py").write_text(GOOD.replace('b = bars.iloc[-1]', 'x = np.ones(400_000_000)\n    b = bars.iloc[-1]'))
+    (d / "hog.py").write_text(GOOD.replace("b = bars.iloc[-1]", "x = np.ones(400_000_000)\n    b = bars.iloc[-1]"))
     s = session()
     sb = FeatureSandbox(d)
     sb.start([(s, s, s)])

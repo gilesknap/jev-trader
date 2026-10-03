@@ -58,7 +58,9 @@ class GateResult:
     def summary(self) -> str:
         exp = f"{self.expectancy_pct:+.3f}%" if self.expectancy_pct is not None else "n/a"
         worst = f"{self.worst_day_pct:+.2f}%" if self.worst_day_pct is not None else "n/a"
-        return f"{self.trading_days} days, {self.trades} trades, expectancy {exp}/trade after slippage, worst day {worst}"
+        return (
+            f"{self.trading_days} days, {self.trades} trades, expectancy {exp}/trade after slippage, worst day {worst}"
+        )
 
 
 def evaluate_gate(book_dir=PAPER_BOOK, today: dt.date | None = None) -> GateResult:
@@ -82,7 +84,9 @@ def evaluate_gate(book_dir=PAPER_BOOK, today: dt.date | None = None) -> GateResu
                 d = dt.date.fromisoformat(r["time"][:10])
                 if START_DATE <= d <= today:
                     days.setdefault(d, []).append(float(r["equity"]))
-    if not all(math.isfinite(v) for v in closes) or not all(math.isfinite(v) and v > 0 for vs in days.values() for v in vs):
+    if not all(math.isfinite(v) for v in closes) or not all(
+        math.isfinite(v) and v > 0 for vs in days.values() for v in vs
+    ):
         raise ValueError("non-finite or non-positive values in the paper book's logs")  # fail closed (#63)
     # A session counts only once it has marked equity after its opening row (#50): a start that
     # never reached a 5-minute mark wrote just that row, and mustn't make the gate easier.
@@ -165,8 +169,15 @@ def shadow_record(classifier: str, since: str, book_dir=PAPER_BOOK, spec_hash: s
     return len(closes), (statistics.fmean(closes) if closes else None)
 
 
-def enforce_promotion(specs, notify, account_live: bool, today: dt.date | None = None,
-                      book_dir=PAPER_BOOK, state_file=None, custom_dir=None) -> list:
+def enforce_promotion(
+    specs,
+    notify,
+    account_live: bool,
+    today: dt.date | None = None,
+    book_dir=PAPER_BOOK,
+    state_file=None,
+    custom_dir=None,
+) -> list:
     """Issue #20: a classifier may trade real money only after >= MIN_TRADES closed paper trades
     with positive expectancy after slippage, all on its current spec. Editing a spec (anything
     but mode/enabled) restarts its record. Non-qualifying `mode: live` specs are downgraded to
@@ -186,8 +197,11 @@ def enforce_promotion(specs, notify, account_live: bool, today: dt.date | None =
             kept = f"moved to {aside.name}"
         except OSError:
             kept = "left in place"
-        notify("urgent", f"promotion record {state_file.name} is unreadable ({e!r}; {kept}): every classifier's "
-                         "record restarts today, so none can go live until it earns a fresh paper record")
+        notify(
+            "urgent",
+            f"promotion record {state_file.name} is unreadable ({e!r}; {kept}): every classifier's "
+            "record restarts today, so none can go live until it earns a fresh paper record",
+        )
         state = {}
     digest = custom_features_digest(custom_dir)
     for s in specs:
@@ -204,15 +218,20 @@ def enforce_promotion(specs, notify, account_live: bool, today: dt.date | None =
                 if n < MIN_TRADES or exp is None or exp <= 0:
                     s.mode = "shadow"
                     if account_live:
-                        notify("urgent", f"{s.id} asked for live but has {n}/{MIN_TRADES} paper trades on its current spec "
-                                         f"(expectancy {'n/a' if exp is None else f'{exp:+.3f}%'}): running it in shadow")
+                        notify(
+                            "urgent",
+                            f"{s.id} asked for live but has {n}/{MIN_TRADES} paper trades on its current spec "
+                            f"(expectancy {'n/a' if exp is None else f'{exp:+.3f}%'}): running it in shadow",
+                        )
         except Exception as e:  # fail closed for this rule only: never abort the session for all of them
             asked_live = s.mode == "live"
             if asked_live:
                 s.mode = "shadow"
-            notify("urgent" if asked_live and account_live else "info",
-                   f"{s.id}: its promotion check failed ({e!r}); "
-                   + ("running it in shadow" if asked_live else "it can't be promoted until that is fixed"))
+            notify(
+                "urgent" if asked_live and account_live else "info",
+                f"{s.id}: its promotion check failed ({e!r}); "
+                + ("running it in shadow" if asked_live else "it can't be promoted until that is fixed"),
+            )
     try:
         state_file.parent.mkdir(parents=True, exist_ok=True)
         tmp = state_file.with_suffix(".tmp")
@@ -242,8 +261,9 @@ def load_state() -> dict:
         if type(st.get("sessions_left", 0)) is not int:
             raise ValueError("sessions_left is not an integer")
         un = st.get(UNSENT, [])
-        if not isinstance(un, list) or not all(isinstance(n, list) and len(n) == 2 and all(isinstance(x, str) for x in n)
-                                               for n in un):
+        if not isinstance(un, list) or not all(
+            isinstance(n, list) and len(n) == 2 and all(isinstance(x, str) for x in n) for n in un
+        ):
             raise ValueError(f"{UNSENT} is not a list of [level, message]")
         return st
     except Exception as e:
@@ -265,9 +285,12 @@ def _alert_corrupt_once(st: dict, notify) -> None:
             return
     with contextlib.suppress(Exception):
         marker.write_bytes(key.encode())
-    notify("urgent", f"golive.json is unreadable or invalid ({st['error']}). Failing closed: PAPER, and nothing arms or "
-                     "goes live until you look. HOLD LIVE or `trader release-live` resets it (the bad file is kept "
-                     "as golive.json.corrupt-<time>). (Alerted once.)")
+    notify(
+        "urgent",
+        f"golive.json is unreadable or invalid ({st['error']}). Failing closed: PAPER, and nothing arms or "
+        "goes live until you look. HOLD LIVE or `trader release-live` resets it (the bad file is kept "
+        "as golive.json.corrupt-<time>). (Alerted once.)",
+    )
 
 
 def _set_aside_corrupt() -> str | None:
@@ -357,8 +380,13 @@ def _check_gate(st: dict, day: dt.date, notices: list) -> list[str]:
     except Exception as e:
         reasons, summary = [f"{EVIDENCE_ERROR} ({type(e).__name__}: {str(e)[:120]})"], "unavailable"
         if not st.get("evidence_error"):
-            notices.append(("urgent", f"Go-live gate: {reasons[0]}. Failing closed: nothing arms or goes live "
-                                      "until they read cleanly. (Alerted once.)"))
+            notices.append(
+                (
+                    "urgent",
+                    f"Go-live gate: {reasons[0]}. Failing closed: nothing arms or goes live "
+                    "until they read cleanly. (Alerted once.)",
+                )
+            )
         st["evidence_error"] = True
     else:
         st.pop("evidence_error", None)
@@ -370,8 +398,13 @@ def _disarm(st: dict, day: dt.date, reasons: list[str], notices: list) -> None:
     for k in ("sessions_left", "armed_on", "gate"):
         st.pop(k, None)
     st.update(status="pending", disarmed_on=day.isoformat(), disarmed_reasons=reasons)
-    notices.append(("urgent", f"Go-live DISARMED: {'; '.join(reasons)}. Staying on paper; if the gate passes again, "
-                              f"a fresh {VETO_SESSIONS}-session veto window starts."))
+    notices.append(
+        (
+            "urgent",
+            f"Go-live DISARMED: {'; '.join(reasons)}. Staying on paper; if the gate passes again, "
+            f"a fresh {VETO_SESSIONS}-session veto window starts.",
+        )
+    )
 
 
 def resolve_mode(notify, live_equity=None, session: dt.date | None = None) -> str:
@@ -391,8 +424,11 @@ def resolve_mode(notify, live_equity=None, session: dt.date | None = None) -> st
             _disarm(st, day, reasons, notices)
             _save_then_alert(st, expected, notices, notify)  # a HOLD pressed meanwhile wins: then nothing to say
             return "paper"
-        unready = ("urgent", "Go-live is due but {}. Staying on paper (still armed): clear it with `trader "
-                             "clear-halt live` after the close, and it goes live at the next session start.")
+        unready = (
+            "urgent",
+            "Go-live is due but {}. Staying on paper (still armed): clear it with `trader "
+            "clear-halt live` after the close, and it goes live at the next session start.",
+        )
         why = live_book_unready()
         if why:  # never switch to a live book that can't trade, however the state got here
             notify(unready[0], unready[1].format(why))
@@ -403,11 +439,17 @@ def resolve_mode(notify, live_equity=None, session: dt.date | None = None) -> st
             notify("urgent", f"Go-live is due but the live equity lookup failed ({e}). Staying on paper.")
             return "paper"
         if eq is None or eq < MIN_LIVE_EQUITY:
-            notify("urgent", f"Go-live is due but the live account has ${eq or 0:.2f} (need ${MIN_LIVE_EQUITY:.0f}). Staying on paper; fund it to proceed.")
+            notify(
+                "urgent",
+                f"Go-live is due but the live account has ${eq or 0:.2f} (need ${MIN_LIVE_EQUITY:.0f}). Staying on paper; fund it to proceed.",
+            )
             return "paper"
         st.update(status="live", live_since=day.isoformat())
-        going = ("urgent", f"GOING LIVE today with ${eq:.2f} (half size for the first 5 live sessions). To stop today: "
-                           "STOP on the dashboard. HOLD LIVE returns to paper from the next session.")
+        going = (
+            "urgent",
+            f"GOING LIVE today with ${eq:.2f} (half size for the first 5 live sessions). To stop today: "
+            "STOP on the dashboard. HOLD LIVE returns to paper from the next session.",
+        )
         if not _save_then_alert(st, expected, [going], notify, guard=live_book_unready):
             why = live_book_unready()  # halted since the check above: re-checked under the lock
             if why:
@@ -435,7 +477,12 @@ def after_session(notify, live_book_halted: bool = False, session: dt.date | Non
     notices = []
     if st["status"] == "live" and live_book_halted:
         st.update(status="demoted", demoted_on=session.isoformat())
-        notices.append(("urgent", "Live book HALTED: back to paper. Going live again needs `trader release-live` after you've cleared the halt."))
+        notices.append(
+            (
+                "urgent",
+                "Live book HALTED: back to paper. Going live again needs `trader release-live` after you've cleared the halt.",
+            )
+        )
     elif st["status"] == "armed":
         reasons = _check_gate(st, session, [])  # a new evidence error is named in the disarm alert instead
         if reasons:
@@ -443,14 +490,29 @@ def after_session(notify, live_book_halted: bool = False, session: dt.date | Non
         else:
             st["sessions_left"] = st.get("sessions_left", VETO_SESSIONS) - 1
             if st["sessions_left"] > 0:
-                notices.append(("urgent", f"Go-live armed: {st['sessions_left']} paper session(s) left in the veto window. HOLD LIVE on the dashboard to stop it."))
+                notices.append(
+                    (
+                        "urgent",
+                        f"Go-live armed: {st['sessions_left']} paper session(s) left in the veto window. HOLD LIVE on the dashboard to stop it.",
+                    )
+                )
             else:
-                notices.append(("urgent", "Go-live armed: the account switches to LIVE at the next session (after a final gate check). HOLD LIVE on the dashboard to stop it."))
+                notices.append(
+                    (
+                        "urgent",
+                        "Go-live armed: the account switches to LIVE at the next session (after a final gate check). HOLD LIVE on the dashboard to stop it.",
+                    )
+                )
     elif st["status"] == "pending":
         if not _check_gate(st, session, notices):
             g = st["last_gate"]["summary"]
             st.update(status="armed", armed_on=session.isoformat(), sessions_left=VETO_SESSIONS, gate=g)
-            notices.append(("urgent", f"Go-live gate PASSED ({g}). Live trading starts after {VETO_SESSIONS} more paper sessions unless you press HOLD LIVE."))
+            notices.append(
+                (
+                    "urgent",
+                    f"Go-live gate PASSED ({g}). Live trading starts after {VETO_SESSIONS} more paper sessions unless you press HOLD LIVE.",
+                )
+            )
     if not _save_then_alert(st, expected, notices, notify):
         return load_state()
     return st
@@ -508,8 +570,11 @@ def demote_on_halt_cleared(notify) -> bool:
         st.pop(UNSENT, None)  # superseded (a GOING LIVE never sent): this alert says where things stand
         st.update(status="demoted", demoted_on=session_date().isoformat(), demoted_by="clear-halt")
         _write_state(st)
-    notify("urgent", "Go-live was still LIVE when the live halt was cleared (the halted session's end was never "
-                     "processed): demoted to paper now. Going live again needs `trader release-live`.")
+    notify(
+        "urgent",
+        "Go-live was still LIVE when the live halt was cleared (the halted session's end was never "
+        "processed): demoted to paper now. Going live again needs `trader release-live`.",
+    )
     return True
 
 
@@ -524,8 +589,11 @@ def hold(notify, by: str = "cli") -> str:
         st.pop(UNSENT, None)  # superseded: this alert says where things stand now
         st.update(status="vetoed", vetoed_on=session_date().isoformat(), vetoed_by=by, vetoed_from=prev)
         _write_state(st)  # atomic: if it fails, a corrupt file is still in place and still reads corrupt
-    notify("urgent", f"Go-live HELD by {by} (was {prev}{f', kept as {aside}' if aside else ''}). "
-                     "Paper only until `trader release-live`.")
+    notify(
+        "urgent",
+        f"Go-live HELD by {by} (was {prev}{f', kept as {aside}' if aside else ''}). "
+        "Paper only until `trader release-live`.",
+    )
     return f"held (was {prev})"
 
 
@@ -537,8 +605,10 @@ def release(notify) -> str:
     with _state_lock():  # checked under the lock, so no transition lands between check and write
         why = live_book_unready()
         if why:
-            return (f"refused: {why}. Clear it first with `trader clear-halt live` (after the close), then "
-                    "release again. Nothing changed.")
+            return (
+                f"refused: {why}. Clear it first with `trader clear-halt live` (after the close), then "
+                "release again. Nothing changed."
+            )
         if load_state()["status"] == "corrupt":
             _set_aside_corrupt()
         _write_state(st)

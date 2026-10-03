@@ -75,8 +75,10 @@ def require_mode_file(data_root: Path | None = None, code_root: Path | None = No
     code_root = CODE_ROOT if code_root is None else code_root
     mode_file = data_root / "config" / "mode.yaml"
     if not _same_dir(data_root, code_root) and not mode_file.exists():
-        raise SettingsError(f"{mode_file} is missing: a data checkout separate from the code ({data_root}) "
-                            "must hold config/mode.yaml (mode: auto | paper | live)")
+        raise SettingsError(
+            f"{mode_file} is missing: a data checkout separate from the code ({data_root}) "
+            "must hold config/mode.yaml (mode: auto | paper | live)"
+        )
 
 
 # ---- deployment settings (config.yaml at the data root) ----------------------------------
@@ -194,8 +196,10 @@ def load_settings(path: Path | None = None) -> Settings:
     except (OSError, yaml.YAMLError) as e:
         hint = ""
         if isinstance(e, FileNotFoundError) and not os.environ.get("TRADER_CONFIG"):
-            hint = (f"\nconfig.yaml is read from the data root ({DATA_ROOT}): set TRADER_DATA_ROOT to your "
-                    "data checkout (or TRADER_CONFIG to the file)")
+            hint = (
+                f"\nconfig.yaml is read from the data root ({DATA_ROOT}): set TRADER_DATA_ROOT to your "
+                "data checkout (or TRADER_CONFIG to the file)"
+            )
         raise SettingsError(f"{path}: can't read deployment settings: {e}{hint}") from e
     if not isinstance(raw, dict):
         raise SettingsError(f"{path}: expected a mapping of settings")
@@ -230,6 +234,7 @@ _PLACEHOLDER = re.compile(r"\{\{\s*([A-Za-z0-9_.]+)\s*\}\}")
 def render(template: str, settings: Settings | None = None) -> str:
     """Fill `{{ dotted.key }}` placeholders from config.yaml. Lists join with commas. An unknown
     key, or a value holding a newline, raises: a rendered unit must never be half-filled."""
+
     def one(m: re.Match) -> str:
         try:
             v = setting(m.group(1), settings)
@@ -241,6 +246,7 @@ def render(template: str, settings: Settings | None = None) -> str:
         if "\n" in out or "\r" in out:
             raise SettingsError(f"{m.group(1)} contains a line break")
         return out
+
     return _PLACEHOLDER.sub(one, template)
 
 
@@ -251,8 +257,10 @@ DEPLOY_TEMPLATES = {
     "deploy/templates/trader-runner.timer": "deploy/systemd/trader-runner.timer",
     "deploy/templates/trader.env": "deploy/systemd/trader.env",
     # One timer per strategist run, for the trader user (not deploy/systemd/: runner installs that).
-    **{f"deploy/templates/trader-strategist.timer#{k}": f"deploy/systemd-trader/trader-strategist-{k}.timer"
-       for k in STRATEGIST_KINDS},
+    **{
+        f"deploy/templates/trader-strategist.timer#{k}": f"deploy/systemd-trader/trader-strategist-{k}.timer"
+        for k in STRATEGIST_KINDS
+    },
 }
 
 
@@ -266,7 +274,9 @@ def render_deploy(code_root: Path = CODE_ROOT, data_root: Path = DATA_ROOT) -> d
     out = {}
     for src, dst in DEPLOY_TEMPLATES.items():
         path, _, kind = src.partition("#")  # "#kind": one template rendered per strategist run
-        lines = [ln for ln in (code_root / path).read_text().splitlines(keepends=True) if not ln.startswith("# TEMPLATE:")]
+        lines = [
+            ln for ln in (code_root / path).read_text().splitlines(keepends=True) if not ln.startswith("# TEMPLATE:")
+        ]
         head = f"# GENERATED from {path} and config.yaml by `trader config render-deploy`: edit those, not this file.\n"
         out[dst] = head + render("".join(lines).replace("@KIND@", kind), settings)
     return out

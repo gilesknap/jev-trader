@@ -42,9 +42,7 @@ class JevClient:
             },
         )
 
-    def decide(
-        self, state: dict | str, instructions: str, criteria: dict[str, str]
-    ) -> Decision:
+    def decide(self, state: dict | str, instructions: str, criteria: dict[str, str]) -> Decision:
         body = {
             "model": self.model,
             "state": state,
@@ -79,9 +77,7 @@ class JevClient:
                 )
             except (httpx.HTTPError, DecisionError, KeyError, ValueError) as e:
                 last = e
-                if isinstance(e, DecisionError) and not str(e).startswith(
-                    ("HTTP 429", "HTTP 5")
-                ):
+                if isinstance(e, DecisionError) and not str(e).startswith(("HTTP 429", "HTTP 5")):
                     break
                 time.sleep(0.5)
         raise DecisionError(str(last))

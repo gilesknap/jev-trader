@@ -52,8 +52,9 @@ def _refuse_unsafe_bind(path: Path) -> None:
             raise SandboxError(f"refusing to bind {path} into the feature sandbox: it would expose {p}")
 
 
-def bwrap_cmd(custom_dir: Path, code_root: Path = config.CODE_ROOT,
-              prefix: Path | None = None, base_prefix: Path | None = None) -> list[str]:
+def bwrap_cmd(
+    custom_dir: Path, code_root: Path = config.CODE_ROOT, prefix: Path | None = None, base_prefix: Path | None = None
+) -> list[str]:
     """The sandbox command line. Only what Python and the features need is visible.
 
     The worker runs on the caller's own interpreter environment (`sys.prefix`), so the
@@ -69,9 +70,25 @@ def bwrap_cmd(custom_dir: Path, code_root: Path = config.CODE_ROOT,
     code_root, custom_dir = Path(code_root).resolve(), Path(custom_dir).resolve()
     prefix = Path(sys.prefix if prefix is None else prefix).resolve()
     base_prefix = Path(sys.base_prefix if base_prefix is None else base_prefix).resolve()
-    cmd = ["bwrap", "--die-with-parent", "--new-session", "--unshare-all", "--clearenv",
-           "--ro-bind", "/usr", "/usr", "--ro-bind", "/etc", "/etc",
-           "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp"]
+    cmd = [
+        "bwrap",
+        "--die-with-parent",
+        "--new-session",
+        "--unshare-all",
+        "--clearenv",
+        "--ro-bind",
+        "/usr",
+        "/usr",
+        "--ro-bind",
+        "/etc",
+        "/etc",
+        "--proc",
+        "/proc",
+        "--dev",
+        "/dev",
+        "--tmpfs",
+        "/tmp",
+    ]
     for link in ("bin", "lib", "lib64", "sbin"):  # merged-/usr layout
         p = Path("/") / link
         if p.is_symlink():
@@ -87,9 +104,22 @@ def bwrap_cmd(custom_dir: Path, code_root: Path = config.CODE_ROOT,
             visible.append(env)
     if custom_dir.exists() and not custom_dir.is_relative_to(code_root):
         cmd += ["--ro-bind", str(custom_dir), str(custom_dir)]
-    cmd += ["--setenv", "PATH", "/usr/bin", "--setenv", "HOME", "/tmp",
-            "--setenv", "PYTHONDONTWRITEBYTECODE", "1", "--setenv", "OMP_NUM_THREADS", "1",
-            "--chdir", "/tmp"]
+    cmd += [
+        "--setenv",
+        "PATH",
+        "/usr/bin",
+        "--setenv",
+        "HOME",
+        "/tmp",
+        "--setenv",
+        "PYTHONDONTWRITEBYTECODE",
+        "1",
+        "--setenv",
+        "OMP_NUM_THREADS",
+        "1",
+        "--chdir",
+        "/tmp",
+    ]
     python = str(prefix / "bin" / "python")
     if not Path(python).exists():
         python = sys.executable
@@ -99,8 +129,12 @@ def bwrap_cmd(custom_dir: Path, code_root: Path = config.CODE_ROOT,
 class FeatureSandbox:
     """Client for the sandboxed worker. `names` are the custom features that passed the gate."""
 
-    def __init__(self, custom_dir: Path, alert: Callable[[str, str], None] = lambda lvl, msg: None,
-                 gate_timeout: float = GATE_TIMEOUT_S):
+    def __init__(
+        self,
+        custom_dir: Path,
+        alert: Callable[[str, str], None] = lambda lvl, msg: None,
+        gate_timeout: float = GATE_TIMEOUT_S,
+    ):
         self.custom_dir = Path(custom_dir)
         self.gate_timeout = gate_timeout
         self.alert = alert
@@ -133,15 +167,25 @@ class FeatureSandbox:
                 for name, source in sources.items():
                     (Path(snapshot) / name).write_bytes(source)
                 self._proc = subprocess.Popen(
-                    bwrap_cmd(Path(snapshot)), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL, text=True, bufsize=1,
+                    bwrap_cmd(Path(snapshot)),
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                    bufsize=1,
                 )
                 from trader.features import harness
 
-                rep = self._call({"op": "load", "dir": str(Path(snapshot).resolve()),
-                                  "samples": [[encode_bars(b), encode_bars(p), encode_bars(s)] for b, p, s in samples],
-                                  "speed_budget_s": harness.SPEED_BUDGET_S},
-                                 timeout=self.gate_timeout, expect="features")
+                rep = self._call(
+                    {
+                        "op": "load",
+                        "dir": str(Path(snapshot).resolve()),
+                        "samples": [[encode_bars(b), encode_bars(p), encode_bars(s)] for b, p, s in samples],
+                        "speed_budget_s": harness.SPEED_BUDGET_S,
+                    },
+                    timeout=self.gate_timeout,
+                    expect="features",
+                )
         except (OSError, SandboxError) as e:  # e.g. a full /tmp: this alert, and library features still trade
             self._fail(f"custom-feature gate failed: {e}")
             return
@@ -162,8 +206,15 @@ class FeatureSandbox:
         nan = {n: float("nan") for n in names}
         if self.broken or not names:
             return nan
-        req = {"op": "compute", "names": names, "bars": encode_bars(bars), "prev": encode_bars(ctx.prev_day),
-               "spy": encode_bars(ctx.spy), "mso": ctx.minutes_since_open, "mtc": ctx.minutes_to_close}
+        req = {
+            "op": "compute",
+            "names": names,
+            "bars": encode_bars(bars),
+            "prev": encode_bars(ctx.prev_day),
+            "spy": encode_bars(ctx.spy),
+            "mso": ctx.minutes_since_open,
+            "mtc": ctx.minutes_to_close,
+        }
         try:
             vals = self._call(req, timeout=REQUEST_TIMEOUT_S, expect="values")["values"]
         except SandboxError as e:
@@ -222,5 +273,7 @@ class FeatureSandbox:
     def _fail(self, msg: str) -> None:
         if not self.broken:
             self.broken = msg
-            self.alert("urgent", msg + " (custom features return NaN, so dependent entries are blocked; stops still work)")
+            self.alert(
+                "urgent", msg + " (custom features return NaN, so dependent entries are blocked; stops still work)"
+            )
         self.close()

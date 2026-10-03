@@ -14,14 +14,29 @@ from test_restart_state import ticks
 
 def make(tmp_path, specs, alerts):
     book = Book("sim", SimBroker(250.0), tmp_path / "sim")
-    eng = Engine(specs, {"live": book, "shadow": book}, Always(), {"SPY"}, tmp_path,
-                 alert=lambda lvl, msg: alerts.append((lvl, msg)))
+    eng = Engine(
+        specs,
+        {"live": book, "shadow": book},
+        Always(),
+        {"SPY"},
+        tmp_path,
+        alert=lambda lvl, msg: alerts.append((lvl, msg)),
+    )
     return book, eng
 
 
-@pytest.mark.parametrize("text", ["{trunc", "[1, 2]", '"x"', b"\xff\xfe".decode("latin-1"),
-                                  '{"day": "%s", "states": [1]}', '{"day": "%s", "states": {"t": 5}}',
-                                  "[" * 100_000 + "]" * 100_000])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "{trunc",
+        "[1, 2]",
+        '"x"',
+        b"\xff\xfe".decode("latin-1"),
+        '{"day": "%s", "states": [1]}',
+        '{"day": "%s", "states": {"t": 5}}',
+        "[" * 100_000 + "]" * 100_000,
+    ],
+)
 def test_an_unreadable_file_starts_fresh_with_an_urgent_alert(tmp_path, session, text):
     bars = session(path=[100.0] * 390)
     day = bars.index[0].date()
@@ -58,8 +73,9 @@ def test_a_fresh_start_still_manages_an_open_position(tmp_path, session):
 def test_a_damaged_entry_starts_fresh_and_is_reported(tmp_path, session, trades):
     bars = session(path=[100.0] * 390)
     day = bars.index[0].date()
-    (tmp_path / "classifier_state.json").write_text(json.dumps({"day": day.isoformat(), "states": {
-        "t": {"SPY": {"status": "retired", "trades": trades}}}}))
+    (tmp_path / "classifier_state.json").write_text(
+        json.dumps({"day": day.isoformat(), "states": {"t": {"SPY": {"status": "retired", "trades": trades}}}})
+    )
     alerts = []
     _, eng = make(tmp_path, [spec()], alerts)
     eng.start_day(day, {})
@@ -71,8 +87,9 @@ def test_a_damaged_entry_starts_fresh_and_is_reported(tmp_path, session, trades)
 def test_an_unknown_status_is_damage_not_a_new_state(tmp_path, session):
     bars = session(path=[100.0] * 390)
     day = bars.index[0].date()
-    (tmp_path / "classifier_state.json").write_text(json.dumps({"day": day.isoformat(), "states": {
-        "t": {"SPY": {"status": "frozen", "trades": 1}}}}))
+    (tmp_path / "classifier_state.json").write_text(
+        json.dumps({"day": day.isoformat(), "states": {"t": {"SPY": {"status": "frozen", "trades": 1}}}})
+    )
     alerts = []
     _, eng = make(tmp_path, [spec()], alerts)
     eng.start_day(day, {})
@@ -82,8 +99,9 @@ def test_an_unknown_status_is_damage_not_a_new_state(tmp_path, session):
 def test_a_good_file_restores_quietly(tmp_path, session):
     bars = session(path=[100.0] * 390)
     day = bars.index[0].date()
-    (tmp_path / "classifier_state.json").write_text(json.dumps({"day": day.isoformat(), "states": {
-        "t": {"SPY": {"status": "retired", "trades": 1}}}}))
+    (tmp_path / "classifier_state.json").write_text(
+        json.dumps({"day": day.isoformat(), "states": {"t": {"SPY": {"status": "retired", "trades": 1}}}})
+    )
     alerts = []
     _, eng = make(tmp_path, [spec()], alerts)
     eng.start_day(day, {})

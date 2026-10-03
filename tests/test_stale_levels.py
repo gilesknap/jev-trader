@@ -15,8 +15,17 @@ from conftest import make_session
 
 DAY = dt.date(2026, 9, 21)
 OPEN = pd.Timestamp(dt.datetime.combine(DAY, dt.time(9, 30), ET))
-LEVELS = ["or15_break_pct", "or30_break_pct", "or15_low_dist_pct", "vwap_dist_pct", "ret_since_open_pct",
-          "rel_spy_since_open_pct", "range_pos", "prev_high_dist_pct", "prev_low_dist_pct"]
+LEVELS = [
+    "or15_break_pct",
+    "or30_break_pct",
+    "or15_low_dist_pct",
+    "vwap_dist_pct",
+    "ret_since_open_pct",
+    "rel_spy_since_open_pct",
+    "range_pos",
+    "prev_high_dist_pct",
+    "prev_low_dist_pct",
+]
 
 
 def at(hhmm):
@@ -30,7 +39,7 @@ def ctx(bars, now):
 
 
 def test_fresh_data_is_unchanged():
-    bars = make_session(day=DAY, seed=7).loc[:at("11:00")]
+    bars = make_session(day=DAY, seed=7).loc[: at("11:00")]
     got = F.compute(LEVELS, bars, ctx(bars, at("11:00")))
     assert all(math.isfinite(v) for v in got.values())
     px = bars.close.iloc[-1]
@@ -39,13 +48,13 @@ def test_fresh_data_is_unchanged():
 
 
 def test_a_late_or_quiet_minute_still_counts_as_current():
-    bars = make_session(day=DAY, seed=7).loc[:at("10:57")]
+    bars = make_session(day=DAY, seed=7).loc[: at("10:57")]
     got = F.compute(LEVELS, bars, ctx(bars, at("11:00")))  # last print 3 minutes ago
     assert all(math.isfinite(v) for v in got.values())
 
 
 def test_a_halted_symbols_levels_are_nan():
-    bars = make_session(day=DAY, seed=7).loc[:at("10:30")]
+    bars = make_session(day=DAY, seed=7).loc[: at("10:30")]
     got = F.compute(LEVELS, bars, ctx(bars, at("11:40")))  # nothing for 70 minutes
     assert all(math.isnan(v) for v in got.values()), got
     # Exactly STALE_MIN minutes old is still current; one more is not.
@@ -58,7 +67,7 @@ def test_a_halted_symbols_levels_are_nan():
 def test_a_stale_symbol_never_fires_a_breakout_trigger():
     from trader.classifier import Condition as Trigger
 
-    bars = make_session(day=DAY, path=[100.0] * 30 + [110.0] * 30).loc[:at("10:29")]  # broke out, then halted
+    bars = make_session(day=DAY, path=[100.0] * 30 + [110.0] * 30).loc[: at("10:29")]  # broke out, then halted
     trig = [Trigger(feature="or15_break_pct", op=">", value=0.0), Trigger(feature="vwap_dist_pct", op=">", value=0.0)]
     fresh = F.compute([t.feature for t in trig], bars, ctx(bars, at("10:29")))
     assert all(t.holds(fresh) for t in trig)

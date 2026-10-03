@@ -18,8 +18,16 @@ from test_engine import Always, spec
 
 
 def probe_spec(**kw):
-    base = dict(id="p", mode="probe", family="novel", symbols=["SPY"], window=("09:35", "15:30"), cadence_min=5,
-                features=["ret_1m_pct"], entry={"instructions": "?", "criteria": {"ENTER": "a", "STAND_DOWN": "b"}})
+    base = dict(
+        id="p",
+        mode="probe",
+        family="novel",
+        symbols=["SPY"],
+        window=("09:35", "15:30"),
+        cadence_min=5,
+        features=["ret_1m_pct"],
+        entry={"instructions": "?", "criteria": {"ENTER": "a", "STAND_DOWN": "b"}},
+    )
     return ClassifierSpec(**(base | kw))
 
 
@@ -81,8 +89,14 @@ def test_probe_failures_dont_pause_trading(tmp_path, session):
     alerts = []
     bars = session(path=[100.0] * 390)
     book = Book("sim", SimBroker(250), tmp_path / "sim")
-    eng = Engine([probe_spec(cadence_min=1), spec(window=("09:40", "15:30"))], {"live": book, "shadow": book},
-                 ProbesFail(), {"SPY"}, tmp_path, alert=lambda lvl, m: alerts.append(m))
+    eng = Engine(
+        [probe_spec(cadence_min=1), spec(window=("09:40", "15:30"))],
+        {"live": book, "shadow": book},
+        ProbesFail(),
+        {"SPY"},
+        tmp_path,
+        alert=lambda lvl, m: alerts.append(m),
+    )
     eng.start_day(bars.index[0].date(), {})
     close = dt.datetime.combine(bars.index[0].date(), dt.time(16), ET)
     for ts in bars.index[:20]:
@@ -110,11 +124,18 @@ def test_probes_ask_after_trading_classifiers_and_only_within_their_budget(tmp_p
     bars = session(path=[100.0] * 390)
     book = Book("sim", SimBroker(250), tmp_path / "sim")
     rec = Recorder()
-    eng = Engine([probe_spec(cadence_min=1), spec(entry={"instructions": "?", "criteria": {"ENTER": "a", "WAIT": "b"}})],
-                 {"live": book, "shadow": book}, rec, {"SPY"}, tmp_path)
+    eng = Engine(
+        [probe_spec(cadence_min=1), spec(entry={"instructions": "?", "criteria": {"ENTER": "a", "WAIT": "b"}})],
+        {"live": book, "shadow": book},
+        rec,
+        {"SPY"},
+        tmp_path,
+    )
     eng.start_day(bars.index[0].date(), {})
     close = dt.datetime.combine(bars.index[0].date(), dt.time(16), ET)
-    tick = lambda i: eng.tick((bars.index[i] + pd.Timedelta(minutes=1)).to_pydatetime(), {"SPY": bars.loc[:bars.index[i]]}, 300)
+    tick = lambda i: eng.tick(
+        (bars.index[i] + pd.Timedelta(minutes=1)).to_pydatetime(), {"SPY": bars.loc[: bars.index[i]]}, 300
+    )
     tick(10)
     assert rec.asked == ["trade", "probe"]  # the probe was listed first but asked last
     monkeypatch.setattr(E, "PROBE_TICK_BUDGET_S", -1.0)  # probes' share of the tick is used up
@@ -151,7 +172,9 @@ def test_bins_are_labelled_by_their_values_and_keep_rare_confident_rows():
 
 def test_unreadable_log_lines_are_skipped(tmp_path):
     f = tmp_path / "2026-09-01.jsonl"
-    f.write_text(json.dumps({"t": "10:00", "c": "p", "s": "SPY", "q": "probe", "p": {"ENTER": 0.7}, "f": {}}) + "\n{\"t\": \"10:0")
+    f.write_text(
+        json.dumps({"t": "10:00", "c": "p", "s": "SPY", "q": "probe", "p": {"ENTER": 0.7}, "f": {}}) + '\n{"t": "10:0'
+    )
     rows = probe.load_rows([f])
     assert len(rows) == 1 and rows.attrs["skipped"] == 1
 
@@ -165,7 +188,9 @@ def _rows(n_days=6, per_day=40, informative=True, seed=0):
             x = rng.normal()
             fwd = 0.2 * x + rng.normal(0, 0.1)
             p = 1 / (1 + math.exp(-x)) if informative else rng.uniform()
-            out.append({"day": day, "t": "10:00", "c": "p", "s": "SPY", "p_enter": p, "f:noise": rng.normal(), "fwd_15": fwd})
+            out.append(
+                {"day": day, "t": "10:00", "c": "p", "s": "SPY", "p_enter": p, "f:noise": rng.normal(), "fwd_15": fwd}
+            )
     return pd.DataFrame(out)
 
 
@@ -183,8 +208,12 @@ def test_score_sees_an_informative_probe_and_an_uninformative_one():
 def test_forward_returns_are_cut_at_the_flatten(session):
     bars = session(path=list(np.linspace(100, 139, 390)))
     day = bars.index[0].date()
-    rows = pd.DataFrame([{"day": day.isoformat(), "t": "10:01", "c": "p", "s": "SPY", "p_enter": 0.5},
-                         {"day": day.isoformat(), "t": "15:30", "c": "p", "s": "SPY", "p_enter": 0.5}])
+    rows = pd.DataFrame(
+        [
+            {"day": day.isoformat(), "t": "10:01", "c": "p", "s": "SPY", "p_enter": 0.5},
+            {"day": day.isoformat(), "t": "15:30", "c": "p", "s": "SPY", "p_enter": 0.5},
+        ]
+    )
     out = probe.forward_returns(rows, {"SPY": {day: bars}}, [15, 60])
     close = bars.close
     at = lambda hhmm: float(close[close.index.strftime("%H:%M") == hhmm].iloc[0])
@@ -228,9 +257,23 @@ def test_probe_report_out_writes_a_file(tmp_path, session, monkeypatch):
         (replay / d.isoformat() / "decisions" / f"{d}.jsonl.gz").rename(replay / "decisions" / f"{d}.jsonl.gz")
     monkeypatch.setattr(config, "REPLAY_DIR", tmp_path / "replays")
     monkeypatch.setattr(config, "load_secrets", lambda: {})
-    monkeypatch.setattr(trader.data, "fetch", lambda syms, t0, t1, secrets, source: {"SPY": pd.concat(sessions.values())})
+    monkeypatch.setattr(
+        trader.data, "fetch", lambda syms, t0, t1, secrets, source: {"SPY": pd.concat(sessions.values())}
+    )
     out = tmp_path / "logs" / "probe_report.json"
-    cli.main(["probe-report", "--replay", "r1", "--horizons", "15,30", "--file", str(tmp_path / "none.yaml"), "--out", str(out)])
+    cli.main(
+        [
+            "probe-report",
+            "--replay",
+            "r1",
+            "--horizons",
+            "15,30",
+            "--file",
+            str(tmp_path / "none.yaml"),
+            "--out",
+            str(out),
+        ]
+    )
     rep = json.loads(out.read_text())
     assert rep["first_day"] == "2026-09-14" and rep["last_day"] == "2026-09-16" and rep["horizons"] == [15, 30]
     assert rep["probes"]["p"]["days"] == 3 and set(rep["probes"]["p"]["horizons"]) == {"15", "30"}
@@ -248,7 +291,9 @@ def test_dashboard_serves_the_latest_probe_report(tmp_path, monkeypatch):
     (tmp_path / "logs").mkdir()
     (tmp_path / "logs" / "probe_report.json").write_text("{not json")
     assert c.get("/api/probes").json()["report"] is None
-    (tmp_path / "logs" / "probe_report.json").write_text(json.dumps({"first_day": "2026-10-05", "probes": {"p": {"rows": 3}}}))
+    (tmp_path / "logs" / "probe_report.json").write_text(
+        json.dumps({"first_day": "2026-10-05", "probes": {"p": {"rows": 3}}})
+    )
     r = c.get("/api/probes").json()
     assert r["report"]["probes"]["p"]["rows"] == 3 and r["age_s"] is not None
 
@@ -267,14 +312,25 @@ def _ticker_rows(n_days=10, n_syms=24, per_sym=6, n_inputs=12, seed=1):
     dummy harder than it shrinks P(ENTER) would be caught."""
     rng = np.random.default_rng(seed)
     effect = {f"S{k:02d}": e for k, e in enumerate(np.linspace(-0.3, 0.3, n_syms))}
-    view = {s: e + rng.normal(0, 0.1) for s, e in effect.items()}  # Jev's fixed opinion of each stock: right-ish, not exact
+    view = {
+        s: e + rng.normal(0, 0.1) for s, e in effect.items()
+    }  # Jev's fixed opinion of each stock: right-ish, not exact
     out = []
     for d in range(n_days):
         day = (dt.date(2026, 9, 1) + dt.timedelta(days=d)).isoformat()
         for s, e in effect.items():
             for _ in range(per_sym):
-                out.append({"day": day, "t": "10:00", "c": "p", "s": s, "p_enter": 0.5 + view[s] + rng.normal(0, 0.01),
-                            **{f"f:n{i}": rng.normal() for i in range(n_inputs)}, "fwd_15": e + rng.normal(0, 0.2)})
+                out.append(
+                    {
+                        "day": day,
+                        "t": "10:00",
+                        "c": "p",
+                        "s": s,
+                        "p_enter": 0.5 + view[s] + rng.normal(0, 0.01),
+                        **{f"f:n{i}": rng.normal() for i in range(n_inputs)},
+                        "fwd_15": e + rng.normal(0, 0.2),
+                    }
+                )
     return pd.DataFrame(out)
 
 

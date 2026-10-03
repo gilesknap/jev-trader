@@ -18,8 +18,17 @@ S = 0.0005  # SimBroker.SLIPPAGE
 
 def replayed(tmp_path, bars, specs, decider=None):
     day = bars.index[0].date()
-    summary = replay(specs, day, day, decider or Always(), {"SPY"}, tmp_path / "replay", {},
-                     cash=250.0, sessions={"SPY": {day: bars}})
+    summary = replay(
+        specs,
+        day,
+        day,
+        decider or Always(),
+        {"SPY"},
+        tmp_path / "replay",
+        {},
+        cash=250.0,
+        sessions={"SPY": {day: bars}},
+    )
     return summary, pd.read_csv(tmp_path / "replay" / "sim" / "trades.csv")
 
 
@@ -52,7 +61,7 @@ def test_a_gap_after_the_signal_bar_moves_the_entry(tmp_path, session):
 def test_a_target_touch_then_reversal_gets_no_retroactive_target_fill(tmp_path, session):
     bars = session(path=[100.0] * 390)
     bar(bars, 10, high=101.5)  # 09:40 spikes through the 1% target (101.05) and closes at 100
-    bar(bars, 11, open=99.9)   # and the next bar opens lower
+    bar(bars, 11, open=99.9)  # and the next bar opens lower
     _, r = replayed(tmp_path, bars, [spec()])
     t = live(tmp_path, bars, [spec()])
     same_decisions(r, t)
@@ -65,7 +74,7 @@ def test_a_target_touch_then_reversal_gets_no_retroactive_target_fill(tmp_path, 
 
 def test_a_stop_still_fills_at_its_level(tmp_path, session):
     bars = session(path=[100.0] * 390)
-    bar(bars, 10, low=99.0)   # through the 0.5% stop (99.55) inside 09:40
+    bar(bars, 10, low=99.0)  # through the 0.5% stop (99.55) inside 09:40
     bar(bars, 11, open=98.0)  # a later gap must not worsen a stop that already filled
     _, r = replayed(tmp_path, bars, [spec()])
     t = live(tmp_path, bars, [spec()])

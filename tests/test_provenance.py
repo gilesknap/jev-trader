@@ -16,8 +16,10 @@ from trader.engine import TRADE_COLS, Book, Entry
 from trader.provenance import Provenance, code_sha, model_id
 
 OLD_COLS = "time,book,classifier,symbol,side,qty,price,notional,reason,pnl,pnl_pct"
-OLD_ROWS = ("2026-09-21T10:00,paper,x,SPY,buy,1.000000,100.0000,100.00,ENTER,,\n"
-            "2026-09-21T11:00,paper,x,SPY,sell,1.000000,101.0000,101.00,target,1.00,1.000\n")
+OLD_ROWS = (
+    "2026-09-21T10:00,paper,x,SPY,buy,1.000000,100.0000,100.00,ENTER,,\n"
+    "2026-09-21T11:00,paper,x,SPY,sell,1.000000,101.0000,101.00,target,1.00,1.000\n"
+)
 
 
 def test_trade_and_decision_rows_carry_provenance(tmp_path, session):
@@ -66,9 +68,21 @@ def test_old_trades_file_gains_the_columns_and_old_readers_still_work(tmp_path):
     (tmp_path / "trades.csv").write_text(OLD_COLS + "\n" + OLD_ROWS)
     book = Book("paper", SimBroker(1000.0), tmp_path)
     book.provenance = Provenance("m", "c0de", {"x": "h1"})
-    book.append_trade({"time": "2026-09-22T10:00", "book": "paper", "classifier": "x", "symbol": "SPY",
-                       "side": "buy", "qty": "1", "price": "100", "notional": "100", "reason": "ENTER",
-                       "pnl": "", "pnl_pct": ""})
+    book.append_trade(
+        {
+            "time": "2026-09-22T10:00",
+            "book": "paper",
+            "classifier": "x",
+            "symbol": "SPY",
+            "side": "buy",
+            "qty": "1",
+            "price": "100",
+            "notional": "100",
+            "reason": "ENTER",
+            "pnl": "",
+            "pnl_pct": "",
+        }
+    )
     df = pd.read_csv(tmp_path / "trades.csv", dtype=str, keep_default_na=False)
     assert list(df.columns) == TRADE_COLS and len(df) == 3
     assert list(df.spec_hash) == ["", "", "h1"]
@@ -95,8 +109,15 @@ def test_archive_widens_the_repo_trades_log(tmp_path, monkeypatch):
     # the runner upgraded its own copy and added a row
     (rt / "books" / "paper" / "trades.csv").write_text(OLD_COLS + "\n" + OLD_ROWS)
     Book("paper", SimBroker(1000.0), rt / "books" / "paper").append_trade(
-        {"time": "2026-09-22T10:00", "book": "paper", "classifier": "x", "symbol": "SPY", "side": "buy",
-         "spec_hash": "h1"})
+        {
+            "time": "2026-09-22T10:00",
+            "book": "paper",
+            "classifier": "x",
+            "symbol": "SPY",
+            "side": "buy",
+            "spec_hash": "h1",
+        }
+    )
     monkeypatch.setattr(config, "RUNTIME_DIR", rt)
     monkeypatch.setattr(compact, "LOGS", logs)
     assert compact.archive()["trades_added"] == 1

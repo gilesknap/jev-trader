@@ -30,9 +30,14 @@ def test_a_wound_down_live_book_closes_everything_and_never_enters(tmp_path, ses
     live.entries["SPY"] = Entry("t", 0.5, 100.0, 90.0, 120.0, _at(9, 0))  # tracked; QQQ is untracked
     live.blocked = WIND_DOWN
     alerts = []
-    eng = Engine([spec(symbols=["SPY", "QQQ"], max_trades=5)], {"live": paper, "shadow": paper,
-                 runner.WIND_DOWN_KEY: live}, Always(), {"SPY", "QQQ"}, tmp_path / "rt",
-                 alert=lambda lvl, msg: alerts.append(msg))
+    eng = Engine(
+        [spec(symbols=["SPY", "QQQ"], max_trades=5)],
+        {"live": paper, "shadow": paper, runner.WIND_DOWN_KEY: live},
+        Always(),
+        {"SPY", "QQQ"},
+        tmp_path / "rt",
+        alert=lambda lvl, msg: alerts.append(msg),
+    )
     eng.start_day(DAY, {})
     assert live.blocked == WIND_DOWN  # start_day leaves it in place
     for m in range(31, 40):
@@ -87,8 +92,20 @@ def test_live_positions_on_a_paper_day_wind_down(live_env, monkeypatch):
 def test_tracked_entries_or_an_unreadable_account_wind_down_too(live_env, monkeypatch):
     live_dir, alerts, alert = live_env
     live_dir.mkdir(parents=True)
-    (live_dir / "entries.json").write_text(json.dumps({"SPY": {
-        "classifier": "t", "qty": 0.5, "price": 100.0, "stop": 90.0, "target": 120.0, "time": _at(9, 0).isoformat()}}))
+    (live_dir / "entries.json").write_text(
+        json.dumps(
+            {
+                "SPY": {
+                    "classifier": "t",
+                    "qty": 0.5,
+                    "price": 100.0,
+                    "stop": 90.0,
+                    "target": 120.0,
+                    "time": _at(9, 0).isoformat(),
+                }
+            }
+        )
+    )
     monkeypatch.setattr(runner, "AlpacaBroker", lambda *a, **k: FakeLive())  # gone at the broker: still reconciled
     assert runner.wind_down_live_book(SECRETS, alert).blocked == WIND_DOWN
     assert any("still tracks ['SPY']" in m for _, m in alerts)
@@ -133,8 +150,14 @@ def test_an_unreadable_live_equity_at_the_close_doesnt_stop_the_session_end(tmp_
     paper = Book("paper", Broker(), tmp_path / "paper")
     live = Book("live", NoEquity(), tmp_path / "live")
     alerts = []
-    eng = Engine([], {"live": paper, "shadow": paper, runner.WIND_DOWN_KEY: live}, Always(), {"SPY"},
-                 tmp_path / "rt", alert=lambda lvl, msg: alerts.append(msg))
+    eng = Engine(
+        [],
+        {"live": paper, "shadow": paper, runner.WIND_DOWN_KEY: live},
+        Always(),
+        {"SPY"},
+        tmp_path / "rt",
+        alert=lambda lvl, msg: alerts.append(msg),
+    )
     eng.day = DAY
     summary = eng.end_day(dt.datetime.combine(DAY, dt.time(16), ET))
     assert list(summary) == ["paper"] and any("[live] equity unreadable at the close" in m for m in alerts)
@@ -156,10 +179,15 @@ def test_a_restart_after_a_mid_session_hold_winds_the_live_book_down(tmp_path, m
     monkeypatch.setattr(config, "RUNTIME_DIR", tmp_path)
     monkeypatch.setattr(runner, "BOOKS_DIR", tmp_path / "books")
     monkeypatch.setattr(runner, "notify", lambda level, msg, **k: alerts.append(msg))
-    monkeypatch.setattr(runner, "AlpacaBroker", lambda key, secret, paper: Flaky(250.0, down=False) if paper
-                        else made.setdefault("live", FakeLive(["XLV"])))
+    monkeypatch.setattr(
+        runner,
+        "AlpacaBroker",
+        lambda key, secret, paper: Flaky(250.0, down=False) if paper else made.setdefault("live", FakeLive(["XLV"])),
+    )
     monkeypatch.setattr(runner, "_apply_cashflows", lambda *a: None)
-    monkeypatch.setattr(runner, "_session_today", lambda client: (now - dt.timedelta(hours=1), now + dt.timedelta(hours=1)))
+    monkeypatch.setattr(
+        runner, "_session_today", lambda client: (now - dt.timedelta(hours=1), now + dt.timedelta(hours=1))
+    )
     monkeypatch.setattr(runner, "_specs_for_session", lambda *a, **k: [])
     monkeypatch.setattr(runner, "fetch_alpaca", lambda *a, **k: {})
     monkeypatch.setattr(runner, "reconcile_sim_accounts", lambda *a, **k: None)
@@ -178,6 +206,7 @@ def test_a_restart_after_a_mid_session_hold_winds_the_live_book_down(tmp_path, m
     def engine(specs, books, *a, **k):
         seen["books"] = books
         return real_engine(specs, books, *a, **k)
+
     monkeypatch.setattr(runner, "Engine", engine)
     monkeypatch.setattr(alpaca.data.live, "StockDataStream", Stream)
     with pytest.raises(_Reached):
@@ -193,8 +222,18 @@ def test_a_restart_after_a_mid_session_hold_winds_the_live_book_down(tmp_path, m
 def test_a_corrupt_nav_or_risk_file_never_sets_healthy_tracking_aside(live_env, monkeypatch):
     live_dir, alerts, alert = live_env
     live_dir.mkdir(parents=True)
-    entries = json.dumps({"SPY": {"classifier": "t", "qty": 0.5, "price": 100.0, "stop": 90.0, "target": 120.0,
-                                  "time": _at(9, 0).isoformat()}})
+    entries = json.dumps(
+        {
+            "SPY": {
+                "classifier": "t",
+                "qty": 0.5,
+                "price": 100.0,
+                "stop": 90.0,
+                "target": 120.0,
+                "time": _at(9, 0).isoformat(),
+            }
+        }
+    )
     (live_dir / "entries.json").write_text(entries)
     (live_dir / "nav.json").write_text("{torn")
     monkeypatch.setattr(runner, "AlpacaBroker", lambda *a, **k: FakeLive(["SPY"]))
@@ -206,8 +245,20 @@ def test_a_corrupt_nav_or_risk_file_never_sets_healthy_tracking_aside(live_env, 
 def test_only_the_unloadable_tracking_file_is_set_aside(live_env, monkeypatch):
     live_dir, alerts, alert = live_env
     live_dir.mkdir(parents=True)
-    (live_dir / "entries.json").write_text(json.dumps({"SPY": {"classifier": "t", "qty": 0.5, "price": 100.0,
-                                                               "stop": 90.0, "target": 120.0, "time": "not a time"}}))
+    (live_dir / "entries.json").write_text(
+        json.dumps(
+            {
+                "SPY": {
+                    "classifier": "t",
+                    "qty": 0.5,
+                    "price": 100.0,
+                    "stop": 90.0,
+                    "target": 120.0,
+                    "time": "not a time",
+                }
+            }
+        )
+    )
     (live_dir / "pending.json").write_text("{}")
     monkeypatch.setattr(runner, "AlpacaBroker", lambda *a, **k: FakeLive())
     b = runner.wind_down_live_book(SECRETS, alert)

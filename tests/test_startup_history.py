@@ -19,6 +19,7 @@ def hang():
     def fetch(*a, **k):
         release.wait(30)
         return {}
+
     yield fetch
     release.set()
 
@@ -40,7 +41,9 @@ def test_a_hung_iex_fetch_keeps_sip_prices_and_alerts_once(monkeypatch, hang):
     sip, _ = feeds()
     good = fake_fetch(sip, sip)[0]
     monkeypatch.setattr(runner, "STARTUP_FETCH_TIMEOUT_S", 0.05)
-    monkeypatch.setattr(runner, "fetch_alpaca", lambda *a, feed="sip", **k: hang() if feed == "iex" else good(*a, feed=feed))
+    monkeypatch.setattr(
+        runner, "fetch_alpaca", lambda *a, feed="sip", **k: hang() if feed == "iex" else good(*a, feed=feed)
+    )
     alerts, alert = collect()
     prev = runner.prev_day_bars(["AAA"], DAY, NOW, {}, alert=alert)["AAA"]
     assert (prev.close == split_sessions(sip)[PREV].close).all() and prev.volume.isna().all()
@@ -54,8 +57,9 @@ def test_a_symbol_missing_from_the_history_is_named(monkeypatch):
     alerts, alert = collect()
     prev = runner.prev_day_bars(["AAA", "BBB"], DAY, NOW, {}, alert=alert)
     assert set(prev) == {"AAA"}
-    assert alerts == [("urgent", "no prior session in the startup history for ['BBB']: their prev-day features "
-                                 "are NaN today")]
+    assert alerts == [
+        ("urgent", "no prior session in the startup history for ['BBB']: their prev-day features are NaN today")
+    ]
 
 
 def test_a_symbol_missing_from_iex_alone_is_named_for_its_volume(monkeypatch):
@@ -64,6 +68,7 @@ def test_a_symbol_missing_from_iex_alone_is_named_for_its_volume(monkeypatch):
 
     def partial(symbols, *a, feed="sip", **k):
         return fetch(["AAA"] if feed == "iex" else symbols, *a, feed=feed, **k)
+
     monkeypatch.setattr(runner, "fetch_alpaca", partial)
     alerts, alert = collect()
     prev = runner.prev_day_bars(["AAA", "BBB"], DAY, NOW, {}, alert=alert)
@@ -99,6 +104,7 @@ def test_a_late_stream_catches_up_on_todays_bars_without_duplicates(monkeypatch)
     def fetch(symbols, start, end, secrets, feed="sip"):
         asked.append((tuple(symbols), start, end, feed))
         return {s: b for s in symbols}
+
     monkeypatch.setattr(runner, "fetch_alpaca", fetch)
     rows = {"AAA": [(ts, *r) for ts, r in zip(b.index[3:5], b.iloc[3:5].itertuples(index=False))]}  # the stream's
     rows = runner.defaultdict(list, rows)
@@ -116,12 +122,15 @@ def test_a_failed_catch_up_alerts_per_group_and_never_raises(monkeypatch, hang):
         if symbols == ["HELD"]:
             raise ConnectionError("rejected symbol")
         return {s: b for s in symbols}
+
     monkeypatch.setattr(runner, "fetch_alpaca", fetch)
     rows = runner.defaultdict(list)
     alerts, alert = collect()
     runner.catch_up_bars(rows, threading.Lock(), ["AAA"], ["HELD"], OPEN, TICK, {}, alert=alert)
     assert len(rows["AAA"]) == len(b[b.index < TICK]) and not rows["HELD"]
-    assert len(alerts) == 1 and "['HELD']" in alerts[0][1] and "stops may be missing today's earlier bars" in alerts[0][1]
+    assert (
+        len(alerts) == 1 and "['HELD']" in alerts[0][1] and "stops may be missing today's earlier bars" in alerts[0][1]
+    )
 
     monkeypatch.setattr(runner, "CATCH_UP_TIMEOUT_S", 0.05)
     monkeypatch.setattr(runner, "fetch_alpaca", hang)

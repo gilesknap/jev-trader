@@ -86,15 +86,23 @@ def _replay(monkeypatch, session, *argv):
 def test_replay_appends_a_row_per_classifier(roots, monkeypatch, session):
     _replay(monkeypatch, session, "--name", "r1")
     rows = ledger()
-    assert [(r["kind"], r["run_name"], r["classifier_id"]) for r in rows] == [("replay", "r1", "t"), ("replay", "r1", "u")]
+    assert [(r["kind"], r["run_name"], r["classifier_id"]) for r in rows] == [
+        ("replay", "r1", "t"),
+        ("replay", "r1", "u"),
+    ]
     h = golive.spec_hash(spec(), golive.custom_features_digest())
     t = rows[0]
     assert t["spec_hash"] == h and t["family"] == "conventional" and t["stub"] == "0"
     assert (t["days"], t["start"], t["end"]) == ("1", str(DAY), str(DAY))
-    closed = [r for r in csv.DictReader((roots / "replays" / "r1" / "sim" / "trades.csv").open())
-              if r["side"] == "sell" and r["classifier"] == "t"]
+    closed = [
+        r
+        for r in csv.DictReader((roots / "replays" / "r1" / "sim" / "trades.csv").open())
+        if r["side"] == "sell" and r["classifier"] == "t"
+    ]
     assert int(t["trades"]) == len(closed) > 0
-    assert float(t["net_pct_after_slip"]) == pytest.approx(sum(float(r["pnl_pct"]) for r in closed) / len(closed), abs=1e-4)
+    assert float(t["net_pct_after_slip"]) == pytest.approx(
+        sum(float(r["pnl_pct"]) for r in closed) / len(closed), abs=1e-4
+    )
 
     _replay(monkeypatch, session, "--name", "r2", "--decider", "stub")
     assert [r["stub"] for r in ledger()] == ["0", "0", "1", "1"]
@@ -118,21 +126,54 @@ def test_probe_report_on_a_replay_appends_a_row_per_probe(roots, monkeypatch, se
         probe_run(replay / d.isoformat(), sessions[d], [probe_spec()], Always(entry="STAND_DOWN"))
         (replay / "decisions").mkdir(parents=True, exist_ok=True)
         (replay / d.isoformat() / "decisions" / f"{d}.jsonl.gz").rename(replay / "decisions" / f"{d}.jsonl.gz")
-    monkeypatch.setattr(trader.data, "fetch", lambda syms, t0, t1, secrets, source: {"SPY": pd.concat(sessions.values())})
+    monkeypatch.setattr(
+        trader.data, "fetch", lambda syms, t0, t1, secrets, source: {"SPY": pd.concat(sessions.values())}
+    )
     # The replay's own row is where the probe's spec hash comes from.
-    trials.append([{"time": "2026-09-17T00:00:00+00:00", "kind": "replay", "run_name": "r1", "classifier_id": "p",
-                    "spec_hash": "abc", "family": "novel", "stub": 0}])
+    trials.append(
+        [
+            {
+                "time": "2026-09-17T00:00:00+00:00",
+                "kind": "replay",
+                "run_name": "r1",
+                "classifier_id": "p",
+                "spec_hash": "abc",
+                "family": "novel",
+                "stub": 0,
+            }
+        ]
+    )
     out = roots / "report.json"
-    cli.main(["probe-report", "--replay", "r1", "--horizons", "15,30", "--file", str(roots / "none.yaml"), "--out", str(out)])
+    cli.main(
+        ["probe-report", "--replay", "r1", "--horizons", "15,30", "--file", str(roots / "none.yaml"), "--out", str(out)]
+    )
     rep = json.loads(out.read_text())["probes"]["p"]["horizons"]["15"]
     (row,) = [r for r in ledger() if r["kind"] == "probe_report"]
-    assert (row["run_name"], row["classifier_id"], row["spec_hash"], row["family"], row["stub"]) == ("r1", "p", "abc", "novel", "0")
+    assert (row["run_name"], row["classifier_id"], row["spec_hash"], row["family"], row["stub"]) == (
+        "r1",
+        "p",
+        "abc",
+        "novel",
+        "0",
+    )
     assert (row["days"], row["start"], row["end"]) == ("3", "2026-09-14", "2026-09-16")
     assert int(row["trades"]) == rep["enter_n"]
 
     # The runner's own logs (no --replay) are not a trial.
     monkeypatch.setattr(config, "RUNTIME_DIR", replay)
-    cli.main(["probe-report", "--start", "2026-09-14", "--horizons", "15", "--file", str(roots / "none.yaml"), "--out", str(out)])
+    cli.main(
+        [
+            "probe-report",
+            "--start",
+            "2026-09-14",
+            "--horizons",
+            "15",
+            "--file",
+            str(roots / "none.yaml"),
+            "--out",
+            str(out),
+        ]
+    )
     assert len(ledger()) == 2
 
 
@@ -150,8 +191,11 @@ def test_runner_logs_each_new_spec_once_and_archive_copies_it(roots):
     assert compact.archive()["trials_added"] == 0  # idempotent
     rows = ledger()
     assert [(r["kind"], r["classifier_id"], r["spec_hash"], r["run_name"]) for r in rows] == [
-        ("shadow_start", "a", "h1", str(DAY)), ("shadow_start", "b", "h2", str(DAY)), ("shadow_start", "b", "h3", str(DAY)),
-        ("shadow_start", "c", "h1", str(DAY))]
+        ("shadow_start", "a", "h1", str(DAY)),
+        ("shadow_start", "b", "h2", str(DAY)),
+        ("shadow_start", "b", "h3", str(DAY)),
+        ("shadow_start", "c", "h1", str(DAY)),
+    ]
 
 
 def test_a_broken_runtime_ledger_raises_for_the_runner_to_report(roots):
@@ -167,15 +211,27 @@ def test_archive_survives_a_broken_runtime_ledger(roots):
 
 def test_trials_report(roots, capsys):
     def row(day, kind, cid, h, family="novel", stub=0):
-        return {"time": f"{day}T12:00:00+00:00", "kind": kind, "run_name": "r", "classifier_id": cid,
-                "spec_hash": h, "family": family, "stub": stub}
+        return {
+            "time": f"{day}T12:00:00+00:00",
+            "kind": kind,
+            "run_name": "r",
+            "classifier_id": cid,
+            "spec_hash": h,
+            "family": family,
+            "stub": stub,
+        }
 
-    trials.append([
-        row("2026-09-01", "replay", "a", "h1"), row("2026-09-01", "replay", "a", "h2"),
-        row("2026-09-02", "probe_report", "a", "h2"), row("2026-09-03", "shadow_start", "a", "h2"),
-        row("2026-09-02", "replay", "b", "h3"), row("2026-09-02", "replay", "c", "h4", "conventional"),
-        row("2026-09-04", "replay", "a", "h9", stub=1),
-    ])
+    trials.append(
+        [
+            row("2026-09-01", "replay", "a", "h1"),
+            row("2026-09-01", "replay", "a", "h2"),
+            row("2026-09-02", "probe_report", "a", "h2"),
+            row("2026-09-03", "shadow_start", "a", "h2"),
+            row("2026-09-02", "replay", "b", "h3"),
+            row("2026-09-02", "replay", "c", "h4", "conventional"),
+            row("2026-09-04", "replay", "a", "h9", stub=1),
+        ]
+    )
     cli.main(["trials", "--id", "a"])
     out = capsys.readouterr().out
     assert "a: 2 distinct spec(s) tried on 3 different day(s), 3 evaluation(s)" in out
@@ -183,7 +239,11 @@ def test_trials_report(roots, capsys):
     assert "h9" not in out and "1 stub-decider row(s) not counted" in out
     cli.main(["trials"])
     out = capsys.readouterr().out
-    assert "family conventional: 1 distinct spec(s)" in out and [ln.split()[0] for ln in out.splitlines()[1:4]] == ["a", "b", "c"]
+    assert "family conventional: 1 distinct spec(s)" in out and [ln.split()[0] for ln in out.splitlines()[1:4]] == [
+        "a",
+        "b",
+        "c",
+    ]
     cli.main(["trials", "--hash", "h2"])
     out = capsys.readouterr().out
     assert "h2" in out and "yes" in out and "h1" not in out
