@@ -10,15 +10,16 @@ from trader import scoreboard as SB
 from trader.classifier import ClassifierSpec
 
 
-def trade(time, cid, sym, side, notional, pnl="", pnl_pct=""):
+def trade(time, cid, sym, side, notional, pnl="", pnl_pct="", spec_hash=""):
     return {"time": time, "book": "paper", "classifier": cid, "symbol": sym, "side": side, "qty": "1",
-            "price": "1", "notional": str(notional), "reason": "", "pnl": str(pnl), "pnl_pct": str(pnl_pct)}
+            "price": "1", "notional": str(notional), "reason": "", "pnl": str(pnl), "pnl_pct": str(pnl_pct),
+            "spec_hash": spec_hash}
 
 
-def round_trip(day, cid, pnl_pct, notional=50.0, sym="SPY"):
+def round_trip(day, cid, pnl_pct, notional=50.0, sym="SPY", spec_hash=""):
     pnl = notional * pnl_pct / 100
-    return [trade(f"{day}T10:00-04:00", cid, sym, "buy", notional),
-            trade(f"{day}T11:00-04:00", cid, sym, "sell", notional + pnl, f"{pnl:.2f}", f"{pnl_pct:.3f}")]
+    return [trade(f"{day}T10:00-04:00", cid, sym, "buy", notional, spec_hash=spec_hash),
+            trade(f"{day}T11:00-04:00", cid, sym, "sell", notional + pnl, f"{pnl:.2f}", f"{pnl_pct:.3f}", spec_hash)]
 
 
 # ---- the family label ------------------------------------------------------------
@@ -201,6 +202,30 @@ def test_build_groups_by_family_and_keeps_retired():
     assert SB.build(rows, families, set(), 250.0)["classifiers"][0].get("promotion") is None
     # novel first, then conventional, control; retired after active within a family
     assert [r["family"] for r in b["classifiers"]][:2] == ["novel", "conventional"]
+
+
+def test_promotion_count_skips_closes_from_an_earlier_spec(tmp_path):
+    """The board counts exactly what golive.shadow_record counts: closes since the record's start,
+    minus any stamped with another spec's hash (opened under the old spec, closed after the edit);
+    unstamped closes (before provenance) go by date alone."""
+    import csv
+
+    rows = (round_trip("2026-10-06", "idea", 0.5, spec_hash="old")  # before the record: never counted
+            + round_trip("2026-10-07", "idea", 0.5, spec_hash="old")  # opened under the old spec
+            + round_trip("2026-10-07", "idea", 0.5, sym="QQQ")  # unstamped: date rule
+            + round_trip("2026-10-08", "idea", 0.5, spec_hash="new")
+            + round_trip("2026-10-08", "idea", 0.5, sym="QQQ", spec_hash="new"))
+    since, hashes = {"idea": "2026-10-07"}, {"idea": "new"}
+    b = SB.build(rows, {"idea": "novel"}, {"idea"}, 250.0, since=since, spec_hashes=hashes)
+    assert b["classifiers"][0]["promotion"]["n"] == 3
+    # without the hash (an old promotion record) it falls back to the date rule
+    assert SB.build(rows, {"idea": "novel"}, {"idea"}, 250.0, since=since)["classifiers"][0]["promotion"]["n"] == 4
+    with (tmp_path / "trades.csv").open("w", newline="") as f:
+        w = csv.DictWriter(f, list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+    assert golive.shadow_record("idea", "2026-10-07", tmp_path, "new")[0] == 3
+    assert golive.shadow_record("idea", "2026-10-07", tmp_path)[0] == 4
 
 
 # ---- engine and API --------------------------------------------------------------

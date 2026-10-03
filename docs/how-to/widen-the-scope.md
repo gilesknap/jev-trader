@@ -34,7 +34,7 @@ minutes old.
 - **Paid real-time SIP** (Alpaca's Algo Trader Plus, about $99 a month at the time of writing)
   gives the live runner the full consolidated tape, and lifts the 30-symbol stream limit.
 - **What changes in code:** the runner asks for `feed="iex"` / `DataFeed.IEX` in
-  `src/trader/runner.py`: the stream, the REST fallback, the seed after a mid-session restart,
+  `src/trader/runner.py`: the stream, the REST fallback, the catch-up on today's bars after a late start,
   and the prior session's volume. To use more than 30 symbols, also raise
   `STREAM_SYMBOL_LIMIT` there, and the 30-symbol rule in
   [Configuration](../reference/configuration.md). All market data is fetched with the **paper**

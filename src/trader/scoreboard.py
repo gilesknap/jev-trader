@@ -65,6 +65,7 @@ def closed_trades(rows: list[dict], slippage_per_side_pct: float = SLIPPAGE_PER_
             out.append({
                 "time": r["time"], "day": r["time"][:10], "classifier": key[0], "symbol": key[1],
                 "net_pct": pnl_pct - slip, "net_usd": _num(r.get("pnl")) - cost * slip / 100,
+                "spec_hash": r.get("spec_hash") or "",  # the spec the position opened under ("" before provenance)
             })
     return out
 
@@ -245,13 +246,15 @@ def daily(equity: list[dict], benchmark: list[dict] | None = None, trades: list[
 def build(rows: list[dict], families: dict[str, str], current: set[str], start_equity: float | None,
           since: dict[str, str] | None = None, slippage_per_side_pct: float = SLIPPAGE_PER_SIDE_PCT,
           from_date: str | None = None, equity: list[dict] | None = None,
-          benchmark: list[dict] | None = None) -> dict:
+          benchmark: list[dict] | None = None, spec_hashes: dict[str, str] | None = None) -> dict:
     """Scoreboard for one book.
 
     families: classifier id -> novel | conventional (anything else shows as "unlabelled";
               control_* ids are always control).
     current: ids in today's classifiers file; the rest are shown as retired.
     since: id -> date its current spec started (the paper book's promotion record), else None.
+    spec_hashes: id -> its current spec's hash (the same record), so the promotion count skips
+              closes stamped with another spec's hash, exactly as golive.shadow_record does.
     slippage_per_side_pct: 0 for replays, whose simulated fills already include it.
     from_date: ignore trades before this date (the experiment's start, for the live board).
     equity, benchmark: the book's equity.csv and SPY's benchmark.csv rows, for `daily` (the
@@ -290,9 +293,13 @@ def build(rows: list[dict], families: dict[str, str], current: set[str], start_e
         row = {"id": cid, "family": fam(cid), "active": cid in current, **summarise(ts),
                "net_usd": round(sum(t["net_usd"] for t in ts), 2), "curve": curve(ts)}
         if since and cid in since and fam(cid) != "control":
-            # Counted like golive.shadow_record: nothing before the start date, even when all days are shown.
+            # Counted like golive.shadow_record: nothing before the start date, even when all days are
+            # shown, and no close stamped with another spec's hash (its position opened under an earlier
+            # spec); an unstamped close (before provenance) is judged by its date alone.
             start = max(since[cid], EXPERIMENT_START.isoformat())
-            row["promotion"] = {"n": sum(t["day"] >= start for t in ts), "of": MIN_TRADES, "since": start}
+            h = (spec_hashes or {}).get(cid) or ""
+            n = sum(t["day"] >= start and not (h and t["spec_hash"] and t["spec_hash"] != h) for t in ts)
+            row["promotion"] = {"n": n, "of": MIN_TRADES, "since": start}
         classifiers.append(row)
     classifiers.sort(key=lambda r: (FAMILIES.index(r["family"]), not r["active"], -r["net_usd"], r["id"]))
 

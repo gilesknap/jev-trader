@@ -56,7 +56,7 @@ class Worker:
             if req["op"] == "load":
                 names, errors = harness.load_custom_inprocess(__import__("pathlib").Path(req["dir"]))
                 samples = [tuple(decode_bars(x) for x in s) for s in req.get("samples", [])]
-                errors.update(harness.evaluate(names, samples))
+                errors.update(harness.evaluate(names, samples, req.get("speed_budget_s")))
                 good = [n for n in names if n not in errors]
                 for bad in set(names) - set(good):
                     F.REGISTRY.pop(bad, None)
