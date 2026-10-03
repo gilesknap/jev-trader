@@ -40,7 +40,9 @@ The diffs that need review are shown together in one pager, each headed with its
 one typed `yes` covers them. Then, before switching anything, it tests the new code against the
 new config, in throwaway checkouts:
 
-- the test suite, with `TRADER_DATA_ROOT` pointing at the candidate config;
+- the test suite, with `TRADER_DATA_ROOT` pointing at the candidate config and every other
+  `TRADER_*` variable unset, so a shell that happens to carry the runner's environment can't point
+  the tests at live data;
 - the config must hold `config/mode.yaml`, and the rendered files (the timers, `trader.env`) must
   match `config.yaml` as the new code renders them (`trader config render-deploy --check`). If
   they don't, it refuses and names the files to re-render;
