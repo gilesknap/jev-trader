@@ -26,7 +26,7 @@ cd jev-trader
 uv sync
 ```
 
-The `dev` extra adds pytest and yfinance.
+That installs the development tools too (the `dev` dependency group), yfinance among them.
 
 ## 2. Make a data directory
 

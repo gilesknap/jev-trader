@@ -359,20 +359,20 @@ code { font-family: var(--mono); font-size: .9em; }
     <div class="linkgrid" id="links"><p class="muted">Loading…</p></div></section>
   <section>
     <details class="help"><summary>Commands you may need (on the VPS)</summary><dl>
-      <dt>Become the runner (for the <code>uv run trader</code> commands below)</dt>
+      <dt>Become the runner (for the <code>uv run --no-dev trader</code> commands below)</dt>
       <dd>From your admin account:<code class="cmd">sudo -iu runner</code><code class="cmd">cd /srv/trading/main &amp;&amp; set -a &amp;&amp; . ~/.config/trading/services.env &amp;&amp; set +a</code>Skip the second line and the commands that change state refuse to run.</dd>
       <dt>Deploy merged code to the runner</dt>
       <dd>From your admin account. It shows what is about to deploy, tests it first, and may ask you to review a diff and type <b>yes</b> (the docs' deploy guide, <code>docs/how-to/deploy.md</code>, has the details). Strategy changes don't need this; only code on main does.<code class="cmd">sudo -u runner trading-deploy</code></dd>
       <dt>STOP: sell everything and stop for today</dt>
-      <dd>The red button at the top, or:<code class="cmd">uv run trader stop</code></dd>
+      <dd>The red button at the top, or:<code class="cmd">uv run --no-dev trader stop</code></dd>
       <dt>Veto or allow the switch to real money</dt>
-      <dd>HOLD LIVE at the top, or the first line. The second re-arms it; the third shows the gate.<code class="cmd">uv run trader hold-live</code><code class="cmd">uv run trader release-live</code><code class="cmd">uv run trader golive</code></dd>
+      <dd>HOLD LIVE at the top, or the first line. The second re-arms it; the third shows the gate.<code class="cmd">uv run --no-dev trader hold-live</code><code class="cmd">uv run --no-dev trader release-live</code><code class="cmd">uv run --no-dev trader golive</code></dd>
       <dt>Force paper or live</dt>
       <dd>Set <code>config/mode.yaml</code> on main to <code>paper</code>, <code>live</code> or <code>auto</code>, then deploy.</dd>
       <dt>Clear a halt (−30% from peak, or under $50)</dt>
-      <dd>A halt never clears itself. Clearing also resets the peak to today's value, so it doesn't trip again at once.<code class="cmd">uv run trader clear-halt paper</code><code class="cmd">uv run trader clear-halt live</code></dd>
+      <dd>A halt never clears itself. Clearing also resets the peak to today's value, so it doesn't trip again at once.<code class="cmd">uv run --no-dev trader clear-halt paper</code><code class="cmd">uv run --no-dev trader clear-halt live</code></dd>
       <dt>After resetting the Alpaca paper account</dt>
-      <dd>So the reset isn't read as a loss:<code class="cmd">uv run trader rebase-paper</code></dd>
+      <dd>So the reset isn't read as a loss:<code class="cmd">uv run --no-dev trader rebase-paper</code></dd>
       <dt>Where the logs live</dt>
       <dd><b>Today's trading</b> (runner): <code>/srv/trading/runtime</code>: status.json, golive.json and <code>books/&lt;account&gt;/</code> trades and equity.<br>
         <b>Runner and dashboard output</b>, as runner:<code class="cmd">journalctl --user -u trader-runner -u trader-dashboard -n 200</code>
@@ -828,7 +828,7 @@ function binChart(bins) {
   return svg + "</svg>";
 }
 function renderProbeResults(res, src) {
-  if (src !== "live") { $("proberesults").innerHTML = '<p class="muted">Scored results are for the live runner\'s probes. To score a backtest\'s probes, run <code>uv run trader probe-report --replay &lt;name&gt;</code>.</p>'; return; }
+  if (src !== "live") { $("proberesults").innerHTML = '<p class="muted">Scored results are for the live runner\'s probes. To score a backtest\'s probes, run <code>uv run --no-dev trader probe-report --replay &lt;name&gt;</code>.</p>'; return; }
   if (res.error) { $("proberesults").innerHTML = `<p class="neg">Couldn't load the probe report: ${esc(res.error)}</p>`; return; }
   if (!res.report) { $("proberesults").innerHTML = '<p class="muted">No results yet. The report is written after each close, once a probe has run for a session.</p>'; return; }
   const rep = cleanReport(res.report), age = num(res.age_s);

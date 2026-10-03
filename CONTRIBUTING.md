@@ -25,7 +25,8 @@ tutorial uses `../my-data`), and check your diff before you push.
 - Format and lint with [ruff](https://docs.astral.sh/ruff/) (line length 120): `uv run ruff format`
   and `uv run ruff check --fix`, or all the checks CI runs: `uv run pre-commit run --all-files`
   (`.pre-commit-config.yaml`: ruff, YAML, file endings, gitleaks). `uv run pre-commit install`
-  runs them on every commit. `uv run tox -p` runs the lint, tests and docs together.
+  runs them on every commit. `uv run tox -p -e pre-commit,tests,docs` runs the lint, tests and docs together (the template's
+  `type-checking` env is in `tox -p`'s default list, but pyright isn't clean yet).
 - If you changed the docs, build them with warnings as errors:
   `uv run --group docs sphinx-build -W --keep-going docs build/html`.
 - Keep changes to the guardrails (`src/trader/guardrails.py`, `src/trader/allocator.py`) and the
