@@ -81,12 +81,19 @@ class SimBroker:
     """Fills at the given reference price +/- slippage. Settles instantly."""
 
     name = "sim"
+    # A simulated limit buy pays the same haircut as a market one, so it can be booked up to this
+    # much above its limit (the engine caps a limit fill's price at limit * (1 + limit_slippage)).
+    limit_slippage = SLIPPAGE
 
     def __init__(self, cash: float):
         self.cash = cash
         self.positions: dict[str, Position] = {}
         self.last: dict[str, float] = {}
         self.orders: dict[str, dict] = {}  # resting limit buys
+        # Set by a replay before each tick: {symbol: the open of the bar after the one just
+        # seen}, the price a market order sent now executes at (Engine._market_ref). Empty in a
+        # live sim account, which fills at the latest close, as paper does.
+        self.next_open: dict[str, float] = {}
 
     def update_prices(self, prices: dict[str, float]) -> None:
         self.last.update(prices)
@@ -120,7 +127,8 @@ class SimBroker:
 
     def update_bars(self, bars) -> None:
         """Fill resting limit buys on bars that started at or after placement and traded
-        strictly below the limit (a touch isn't a fill), at the better of open and limit."""
+        strictly below the limit (a touch isn't a fill), at the better of open and limit, plus
+        SLIPPAGE, as a market entry pays, so limit and market entries are judged on the same costs."""
         import pandas as pd
 
         for o in self.orders.values():
@@ -129,7 +137,9 @@ class SimBroker:
             b = bars[o["symbol"]]
             hit = b[(b.index >= pd.Timestamp(o["placed"])) & (b.low < o["limit"])]
             if len(hit):
-                px = min(float(hit.open.iloc[0]), o["limit"])
+                px = min(float(hit.open.iloc[0]), o["limit"]) * (1 + SLIPPAGE)
+                # The haircut can spend up to 0.05% more than the engine reserved (qty * limit):
+                # cents on a small account, and the next entry is sized from the cash left.
                 self.cash -= o["qty"] * px
                 self.positions[o["symbol"]] = Position(o["symbol"], o["qty"], px)
                 o["state"] = OrderState("filled", o["qty"], px, hit.index[0].to_pydatetime())
@@ -267,6 +277,8 @@ class PersistentSimBroker(SimBroker):
 
 
 class AlpacaBroker:
+    limit_slippage = 0.0  # a real limit buy never fills above its limit (see SimBroker.limit_slippage)
+
     def __init__(self, key: str, secret: str, paper: bool):
         from alpaca.trading.client import TradingClient
 

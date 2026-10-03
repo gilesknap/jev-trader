@@ -28,7 +28,7 @@ root it looked in. The comments in the file itself describe each key too; the te
 | `owner.github_repo` | `owner/repo` | Your private **data** repository on GitHub. The setup scripts clone it, housekeeping names it in the token-expiry alert, and the dashboard links to its issues, journal and strategy. (The dashboard's links to the code take that repository from the deployed code checkout's git remote) |
 | `dashboard.users` | list | Tailscale logins allowed into the dashboard. Empty means nobody |
 | `dashboard.tailscale_port` | int | The port `tailscale serve --https` exposes the dashboard on |
-| `experiment.start_date` | date | Observe-phase day 1. The go-live gate and the scoreboard count from here, and `test_*` classifiers stop running from this date |
+| `experiment.start_date` | date | Observe-phase day 1. The go-live gate, promotion and the scoreboard count from here, and `test_*` classifiers stop running from this date |
 | `schedule.local_tz` | IANA zone | The operator's clock, used by the runner timer and the strategist timers |
 | `schedule.runner_start` | `"HH:MM"` | When the runner starts on weekdays, local time. Keep it safely before 09:30 New York in every daylight-saving week |
 | `schedule.postclose_cutoff` | `"HH:MM"` | Local time: the watchdog's latest deadline for the post-close run |
@@ -136,7 +136,7 @@ host both processes set `TRADER_SECRETS`: the strategist's `trader` command poin
 | `TRADER_DATA_ROOT` | The data checkout holding `config.yaml`, `config/mode.yaml` and the rendered deploy files (the data repository's `main`). Default: the code root. A code checkout has no `config.yaml` of its own, so set this to run `trader` from one |
 | `TRADER_STRATEGIST_ROOT` | The strategist's checkout (`state/`, `features/custom/`). Default: the data root |
 | `TRADER_RUNTIME` | The runner's runtime directory. Default: `runtime/` in the code root |
-| `TRADER_REPLAY_DIR` | Where replays are written. Default: `replay/` in the runtime directory |
+| `TRADER_REPLAY_DIR` | Where replays are written. Default: `replay/` in the runtime directory, which suits a development checkout. On the host the runtime directory is read-only to the strategist, so its `trader` command, `trader-python`, its unit and `services.env` set `/srv/trading/strategist/replays` |
 | `TRADER_SECRETS` | The secrets file to read first |
 | `TRADER_CONFIG` | An alternative `config.yaml`. Default: `config.yaml` in the data root |
 | `TRADER_STRATEGIST_STAMP` | Where the watchdog and the dashboard look for the strategist's last-run stamp (and, beside it, `.last_postclose`). The wrapper always writes `.last_run` in its own checkout, so this only moves where they look; it must point there |

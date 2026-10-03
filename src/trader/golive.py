@@ -22,6 +22,7 @@ import json
 import math
 import statistics
 from dataclasses import dataclass
+from zoneinfo import ZoneInfo
 
 from trader import config
 from trader import guardrails as G
@@ -35,6 +36,13 @@ MIN_LIVE_EQUITY = 100.0
 
 STATE_FILE = config.RUNTIME_DIR / "golive.json"
 PAPER_BOOK = config.RUNTIME_DIR / "books" / "paper"
+ET = ZoneInfo("America/New_York")
+
+
+def session_date() -> dt.date:
+    """Today's date in New York, the session calendar everything here is stamped in. The host's
+    `date.today()` (UTC on the server) is already tomorrow on a US evening."""
+    return dt.datetime.now(ET).date()
 
 
 @dataclass
@@ -54,7 +62,7 @@ class GateResult:
 
 def evaluate_gate(book_dir=PAPER_BOOK, today: dt.date | None = None) -> GateResult:
     """Gate from the paper book's own trade and equity logs. Control classifiers don't count."""
-    today = today or dt.date.today()
+    today = today or session_date()
     closes = []
     tp = book_dir / "trades.csv"
     if tp.exists():
@@ -137,7 +145,9 @@ def spec_hash(spec, custom_digest: str = "") -> str:
 
 
 def shadow_record(classifier: str, since: str, book_dir=PAPER_BOOK) -> tuple[int, float | None]:
-    """(closed paper trades since `since`, mean pnl % after round-trip slippage)."""
+    """(closed paper trades since `since`, mean pnl % after round-trip slippage). Like the gate,
+    nothing before the experiment's start date counts, whenever the current spec started."""
+    since = max(since, START_DATE.isoformat())
     closes = []
     tp = book_dir / "trades.csv"
     if tp.exists():
@@ -155,7 +165,7 @@ def enforce_promotion(specs, notify, account_live: bool, today: dt.date | None =
     but mode/enabled) restarts its record. Non-qualifying `mode: live` specs are downgraded to
     shadow. The record is tracked in paper mode too, so it's ready when the account goes live."""
     state_file = state_file or PROMOTION_FILE
-    today = (today or dt.date.today()).isoformat()
+    today = (today or session_date()).isoformat()
     state = json.loads(state_file.read_text()) if state_file.exists() else {}
     digest = custom_features_digest(custom_dir)
     for s in specs:
@@ -322,7 +332,7 @@ def resolve_mode(notify, live_equity=None, session: dt.date | None = None) -> st
     st = load_state()
     _alert_corrupt_once(st, notify)
     expected = copy.deepcopy(st)
-    day = session or dt.date.today()
+    day = session or session_date()
     if st["status"] == "armed" and st.get("sessions_left", 1) <= 0:
         reasons = _check_gate(st, day, [])  # a new evidence error is named in the disarm alert instead
         if reasons:
@@ -359,13 +369,13 @@ def after_session(notify, live_book_halted: bool = False, session: dt.date | Non
     if st["status"] == "corrupt":
         return st  # no automatic reset to pending: a human should look first (#115)
     expected = copy.deepcopy(st)
-    session = session or dt.date.today()
+    session = session or session_date()
     if st.get("last_session") == session.isoformat():
         return st
     st["last_session"] = session.isoformat()
     notices = []
     if st["status"] == "live" and live_book_halted:
-        st.update(status="demoted", demoted_on=dt.date.today().isoformat())
+        st.update(status="demoted", demoted_on=session.isoformat())
         notices.append(("urgent", "Live book HALTED: back to paper. Going live again needs `trader release-live` after you've cleared the halt."))
     elif st["status"] == "armed":
         reasons = _check_gate(st, session, [])  # a new evidence error is named in the disarm alert instead
@@ -397,7 +407,7 @@ def hold(notify, by: str = "cli") -> str:
         if prev == "corrupt":  # replaced by a clean veto, never merged into it (#115)
             aside = _set_aside_corrupt()
             st = {"corrupt_file": aside} if aside else {}
-        st.update(status="vetoed", vetoed_on=dt.date.today().isoformat(), vetoed_by=by, vetoed_from=prev)
+        st.update(status="vetoed", vetoed_on=session_date().isoformat(), vetoed_by=by, vetoed_from=prev)
         _write_state(st)  # atomic: if it fails, a corrupt file is still in place and still reads corrupt
     notify("urgent", f"Go-live HELD by {by} (was {prev}{f', kept as {aside}' if aside else ''}). "
                      "Paper only until `trader release-live`.")
@@ -406,7 +416,7 @@ def hold(notify, by: str = "cli") -> str:
 
 def release(notify) -> str:
     """Human re-arm after a veto or demotion: restarts the gate evaluation from scratch."""
-    st = {"status": "pending", "released_on": dt.date.today().isoformat()}
+    st = {"status": "pending", "released_on": session_date().isoformat()}
     with _state_lock():
         if load_state()["status"] == "corrupt":
             _set_aside_corrupt()

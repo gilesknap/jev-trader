@@ -6,6 +6,7 @@ rewritten to temp dirs, and `uv`, `systemctl`, `less` and the deployed `trader` 
 what they were asked. Nothing here touches /srv/trading.
 """
 
+import getpass
 import os
 import shlex
 import shutil
@@ -31,9 +32,10 @@ def block(start, end):
 
 
 def helpers(**vars_):
-    """Both function blocks, then variable overrides."""
+    """The function blocks, then variable overrides."""
     out = "set -euo pipefail\n" + block("# --- session lock", "# --- end session lock ---")
     out += block("# --- two-repo helpers", "# --- end two-repo helpers ---")
+    out += block("# --- ownership pre-flight", "# --- end ownership pre-flight ---")
     return out + "".join(f"{k}={shlex.quote(str(v))}\n" for k, v in vars_.items())
 
 
@@ -101,7 +103,7 @@ def test_git_never_pages(tmp_path):
 
 # ---------------------------------------------------------------- unit sources (#169 item 6)
 
-UNIT_SOURCE = {  # every unit file the code ships today, and where the two-repo deploy installs it from
+UNIT_SOURCE = {  # every unit file a deploy installs, and where the two-repo deploy installs it from
     "trader-dashboard.service": "code",
     "trader-dashboard-ssh.service": "code",
     "trader-runner.service": "code",
@@ -113,7 +115,23 @@ UNIT_SOURCE = {  # every unit file the code ships today, and where the two-repo 
 
 def test_unit_source_table_covers_every_unit_the_code_ships():
     shipped = {p.name for p in (ROOT / "deploy" / "systemd").iterdir() if p.suffix in (".service", ".timer")}
-    assert shipped == set(UNIT_SOURCE), "a unit was added or removed: say where it is installed from"
+    from_code = {name for name, src in UNIT_SOURCE.items() if src == "code"}
+    assert shipped == from_code, "a unit was added or removed: say where it is installed from"
+
+
+@pytest.mark.skipif((ROOT / "config.yaml").exists(), reason="a monorepo checkout carries its own data")
+def test_the_code_ships_no_deployment_data():
+    """Rendered files and config live only in each owner's data repo (and templates/data/), never in the code."""
+    for rel in ("config.yaml", "config/mode.yaml", "state", "deploy/systemd/trader.env",
+                *(f"deploy/systemd/{n}" for n, src in UNIT_SOURCE.items() if src == "data")):
+        assert not (ROOT / rel).exists(), f"{rel} belongs in the data repo"
+    assert not list((ROOT / "deploy" / "systemd-trader").glob("*.timer"))
+    if (ROOT / ".git").exists():  # and git ignores a rendered copy by exact name, never the static watchdog timer
+        ignored = subprocess.run(["git", "-C", str(ROOT), "check-ignore", "--no-index", "deploy/systemd/trader-runner.timer",
+                                  "deploy/systemd/trader.env", "deploy/systemd-trader/trader-strategist-weekly.timer",
+                                  "deploy/systemd/trader-watchdog.timer"], capture_output=True, text=True).stdout.split()
+        assert ignored == ["deploy/systemd/trader-runner.timer", "deploy/systemd/trader.env",
+                           "deploy/systemd-trader/trader-strategist-weekly.timer"]
 
 
 def test_each_unit_comes_from_its_named_source_and_services_env_never(tmp_path):
@@ -142,10 +160,12 @@ def test_unit_sources_refuses_when_the_data_lacks_the_runner_timer(tmp_path):
 FAKE_UV = r"""#!/bin/bash
 mode=""; [[ -n "${TRADER_DATA_ROOT:-}" ]] && mode=$(cat "$TRADER_DATA_ROOT/config/mode.yaml" 2>/dev/null)
 echo "uv $* | cwd=$PWD | TRADER_DATA_ROOT=${TRADER_DATA_ROOT:-} | mode=$mode" >> "$FAKE_LOG"
+[[ "$1" == run ]] && env | grep '^TRADER_' | sort > "$FAKE_LOG.testenv"  # everything TRADER_* the tests see
 case "$1" in
     sync) [[ "$PWD" == "${FAKE_CODE_DIR:-}" ]] && exit "${FAKE_SWITCH_SYNC_RC:-0}"  # the switch's sync
           mkdir -p .venv/bin && cp "$FAKE_TRADER" .venv/bin/trader ;;
-    run) exit "${FAKE_PYTEST_RC:-0}" ;;
+    run) [[ -z "${FAKE_DURING_TESTS:-}" ]] || eval "$FAKE_DURING_TESTS"
+         exit "${FAKE_PYTEST_RC:-0}" ;;
 esac
 """
 FAKE_TRADER = r"""#!/bin/bash
@@ -202,7 +222,10 @@ class Rig:
         self.lock = tmp / "trader-home" / "strategist.lock"
         self.scratch = tmp / "scratch"
         self.scratch.mkdir()
-        self.code, self.code_origin = self.repo("code", CODE_FILES)
+        self.tmpdir = tmp / "tmpdir"  # the script's $TMPDIR: every run must leave it empty
+        self.tmpdir.mkdir()
+        # The single-repo layout is a monorepo: its code checkout carries the config too.
+        self.code, self.code_origin = self.repo("code", CODE_FILES if split else CODE_FILES | {"config.yaml": "owner: x\n"})
         (self.code / ".venv" / "bin").mkdir(parents=True)
         shutil.copy(self.bin / "trader", self.code / ".venv" / "bin" / "trader")
         self.config = tmp / "config"
@@ -242,6 +265,7 @@ class Rig:
             ("/srv/trading/runtime", str(self.runtime)),
             ("/home/trader/.config/systemd/user", str(self.trader_units)),
             ("-p /var/tmp", f"-p {self.scratch}"),
+            ("OWNER=runner ", f"OWNER={getpass.getuser()} "),
         ]
         for old, new in subs:
             assert old in text, f"the script no longer contains {old!r}: update the test rig"
@@ -251,7 +275,7 @@ class Rig:
 
     def run(self, *args, answer="yes", **env):
         e = {k: v for k, v in os.environ.items() if not k.startswith(("TRADER_", "GIT_"))} | GIT_ENV | {
-            "HOME": str(self.home), "FAKE_LOG": str(self.log), "FAKE_REVIEW": str(self.review),
+            "HOME": str(self.home), "TMPDIR": str(self.tmpdir), "FAKE_LOG": str(self.log), "FAKE_REVIEW": str(self.review),
             "FAKE_TRADER": str(self.bin / "trader"), "TRADER_DEPLOY_CONFIG_DIR": str(self.config),
             "TRADER_STRATEGIST_LOCK": str(self.lock), "FAKE_CODE_DIR": str(self.code), **{k: str(v) for k, v in env.items()}}
         return subprocess.run(["bash", str(self.script), *args], input=answer + "\n", env=e,
@@ -264,14 +288,20 @@ class Rig:
         return self.review.read_text() if self.review.exists() else ""
 
 
+def leaves_no_temp_files(rig):
+    yield rig
+    left = sorted(p.name for p in rig.tmpdir.iterdir())
+    assert not left, f"trading-deploy leaked temp files: {left}"
+
+
 @pytest.fixture
 def mono(tmp_path):
-    return Rig(tmp_path, split=False)
+    yield from leaves_no_temp_files(Rig(tmp_path, split=False))
 
 
 @pytest.fixture
 def split(tmp_path):
-    return Rig(tmp_path, split=True)
+    yield from leaves_no_temp_files(Rig(tmp_path, split=True))
 
 
 # ---- single-repo layout: what it always did, and never a two-repo step
@@ -293,12 +323,22 @@ def test_single_repo_deploy_is_unchanged_and_never_enters_two_repo_code(mono):
     log = mono.logged()
     assert "config render-deploy" not in log and "trader validate" not in log
     assert all("TRADER_DATA_ROOT= " in ln for ln in log.splitlines() if ln.startswith("uv "))
-    assert f"deploy-plan --repo {mono.code} --base HEAD --target {target}" in log
+    assert f"deploy-plan --repo {mono.code} --base HEAD --target {target} | TRADER_DATA_ROOT= |" in log
     # every unit from the code, the code's own runner timer included, as before
     for name in UNIT_SOURCE:
         assert (mono.units / name).read_text() == f"code {name} v1\n"
     assert not (mono.units / "trader.env").exists()
     assert r.stdout.rstrip().endswith("the runner picks it up at the next session start")
+
+
+def test_single_repo_refuses_code_without_config(mono):
+    """The public code repo deployed without a data checkout: no config.yaml, no runner timer."""
+    git(mono.code_origin, "rm", "-q", "config.yaml")
+    target = mono.push(mono.code_origin, {"src/app.py": "VERSION = 2\n"})
+    for args in ((), ("--dry-run",)):
+        r = mono.run(*args)
+        assert r.returncode == 1 and "has no config.yaml" in r.stderr and "nothing was changed" in r.stderr
+    assert git(mono.code, "rev-parse", "HEAD") != target and mono.logged() == ""
 
 
 def test_single_repo_review_and_typed_yes_as_before(mono):
@@ -312,6 +352,28 @@ def test_single_repo_review_and_typed_yes_as_before(mono):
 def test_single_repo_up_to_date(mono):
     r = mono.run()
     assert r.returncode == 0 and r.stdout.startswith("already at origin/main (")
+
+
+# ---- the candidate tests' environment, in both layouts
+
+LIVE_ENV = {  # what a shell with services.env loaded (or a developer's) might carry into the deploy
+    "TRADER_DATA_ROOT": "/live/config", "TRADER_STRATEGIST_ROOT": "/live/strategist", "TRADER_RUNTIME": "/live/runtime",
+    "TRADER_REPLAY_DIR": "/live/replays", "TRADER_SECRETS": "/live/env", "TRADER_CONFIG": "/live/config.yaml",
+    "TRADER_CODE_ROOT": "/live/code", "TRADER_TEST_DATA_ROOT": "/live/data", "TRADER_STRATEGIST_STAMP": "/live/.last_run",
+}
+
+
+@pytest.mark.parametrize("two_repo", [False, True])
+def test_candidate_tests_run_with_a_clean_trader_environment(tmp_path, two_repo):
+    rig = Rig(tmp_path, split=two_repo)
+    rig.push(rig.code_origin, {"src/app.py": "VERSION = 2\n"})
+    r = rig.run(FAKE_PLAN_OUT="PR 0123456789 #9 merged", **LIVE_ENV)
+    assert r.returncode == 0, r.stdout + r.stderr
+    seen = (tmp_path / "log.testenv").read_text().splitlines()
+    if two_repo:  # only the candidate data, set explicitly
+        assert len(seen) == 1 and seen[0].startswith(f"TRADER_DATA_ROOT={rig.scratch}/")
+    else:
+        assert seen == []
 
 
 # ---- two-repo layout
@@ -340,6 +402,9 @@ def test_two_repo_deploy_switches_both_and_installs_each_unit_from_its_source(sp
     assert f"TRADER_STRATEGIST_ROOT={split.strat}" in v and f"TRADER_RUNTIME={split.runtime}" in v
     assert v.endswith(f"TRADER_SECRETS={split.home}/.config/trading/env")
     assert any(ln.startswith(f"trader deploy-plan --repo {split.config} ") for ln in log)
+    # the deployed code reads the deployed config (it loads config.yaml at import); the code has none
+    plans = [ln for ln in log if ln.startswith("trader deploy-plan")]
+    assert len(plans) == 2 and all(f"TRADER_DATA_ROOT={split.config} |" in ln for ln in plans)
     # throwaway worktrees gone, both checkouts closed to group writes and others
     assert len(git(split.config, "worktree", "list").splitlines()) == 1
     assert len(git(split.code, "worktree", "list").splitlines()) == 1
@@ -513,3 +578,85 @@ def test_failed_tests_name_both_shas_in_two_repo_mode(split):
     split.push(split.data_origin, {"config.yaml": "owner: y\n"})
     r = split.run(FAKE_PYTEST_RC=1)
     assert f"keeps code {old_code[:7]} + data {old_data[:7]}" in r.stderr and "PARTIAL SWITCH" not in r.stderr
+
+
+# ---------------------------------------------------------------- ownership pre-flight
+
+def test_ownership_preflight_passes_when_the_owner_owns_everything(tmp_path):
+    write(tmp_path / "code", {"a/b.txt": "x", ".venv/bin/python": "x"})
+    write(tmp_path / "data", {"config.yaml": "x"})
+    r = bash(helpers(OWNER=getpass.getuser()) + f"foreign_files {tmp_path / 'code'} {tmp_path / 'data'}")
+    assert r.returncode == 0 and r.stdout == r.stderr == ""
+
+
+@needs_non_root
+def test_ownership_preflight_lists_every_foreign_file(tmp_path):
+    """Files nobody but root can make foreign here, so the check is asked for another owner instead."""
+    write(tmp_path / "code", {"a/b.txt": "x"})
+    write(tmp_path / "data", {"config.yaml": "x"})
+    r = bash(helpers(OWNER="root") + f"foreign_files {tmp_path / 'code'} {tmp_path / 'data'}")
+    me = getpass.getuser()
+    assert r.returncode == 1 and "REFUSING" in r.stderr and "nothing was changed" in r.stderr
+    for p in ("code", "code/a", "code/a/b.txt", "data", "data/config.yaml"):
+        assert f"  {me}  {tmp_path / p}\n" in r.stderr
+    assert "sudo chown -h root" in r.stderr
+
+
+@needs_non_root
+def test_ownership_preflight_caps_the_list(tmp_path):
+    write(tmp_path / "code", {f"f{i:03}": "x" for i in range(60)})
+    r = bash(helpers(OWNER="root") + f"foreign_files {tmp_path / 'code'}")
+    assert r.returncode == 1 and r.stderr.count(f"  {getpass.getuser()}  ") == 50 and "... and 11 more" in r.stderr
+
+
+@needs_non_root
+def test_ownership_preflight_refuses_what_it_cannot_check(tmp_path):
+    write(tmp_path / "code", {"locked/f": "x"})
+    (tmp_path / "code" / "locked").chmod(0)
+    try:
+        r = bash(helpers(OWNER=getpass.getuser()) + f"foreign_files {tmp_path / 'code'}")
+    finally:
+        (tmp_path / "code" / "locked").chmod(0o700)
+    assert r.returncode == 1 and "REFUSING" in r.stderr and "Permission denied" in r.stderr
+
+
+def test_ownership_preflight_runs_early_and_again_just_before_the_switch():
+    body = SCRIPT[SCRIPT.index("# --- end ownership pre-flight ---"):]
+    early = body.index('if ! foreign_files "${CHECKOUTS[@]}"')
+    assert body.index("split_layout ||") < early < body.index("git fetch")
+    late = body.index('foreign_files "${CHECKOUTS[@]}" || exit 1')
+    assert body.index("uv run --frozen pytest") < late < body.index("lock_strategist || {") < body.index("lock_switch ||")
+    assert 'CHECKOUTS=("$CODE_DIR"); (( SPLIT )) && CHECKOUTS+=("$CONFIG_DIR")' in body
+
+
+@needs_non_root
+@pytest.mark.parametrize("two_repo", [False, True])
+def test_ownership_preflight_refuses_before_anything_changes(tmp_path, two_repo):
+    rig = Rig(tmp_path, split=two_repo)
+    rig.script.write_text(rig.script.read_text().replace(f"OWNER={getpass.getuser()} ", "OWNER=root ", 1))
+    old_code = git(rig.code, "rev-parse", "HEAD")
+    rig.push(rig.code_origin, {"src/app.py": "VERSION = 2\n"})
+    r = rig.run("--dry-run")
+    assert r.returncode == 0 and "the ownership pre-flight would refuse now" in r.stdout
+    rig.log.unlink()  # the dry run's plan
+    r = rig.run()
+    assert r.returncode == 1 and "REFUSING" in r.stderr and f"  {getpass.getuser()}  {rig.code}\n" in r.stderr
+    assert f"under {rig.code} {rig.config} aren't" in r.stderr if two_repo else f"under {rig.code} aren't" in r.stderr
+    assert git(rig.code, "rev-parse", "HEAD") == old_code and rig.logged() == ""
+
+
+@needs_non_root
+def test_ownership_preflight_catches_a_file_that_appears_during_the_tests(split):
+    """The second check, just before the switch: here a directory runner can't search turns up meanwhile."""
+    old_code, old_data = git(split.code, "rev-parse", "HEAD"), git(split.config, "rev-parse", "HEAD")
+    split.push(split.code_origin, {"src/app.py": "VERSION = 2\n"})
+    split.push(split.data_origin, {"config.yaml": "owner: y\n"})
+    sneak = split.config / "sneaked"
+    try:
+        r = split.run(FAKE_DURING_TESTS=f"mkdir {sneak} && chmod 0 {sneak}")
+    finally:
+        if sneak.exists():
+            sneak.chmod(0o700)
+    assert r.returncode == 1 and "REFUSING" in r.stderr and str(sneak) in r.stderr and "PARTIAL SWITCH" not in r.stderr
+    assert git(split.code, "rev-parse", "HEAD") == old_code and git(split.config, "rev-parse", "HEAD") == old_data
+    assert "uv run --frozen pytest" in split.logged()

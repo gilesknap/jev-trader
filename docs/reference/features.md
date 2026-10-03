@@ -16,8 +16,10 @@ Generated from `src/trader/features/lib.py`:
 ```{include} ../_generated/features.md
 ```
 
-Volume-based features (`rel_volume_15m`) differ in level between live IEX bars and the SIP bars
-replays use. Prefer them as ratios within a session.
+Raw volume differs in level between live IEX bars and the SIP bars replays use, so volume
+features should be ratios. The prior session's bars (`ctx.prev_day`) carry SIP's prices (the
+official close) and the volume of the same feed as today's bars, so `rel_volume_15m` compares
+like with like both live and in replay.
 
 ## Custom features
 
@@ -34,6 +36,11 @@ def my_feature(bars, ctx):
     # ctx.prev_day, ctx.spy, ctx.minutes_since_open, ctx.minutes_to_close
     return float(...)   # dimensionless; NaN if not enough data
 ```
+
+Live IEX bars are sparse (a minute without an IEX trade has no bar), so select windows by
+timestamp rather than counting rows: the library's minute-named features (`ret_*m_pct`, `or15_*`,
+`or30_*`, `rel_volume_15m`) use elapsed exchange time, and its bar-named indicators (`rsi_14`,
+`atr_14_pct`, ...) count bars. `ctx.minutes_since_open` is 1 for the 09:30 bar, live and in the gate.
 
 Rules, enforced by the gate (`src/trader/features/harness.py`) and the sandbox:
 

@@ -12,7 +12,7 @@ read-only to the strategist). The dashboard reads it.
 | `session.lock` | Held (shared) by the runner for the whole session; `trading-deploy` refuses while it's held |
 | `golive.json` | The go-live state: `pending`, `armed`, `live`, `vetoed` or `demoted` |
 | `promotion.json` | Each classifier's spec hash, the date its record started, and its family label |
-| `classifier_state.json` | Today's per-symbol trade counts and retirements, for a mid-session restart |
+| `classifier_state.json` | Today's per-symbol trade counts, retirements and outcome tallies (checks, trigger misses, Jev asked, skips), for a mid-session restart |
 | `alerts.log` | Every alert the runner, watchdog and dashboard sent |
 | `benchmark.csv` | SPY's open and close per session, for the buy-and-hold comparison |
 | `decisions/<date>.jsonl[.gz]` | One line per decision (below). Kept 14 days here; the strategist archives them |
@@ -45,6 +45,7 @@ Each book directory holds:
 | `qty`, `price`, `notional` | The fill |
 | `reason` | Why: `ENTER`, `stop`, `stop (raised)`, `target`, `scale out`, `time stop`, `classifier EXIT`, `eod flatten`, `server stop`, `daily kill switch`, `HALT`, `manual STOP` and so on. `(price estimated)` marks a price the runner couldn't get |
 | `pnl`, `pnl_pct` | On `sell` rows, the whole round trip's P&L, in dollars and as % of its cost. Empty `pnl_pct` means the price was estimated: such a trade counts towards nothing |
+| `model`, `code_sha`, `spec_hash` | Provenance, for splitting results into cohorts: the decision model, the code commit (12 hex) and the classifier's spec hash (as in `promotion.json`). A `sell` or `sell_part` row has the spec hash its position opened under. Blank on rows written before these columns existed, or when unknown |
 
 ## The decisions log
 
@@ -59,6 +60,7 @@ One JSON object per line. Every answered question:
 | `f` | The feature values shown |
 | `pos` | The position state (exit questions) |
 | `px`, `m`, `r` | Probes only: the price, minutes since open and recent returns, so `probe-report` can score them |
+| `mv`, `cv`, `h` | Provenance: the decision model, the code commit and the classifier's spec hash (as on trade rows) |
 
 An `allocation` row records a book-level limit shrinking an entry: `constraint`, `requested`,
 `allowed` and `floor`.

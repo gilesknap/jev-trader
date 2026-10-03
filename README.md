@@ -7,10 +7,46 @@ and by OS user separation. A permanent control strategy and a scoreboard measure
 it beats doing nothing.
 
 > **Warning: this is an experiment, not a product, and it can lose real money.** It trades a
-> real brokerage account once its go-live gate passes. Nothing here is financial advice, and the
+> real brokerage account by itself once its go-live gate passes and a
+> three-session veto window ends. Nothing here is financial advice, and the
 > design assumes a small balance you can afford to lose. Run it on paper first, read how the
 > [money safety](https://gilesknap.github.io/jev-trader/explanations/money-safety.html) works,
 > and keep the live account small.
+
+## Why it's interesting
+
+- **It invents its own strategies.** The strategist reads its results every evening, forms
+  hypotheses, backtests them and writes the next day's classifiers. It labels each idea `novel`
+  or `conventional`. A scoreboard ranks those families against a fixed control strategy, after
+  slippage, and won't call anything an edge until the evidence clears luck. Buy-and-hold SPY
+  runs alongside on the equity chart.
+- **The safety lives in code, not in prompts.** Position limits, stops, the daily kill switch,
+  settled-cash accounting and the go-live gate are enforced by a daemon the strategist can't
+  edit. The strategist's own feature code runs in a sandbox.
+- **It runs itself, and you can still steer it.** Pre-market, post-close and weekly runs happen
+  on timers. You read a weekly retrospective, veto go-live if you disagree, and steer the
+  strategist by talking it through in an ordinary Claude Code session that ends in a pull
+  request.
+
+## What it costs
+
+Very little. The strategist runs on a **$20/month Claude subscription**. The thousands of Jev
+calls a day cost **under $1 a week** through OpenRouter. **Alpaca charges no commission** on US
+stocks and ETFs, and its free IEX feed supplies the market data. Add a small Linux VPS and
+whatever you choose to trade with.
+
+## What it trades
+
+The current scope is deliberately narrow: **long only, intraday** (every position is flat
+before the close), on about 30 liquid US ETFs and mega-cap stocks, in a cash account. No
+shorting, no margin, no options or other derivatives, no crypto. That keeps the risk easy to
+reason about and the results easy to attribute. None of it is fundamental to the design,
+though: the universe is a config file, and the guardrails and broker adapter are ordinary code.
+A fork can widen the scope as far as its owner is comfortable with: see
+[widening the trading scope](https://gilesknap.github.io/jev-trader/how-to/widen-the-scope.html),
+including where the next bills come from (paid real-time market data, for one).
+
+## How it's laid out
 
 The code runs on one Linux host with three accounts: an admin (you), `trader` (the strategist,
 paper keys only) and `runner` (the trading daemon, live keys, no sudo). This public repository

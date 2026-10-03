@@ -108,6 +108,7 @@ details.fold > .inner { padding: 0 16px 14px; }
 .table-wrap { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
 th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--rule); white-space: nowrap; vertical-align: baseline; }
+td.wrap { white-space: normal; min-width: 24em; max-width: 40em; }
 th { color: var(--ink2); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; font-stretch: 85%; }
 td.num, th.num { text-align: right; }
 td.num { font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
@@ -267,13 +268,19 @@ code { font-family: var(--mono); font-size: .9em; }
       <dl class="kv" id="btinfo"></dl>
       <p class="note">A replay over past market data with a pretend account. It can flatter a strategy, so only forward paper results count towards going live.</p></section>
   </div>
+  <section id="sec-read"><h2>Strategist's read on today <span>from its daily journal</span></h2>
+    <details class="about"><summary>About this</summary>
+      <p>The strategist's pre-market run checks futures, news and the day's economic calendar about an hour before the open, and notes what it decided for today. After the close, its review adds what happened. Both are sections of the day's journal entry, shown in full on Strategist's notes.</p></details>
+    <p class="dayline" id="read-day" hidden></p>
+    <div class="md" id="read"><p class="muted">Loading…</p></div></section>
   <section id="sec-positions"><h2>Open positions <span>sold automatically at the stop-loss or target, and 15 min before the close</span></h2>
     <details class="about"><summary>About positions</summary>
       <p>Shares held right now. Each has a <b>stop-loss</b> (sold automatically if the price falls to it) and a <b>target</b> (sold to take the profit). Everything is sold 15 minutes before the US close, so nothing is held overnight.</p></details>
     <div class="table-wrap" id="positions"></div></section>
   <section><h2>Rules right now <span>what each classifier is doing, per stock</span></h2>
     <details class="about"><summary>About the rules</summary>
-      <p>Each classifier watches a few stocks. Every few minutes it asks <b>Jev</b> (a decision model) whether to act, and only acts when Jev's confidence is above the classifier's threshold. The bars show Jev's last answer, tallest first in the label. <b>control_orb</b> is a deliberately simple benchmark the strategist has to beat.</p></details>
+      <p>Each classifier watches a few stocks. Every few minutes it asks <b>Jev</b> (a decision model) whether to act, and only acts when Jev's confidence is above the classifier's threshold. The bars show Jev's last answer, tallest first in the label. <b>control_orb</b> is a deliberately simple benchmark the strategist has to beat.</p>
+      <p>Jev is only asked once a rule's <b>trigger</b> passes (for example, price above the opening range's high). <b>Today so far</b> says how often each stock was checked, how often Jev was asked, and why it wasn't: the trigger didn't pass (with the values the last time it missed), or the check was skipped (stale market data, Jev paused after errors, the account blocked). Hover it for the raw counts. Zero Jev calls on a quiet day is normal when the trigger never passed.</p></details>
     <div class="table-wrap" id="classifiers"></div></section>
 </div>
 
@@ -326,11 +333,12 @@ code { font-family: var(--mono); font-size: .9em; }
 
 <!-- ============ TRADES ============ -->
 <div class="page" id="page-trades" hidden>
-  <section><h2>Recent trades <span>the last 40 fills, newest first, grouped by New York trading day, times in New York time</span></h2>
+  <section><h2>Recent trades <span>all of today's fills and the 40 before them, newest first, grouped by New York trading day, times in New York time</span></h2>
     <details class="about"><summary>About trades</summary>
       <p>Every buy and sell. P&amp;L (profit and loss) appears on the sell that closes a trade. <b>paper</b> is the Alpaca practice account, <b>live</b> is real money, and <b>sim</b> is the pretend account inside a backtest.</p></details>
     <p class="dayline" id="trades-day" hidden></p>
-    <div class="table-wrap" id="trades"></div></section>
+    <div class="table-wrap" id="trades"></div>
+    <p class="note" id="trades-more" hidden></p></section>
 </div>
 
 <!-- ============ NOTES ============ -->
@@ -703,12 +711,17 @@ function render(d) {
           p.map(([k, v]) => `<i class="${v === top ? "top" : ""}" style="height:${Math.max(2, v * 18)}px"></i>`).join("") + "</span>" +
           `<span class="pmeta">${[...p].sort((a, b) => b[1] - a[1]).map(([k, v], i) => i ? `${esc(k)} ${Math.round(v * 100)}%` : `<b>${esc(k)} ${Math.round(v * 100)}%</b>`).join(" · ")}</span>`; } },
     { h: "asked at", v: r => r.x.last_eval || "–", num: 1 }, { h: "note", v: r => r.x.note || "" },
+    // Why Jev was or wasn't asked: the engine's counts for today, summarised by the server.
+    { h: "today so far", raw: 1, cls: () => "wrap", v: r => r.probe || !r.x.why ? "" : `<span class="pmeta" title="${esc(Object.entries(r.x.counts || {}).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(", "))}">${esc(r.x.why)}</span>` },
   ], rows, r => r.first ? "grp" : "", "No rules loaded yet. The runner loads them shortly before the open.");
 
-  const trades = Object.values(d.books).flatMap(b => b.trades).sort((a, b) => b.time.localeCompare(a.time)).slice(0, 40);
+  // The server sends every fill from today (a replay: its last day) and a bounded tail before them, newest first.
+  const trades = d.trades || [];
   const today = d.source === "live" ? nyToday() : null, td = tradeDays(trades, today);
   badge("n-trades", td.nToday);
   $("trades-day").hidden = !td.note; $("trades-day").textContent = td.note;
+  $("trades-more").hidden = !d.trades_omitted;
+  $("trades-more").textContent = `Showing the last ${trades.length} of ${trades.length + (d.trades_omitted || 0)} fills.`;
   const tcols = [
     { h: "NY time", v: r => r.time.slice(11, 16), num: 1 },
     { h: "stock", raw: 1, v: r => `<span class="sym">${esc(r.symbol)}</span>` },
@@ -895,7 +908,7 @@ function renderScore(sb) {
   const b = sb.books[scoreBook];
   $("slipnote").textContent = b.slippage_per_side_pct ? "charged here, as the go-live gate does" : "already in the simulated fills";
   $("bookpick").innerHTML = (names.length > 1 ? `<div class="segs">${names.map(n => `<button data-b="${esc(n)}" class="${n === scoreBook ? "on" : ""}">${esc(n)}</button>`).join("")}</div>` : "") +
-    (scoreBook === "sim" && sb.source === "live" ? '<p class="note">Sim rules, each trading its own simulated $250 account on the live prices. Fills are simulated (the bar close with slippage; stops and targets at their own level), so they flatter a strategy a little, and <b>none of this counts towards going live</b>: a rule has to trade on paper for that.</p>' : "");
+    (scoreBook === "sim" && sb.source === "live" ? '<p class="note">Sim rules, each trading its own simulated $250 account on the live prices. Fills are simulated (the bar close with slippage; stops at their own level), so they flatter a strategy a little, and <b>none of this counts towards going live</b>: a rule has to trade on paper for that.</p>' : "");
   $("bookpick").querySelectorAll("button[data-b]").forEach(x => x.onclick = () => { scoreBook = x.dataset.b; renderScore(sb); });
   $("famtiles").innerHTML = b.families.map(f => `<div class="stat family ${esc(f.family)}"><span class="l">${famBadge(f.family)} ${f.classifiers} rule${f.classifiers === 1 ? "" : "s"} · ${f.n} trades</span>` +
     `<span class="n ci ${cls(f.mean_pct)}" title="average per trade after slippage, with 95% interval">${pp(f.mean_pct)}<small> ± ${f.ci_pct == null || !isFinite(f.ci_pct) ? "–" : Math.abs(f.ci_pct).toFixed(2)}</small></span>` +
@@ -1133,6 +1146,20 @@ function renderOverviewState(h) {
     `<span class="d">${h.decision_errors > 0 ? "failed calls: no decision was made, and new decisions pause for a few minutes after each (details on Today and in the runner log)" : "decision calls that failed"}</span></div>`;
 }
 
+// The latest daily journal entry's Pre-market and Post-close sections (the server extracts them).
+async function renderRead() {
+  const r = await api("/api/today-read");
+  const note = !r.name ? "The strategist hasn't written a daily journal entry yet."
+    : r.is_today ? "" : `No journal entry for today yet. On a trading day the pre-market run writes one about an hour before the open; if it's later than that, the run didn't happen or failed. Showing the latest, from ${dayLabel(r.name.slice(0, 10), r.today)}.`;
+  $("read-day").hidden = !note; $("read-day").textContent = note;
+  if (!r.name) { $("read").innerHTML = ""; return; }
+  const parts = [["premarket", "Pre-market"], ["postclose", "Post-close"]].filter(([k]) => r.sections[k]);
+  $("read").innerHTML = (parts.length ? parts.map(([k, h]) => `<h3>${h}</h3>` + md(r.sections[k])).join("")
+    : '<p class="muted">This entry has no Pre-market or Post-close section.</p>') +
+    `<p class="note"><a href="#notes" id="read-link">Full entry for ${esc(r.name.slice(0, 10))} on Strategist's notes</a></p>`;
+  $("read-link").onclick = e => { e.preventDefault(); docSel = `j:daily/${r.name}`; showPage("notes"); renderDocs().catch(() => {}); };
+}
+
 let docs = null, docSel = "strategy";
 async function renderDocs() {
   docs = await api("/api/docs");
@@ -1158,7 +1185,7 @@ function banner(src, d, h) {
   const b = $("banner");
   $("clock").innerHTML = marketClock();
   // Live-system panels mean nothing inside a finished backtest.
-  for (const id of ["sec-positions", "sec-glance"]) $(id).hidden = src !== "live";
+  for (const id of ["sec-positions", "sec-glance", "sec-read"]) $(id).hidden = src !== "live";
   $("sec-backtest").hidden = src === "live";
   if (src !== "live") {
     const r = SOURCES.replays.find(x => x.id === src) || {};
@@ -1191,6 +1218,7 @@ async function refresh() {
       try { renderProbeResults(r, src); } catch (e) { $("proberesults").innerHTML = `<p class="neg">Couldn't show the probe report: ${esc(e.message)}</p>`; }
     });
     banner(src, d, h);
+    if (src === "live") renderRead().catch(e => { $("read").innerHTML = `<p class="neg">Couldn't read the journal: ${esc(e.message)}</p>`; });
     renderHealth(d, h);
     renderOverviewState(h);
     loadRules();

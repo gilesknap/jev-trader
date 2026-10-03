@@ -23,7 +23,7 @@ from trader import features as F
 from trader import guardrails as G
 from trader.alerts import notify
 from trader.broker import AlpacaBroker
-from trader.data import ET, fetch_alpaca, split_sessions
+from trader.data import ET, fetch_alpaca, prior_sessions, split_sessions
 from trader.engine import Book, Engine, stale_feed
 
 BOOKS_DIR = config.RUNTIME_DIR / "books"
@@ -287,6 +287,31 @@ def tick_bars(engine: Engine, rest: RestBars, live: dict[str, pd.DataFrame], tic
     return bars, live.get("SPY", pd.DataFrame())
 
 
+def prev_day_bars(symbols: list[str], day: dt.date, now: dt.datetime, secrets, alert=notify) -> dict[str, pd.DataFrame]:
+    """The features' prev_day for each symbol: the last session before `day`, with SIP's prices
+    (the official close, for gap and prior-day levels) and IEX's volume, the feed the live bars
+    come from, so volume ratios compare like with like. These feed prev-day features only, so a
+    failed fetch is never a reason to leave positions unmanaged: it alerts and those features
+    are NaN today."""
+    start, end = now - dt.timedelta(days=7), now - dt.timedelta(minutes=16)
+    try:
+        sip = {s: split_sessions(b) for s, b in fetch_alpaca(symbols, start, end, secrets).items()}
+    except Exception as e:
+        alert("urgent", f"could not fetch recent history at startup: {e}; prev-day features are NaN today")
+        return {}
+    try:
+        iex = {s: split_sessions(b) for s, b in fetch_alpaca(symbols, start, end, secrets, feed="iex").items()}
+    except Exception as e:
+        alert("urgent", f"could not fetch recent IEX history at startup: {e}; prior-session volume is NaN today "
+                        "(rel_volume_15m and the like); price levels are unaffected")
+        iex = {}
+    try:
+        return prior_sessions(sip, day, volume_from=iex)
+    except Exception as e:  # never a startup crash loop over context data
+        alert("urgent", f"could not combine prior-session prices and IEX volume: {e!r}; prior-session volume is NaN today")
+        return prior_sessions(sip, day, volume_from={})
+
+
 def _last_resort_flatten(engine: Engine, tick: dt.datetime, bars: dict, minutes_to_close: float) -> None:
     """The tick raised inside the flatten window. Unless it got as far as its own flatten this
     minute, close everything from here (once), then keep the heartbeat fresh: a stale status
@@ -304,6 +329,32 @@ def _last_resort_flatten(engine: Engine, tick: dt.datetime, bars: dict, minutes_
         engine.write_status(tick, minutes_to_close)
     except Exception as e:
         engine._alert_every("eod-status", "urgent", f"status write failed in the flatten window: {e!r}")
+
+
+def count_live_session(mode: str, day: dt.date, live_dir, alert=None) -> None:
+    """The live book's `live_sessions`: the engine trades its first 5 at half size. Every return to
+    live starts a fresh half-size week, whatever the path back (a runner demotion after a live halt,
+    a HOLD LIVE then a re-arm, a `config/mode.yaml` override): a paper session ends the live stint,
+    so it resets the count to 0 (as does `clear_halt("live")`, for a halt forced back live by
+    mode.yaml with no paper session between), and each live session counts once (not per restart). A failed
+    reset never stops a paper session: it alerts, so the human can fix it before the next live one."""
+    p = live_dir / "risk.json"
+    if mode == "live":
+        risk = json.loads(p.read_text()) if p.exists() else {}
+        if risk.get("last_live_session") != day.isoformat():
+            risk.update(live_sessions=risk.get("live_sessions", 0) + 1, last_live_session=day.isoformat())
+            p.parent.mkdir(parents=True, exist_ok=True)
+            _atomic_json(p, risk)
+        return
+    try:
+        risk = json.loads(p.read_text()) if p.exists() else {}
+        if risk.get("live_sessions") or "last_live_session" in risk:
+            risk["live_sessions"] = 0
+            risk.pop("last_live_session", None)  # a same-day return to live counts as its session 1
+            _atomic_json(p, risk)
+    except Exception as e:
+        (alert or notify)("urgent", f"[live] could not reset the half-size week count in {p}: {e!r}. "
+                                    "Set live_sessions to 0 there before the account goes live again.")
 
 
 def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
@@ -348,11 +399,8 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
         live = AlpacaBroker(secrets["ALPACA_LIVE_KEY"], secrets["ALPACA_LIVE_SECRET"], paper=False)
         live_book = Book("live", live, BOOKS_DIR / "live")
         _apply_cashflows(live_book, live)
-        risk = live_book._read_risk()
-        if risk.get("last_live_session") != open_.date().isoformat():  # once per session, not per restart
-            live_book.write_risk(live_sessions=risk.get("live_sessions", 0) + 1,
-                                 last_live_session=open_.date().isoformat())
         books["live"] = live_book
+    count_live_session(mode, open_.date(), BOOKS_DIR / "live", notify)
 
     # Wait for the open; the pre-market strategist run may still be editing classifiers.
     status = config.RUNTIME_DIR / "status.json"
@@ -405,16 +453,7 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
     base, extra = session_symbols(specs, engine.unique_books())
     symbols = base + extra
     now = dt.datetime.now(ET)
-    try:  # yesterday's bars feed prev-day features only: never a reason to leave positions unmanaged
-        hist = fetch_alpaca(base, now - dt.timedelta(days=7), now - dt.timedelta(minutes=16), secrets)
-    except Exception as e:
-        notify("urgent", f"could not fetch recent history at startup: {e}; prev-day features are NaN today")
-        hist = {}
-    prev = {}
-    for s, b in hist.items():
-        per = {d: g for d, g in split_sessions(b).items() if d < open_.date()}
-        if per:
-            prev[s] = per[max(per)]
+    prev = prev_day_bars(base, open_.date(), now, secrets, notify)
     # The opening equity row is stamped at the open, or now if starting later (#50).
     engine.start_day(open_.date(), prev, settled_at_open, opened_at=max(open_, now))
     engine.write_status(now, (close - now).total_seconds() / 60)
@@ -707,6 +746,9 @@ def clear_halt(book: str) -> str:
         return "the runner is running (it holds NAV in memory): retry after it exits after the close; nothing changed"
     risk.update(halted=False)
     risk.pop("reason", None)
+    if book == "live":  # a live halt ends the stint: whatever the path back (even mode.yaml), half size again
+        risk["live_sessions"] = 0
+        risk.pop("last_live_session", None)
     _atomic_json(p, risk)
     nav = NavBook.load(d / "nav.json")
     old = nav.hwm

@@ -27,7 +27,7 @@ market through daylight-saving changes.
 |---|---|
 | `state/strategy.md` | the living thesis: phase, beliefs, what's running and why (rewritten, not appended) |
 | `state/classifiers.yaml` | the next session's classifiers |
-| `state/watchlist.md` | hypotheses not yet traded |
+| `state/watchlist.md` | its hypothesis records, active and rejected (see [Hypotheses and experiments](hypotheses.md)) |
 | `state/steering.md` | the human's steering decisions (read every run, never edited by the strategist) |
 | `features/custom/*.py` | its own feature functions |
 | `journal/daily/`, `journal/weekly/`, `journal/monthly/`, `journal/yearly/` | its journal, compacted over time |
@@ -47,7 +47,7 @@ rather than editing the file (see [Steer the strategist](../how-to/steer-the-str
 ## What it may change
 
 The `strategist` branch may change only `state/`, `journal/`, `features/custom/`, `logs/` and
-`proposals/`. That's enforced by the wrapper, not by trust:
+`proposals/`, and not the human's `state/steering.md`. That's enforced by the wrapper, not by trust:
 
 - Code, the universe, the prompts or the charter: a **proposal**. It clones the deployed code
   from `/srv/trading/main` into scratch space (a clone whose only origin is that local path),
@@ -64,8 +64,9 @@ The `strategist` branch may change only `state/`, `journal/`, `features/custom/`
   the weekly journal, ending with a link comparing the `strategist` branch with last week's, so
   the week's changes to `state/` are one click away. It closes last week's issue, and flags a
   go-live assessment in the title when there is one.
-- Strategy changes need no deploy: the runner reads `state/` and `features/custom/` at each
-  session start. `trader validate` checks them first; a broken classifier file means nothing
+- Strategy changes need no deploy: the runner reads `state/` and `features/custom/` once per
+  session, 2 minutes before the open; an edit made during a session applies only if the runner
+  restarts. `trader validate` checks them first; a broken classifier file means nothing
   trades that day.
 
 ## The wrapper
@@ -127,7 +128,9 @@ a URL), and the settings file is `trader`'s own, so treat them as a reduction, n
 
 The charter sets a mission (beat buy-and-hold SPY on a risk-adjusted basis, net of slippage;
 staying out is a valid position), a weekly exploration mandate (at least one genuinely novel
-hypothesis in shadow or sim, labelled `family: novel`, with failures recorded as findings), and an
+hypothesis in shadow or sim, labelled `family: novel`, or one investigated and rejected before
+trading, with failures recorded as findings), a falsifiable record for every hypothesis with a
+pre-registered decision checkpoint (see [Hypotheses and experiments](hypotheses.md)), and an
 honesty requirement (each week: what it believed that turned out wrong, how paper and live
 diverged, and whether any edge is distinguishable from luck). It also sets research hygiene for
 backtests. Read `CLAUDE.md` in the code for the full text: it is the strategist's operating manual, and the

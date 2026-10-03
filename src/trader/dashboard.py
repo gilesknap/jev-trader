@@ -140,6 +140,89 @@ def _equity_points(rows: list[dict]) -> list:
     return _downsample(out)
 
 
+TRADES_TAIL = 40  # earlier fills sent after the latest day's, so a busy day never pushes its own fills off
+
+
+def recent_trades(rows: list[dict], today: str | None) -> tuple[list[dict], int]:
+    """(fills to show, newest first; how many older ones were left out). Every fill from `today`
+    (the New York date; a replay has none, so its latest day), plus the TRADES_TAIL before them."""
+    rows = sorted((r for r in rows if isinstance(r.get("time"), str)), key=lambda r: r["time"], reverse=True)
+    day = today or (rows[0]["time"][:10] if rows else "")
+    n_day = sum(1 for r in rows if r["time"][:10] >= day)
+    kept = rows[: n_day + TRADES_TAIL]
+    return kept, len(rows) - len(kept)
+
+
+SKIP_REASONS = {  # the engine's skip_* outcomes, as the dashboard says them
+    "feed_stale": "market data stale",
+    "paused": "Jev calls paused after errors",
+    "no_time": "no time left in the minute",
+    "book_blocked": "account blocked (kill switch, STOP or unverified start)",
+    "symbol_busy": "the account already held or was buying the stock",
+    "order_resting": "its limit order was waiting to fill",
+    "unresolved": "its position's exit was being looked up",
+    "position_gone": "its position had closed",
+    "no_bars": "no price bars",
+    "outside_window": "outside its time window",
+}
+
+
+def _times(n: int) -> str:
+    return "once" if n == 1 else "twice" if n == 2 else f"{n} times"
+
+
+def _num_text(v) -> str:
+    return "unavailable" if v is None else f"{v:g}"
+
+
+def why_summary(x: dict) -> str:
+    """One plain-English line on what a rule did with a stock today, from the engine's counts
+    (status.json: classifiers[].symbols[sym].counts and .last_trigger)."""
+    counts = x.get("counts") if isinstance(x.get("counts"), dict) else {}
+    n = {k: v for k, v in counts.items() if isinstance(v, int) and v > 0}
+    checks, no_trig, errors = n.get("checks", 0), n.get("no_trigger", 0), n.get("jev_error", 0)
+    asked = sum(v for k, v in n.items() if k.startswith("asked_"))
+    skips = sorted(((k[5:], v) for k, v in n.items() if k.startswith("skip_")), key=lambda kv: -kv[1])
+    if checks:  # once it has been checked, minutes outside the window say nothing
+        skips = [(k, v) for k, v in skips if k != "outside_window"]
+    if not checks:
+        out = "Not checked yet today."
+    elif asked:
+        out = f"Checked {_times(checks)}; asked Jev {_times(asked)}."
+        if no_trig:
+            out += f" The trigger didn't pass on {no_trig} of the checks."
+    elif no_trig == checks:
+        out = f"Checked {_times(checks)}; the trigger never passed."
+    else:
+        out = f"Checked {_times(checks)}; Jev not asked."
+        if no_trig:
+            out += f" The trigger didn't pass on {no_trig} of them."
+    if errors:
+        out += f" Jev failed to answer {_times(errors)}."
+    if skips:
+        out += " Skipped: " + ", ".join(f"{SKIP_REASONS.get(k, k.replace('_', ' '))} ({v})" for k, v in skips) + "."
+    trig = x.get("last_trigger")
+    if no_trig and isinstance(trig, dict) and isinstance(trig.get("conditions"), list):
+        failed = [c for c in trig["conditions"] if isinstance(c, list) and len(c) == 5 and not c[4]]
+        if failed:
+            out += f" Last miss at {trig.get('at', '?')}: " + "; ".join(
+                f"{f} = {_num_text(v)} (needs {op} {need:g})" for f, op, need, v, _ in failed) + "."
+    return out
+
+
+def _with_why(status: dict | None) -> dict | None:
+    """status.json with a `why` line on each trading rule's stocks (probes are summarised elsewhere)."""
+    for c in (status.get("classifiers") or [] if isinstance(status, dict) else []):
+        if isinstance(c, dict) and c.get("mode") != "probe" and isinstance(c.get("symbols"), dict):
+            for x in c["symbols"].values():
+                if isinstance(x, dict):
+                    try:
+                        x["why"] = why_summary(x)
+                    except (TypeError, ValueError):  # a malformed count is shown as nothing, never an error
+                        x["why"] = ""
+    return status
+
+
 def _age_seconds(path: Path) -> float | None:
     try:
         return round(dt.datetime.now().timestamp() - path.stat().st_mtime)
@@ -281,20 +364,27 @@ def data(source: str = "live"):
         eq = _csv(d / "equity.csv")
         books[d.name] = {
             "equity": _equity_points(eq),
-            "trades": _csv(d / "trades.csv")[-60:],
             "nav": _json(d / "nav.json"),
             "risk": _json(d / "risk.json"),
         }
     sims = _sim_dirs(source)
     if sims:  # every sim account's trades together; each account's own state is in status.json
-        books["sim"] = {"equity": [], "trades": _sim_trades(source)[-60:], "nav": None, "risk": None, "accounts": len(sims)}
+        books["sim"] = {"equity": [], "nav": None, "risk": None, "accounts": len(sims)}
+    today = None
+    if source == "live":
+        from zoneinfo import ZoneInfo
+
+        today = dt.datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+    trades, omitted = recent_trades([r for d in book_dirs for r in _csv(d / "trades.csv")] + _sim_trades(source), today)
     return {
         "source": source,
-        "status": _json(base / "status.json"),
+        "status": _with_why(_json(base / "status.json")),
         "status_age_s": _age_seconds(base / "status.json"),
         "summary": _json(base / "summary.json"),
         "benchmark": _csv(base / "benchmark.csv"),
         "books": books,
+        "trades": trades,
+        "trades_omitted": omitted,
     }
 
 
@@ -339,7 +429,8 @@ def scoreboard(source: str = "live", all_days: bool | None = None):
         from trader.broker import SIM_START_CASH
 
         # Every sim account starts with the same cash, so % of it compares rules fairly. The
-        # simulated fills already include slippage, and none of this counts towards promotion.
+        # simulated fills (market and limit entries, and every exit) already include slippage, and
+        # none of this counts towards promotion.
         books["sim"] = SB.build(_sim_trades(source), families, sim_ids, SIM_START_CASH, since=None,
                                 slippage_per_side_pct=0.0, from_date=from_date)
     return {"source": source, "books": books,
@@ -462,6 +553,51 @@ def journal(kind: str, name: str):
     if kind not in JOURNAL_KINDS or name not in _journal_names(kind):
         raise HTTPException(404, "no such journal entry")
     return {"kind": kind, "name": name, "text": _strategist_text(config.STRATEGIST_ROOT / "journal" / kind / name)}
+
+
+def _ny_today() -> str:
+    """Today's New York date: trading days, trade times and journal entries are all New York dates."""
+    from zoneinfo import ZoneInfo
+
+    return dt.datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+
+
+DAILY_SECTIONS = {"premarket": "Pre-market", "postclose": "Post-close"}  # pinned in prompts/premarket.md, postclose.md
+
+
+def _heading_key(title: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", title.lower())
+
+
+def journal_section(text: str, heading: str) -> str | None:
+    """The body of the first `## <heading>` section, or None. Matched case-insensitively by prefix,
+    ignoring spaces and punctuation, so "## Pre-market (09:05)" and "## Premarket" both match
+    "Pre-market". The section runs to the next `#` or `##` heading."""
+    want, body, fenced = _heading_key(heading), None, False
+    for line in text.splitlines():
+        fenced ^= line.startswith("```")  # a "# comment" in a code block isn't a heading
+        m = None if fenced else re.match(r"(#{1,2})\s+(.*)", line)
+        if m and body is not None:
+            break
+        if m and m.group(1) == "##" and _heading_key(m.group(2)).startswith(want):
+            body = []
+        elif body is not None:
+            body.append(line)
+    return "\n".join(body).strip() if body is not None else None
+
+
+@app.get("/api/today-read")
+def today_read():
+    """The strategist's read on today for the Today page: the Pre-market and Post-close sections of
+    the latest daily journal entry. `is_today` is false when today's entry hasn't been written."""
+    today = _ny_today()
+    names = [n for n in _journal_names("daily") if n[:10] <= today]  # never a misdated future entry
+    if not names:
+        return {"today": today, "name": None, "is_today": False, "sections": {}}
+    name = names[0]
+    text = _strategist_text(config.STRATEGIST_ROOT / "journal" / "daily" / name) or ""
+    return {"today": today, "name": name, "is_today": name == f"{today}.md",
+            "sections": {k: journal_section(text, h) for k, h in DAILY_SECTIONS.items()}}
 
 
 def _strategist_stamp() -> Path:
