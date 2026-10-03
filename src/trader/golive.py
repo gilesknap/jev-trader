@@ -304,14 +304,28 @@ def _write_state(state: dict) -> None:
     tmp.replace(STATE_FILE)
 
 
-def save_state(state: dict, expected: dict | None = None) -> bool:
+def save_state(state: dict, expected: dict | None = None, guard=None) -> bool:
     """Atomic write. With `expected` it's a compare-and-swap: nothing is written (False) if the
-    file changed since it was read, so a HOLD pressed meanwhile always beats an automatic update."""
+    file changed since it was read, so a HOLD pressed meanwhile always beats an automatic update.
+    `guard`: checked under the lock just before the write; a reason (str) means no write (False)."""
     with _state_lock():
         if expected is not None and load_state() != expected:
             return False
+        if guard is not None and guard():
+            return False
         _write_state(state)
     return True
+
+
+def live_book_unready() -> str | None:
+    """Why the live book can't trade, or None: halted, or its risk.json unreadable (fail closed)."""
+    try:
+        p = LIVE_BOOK / "risk.json"
+        if p.exists() and json.loads(p.read_text()).get("halted"):
+            return "the live book is halted"
+    except Exception as e:
+        return f"the live book's risk.json can't be read ({type(e).__name__}: {str(e)[:120]})"
+    return None
 
 
 def override() -> str:
@@ -377,6 +391,12 @@ def resolve_mode(notify, live_equity=None, session: dt.date | None = None) -> st
             _disarm(st, day, reasons, notices)
             _save_then_alert(st, expected, notices, notify)  # a HOLD pressed meanwhile wins: then nothing to say
             return "paper"
+        unready = ("urgent", "Go-live is due but {}. Staying on paper (still armed): clear it with `trader "
+                             "clear-halt live` after the close, and it goes live at the next session start.")
+        why = live_book_unready()
+        if why:  # never switch to a live book that can't trade, however the state got here
+            notify(unready[0], unready[1].format(why))
+            return "paper"
         try:
             eq = live_equity() if live_equity else None
         except Exception as e:
@@ -388,8 +408,11 @@ def resolve_mode(notify, live_equity=None, session: dt.date | None = None) -> st
         st.update(status="live", live_since=day.isoformat())
         going = ("urgent", f"GOING LIVE today with ${eq:.2f} (half size for the first 5 live sessions). To stop today: "
                            "STOP on the dashboard. HOLD LIVE returns to paper from the next session.")
-        if not _save_then_alert(st, expected, [going], notify):
-            return "paper"  # golive.json changed under us (a HOLD, or a release): never go live on a stale read
+        if not _save_then_alert(st, expected, [going], notify, guard=live_book_unready):
+            why = live_book_unready()  # halted since the check above: re-checked under the lock
+            if why:
+                notify(unready[0], unready[1].format(why))
+            return "paper"  # or golive.json changed under us (a HOLD, or a release): never go live on a stale read
     return "live" if st["status"] == "live" else "paper"
 
 
@@ -433,13 +456,13 @@ def after_session(notify, live_book_halted: bool = False, session: dt.date | Non
     return st
 
 
-def _save_then_alert(st: dict, expected: dict, notices: list, notify) -> bool:
+def _save_then_alert(st: dict, expected: dict, notices: list, notify, guard=None) -> bool:
     """The compare-and-swap save of an automatic update, with its alerts saved in it (UNSENT); then
     they're sent and cleared. A crash after the save can't lose them (resend_unsent), and a dropped
     (stale) update sends nothing. True if saved."""
     if notices:  # after any left by a failed earlier send, so neither is lost
         st[UNSENT] = (st.get(UNSENT) or []) + [list(n) for n in notices]
-    if not save_state(st, expected):
+    if not save_state(st, expected, guard):
         st.pop(UNSENT, None)
         return False
     _send_and_clear(st, notify)
@@ -510,17 +533,12 @@ def release(notify) -> str:
     """Human re-arm after a veto or demotion: restarts the gate evaluation from scratch. Refused
     (nothing changed) while the live book is halted, or its risk state can't be read: clear the
     halt first, or go-live could arm and switch to a live book that can't trade."""
-    try:
-        risk = LIVE_BOOK / "risk.json"
-        halted = risk.exists() and json.loads(risk.read_text()).get("halted")
-    except Exception as e:
-        return (f"refused: the live book's risk.json can't be read ({type(e).__name__}: {str(e)[:120]}); "
-                "nothing changed. Fix or remove it, then release again.")
-    if halted:
-        return ("refused: the live book is halted. Clear it first with `trader clear-halt live` (after the "
-                "close), then release again. Nothing changed.")
     st = {"status": "pending", "released_on": session_date().isoformat()}
-    with _state_lock():
+    with _state_lock():  # checked under the lock, so no transition lands between check and write
+        why = live_book_unready()
+        if why:
+            return (f"refused: {why}. Clear it first with `trader clear-halt live` (after the close), then "
+                    "release again. Nothing changed.")
         if load_state()["status"] == "corrupt":
             _set_aside_corrupt()
         _write_state(st)

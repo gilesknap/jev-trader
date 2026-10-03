@@ -452,15 +452,22 @@ def wind_down_live_book(secrets, alert=notify) -> Book | None:
                         "winds down anyway, closing anything it finds after the open")
     if held == [] and not _tracks_anything(d):
         return None  # the usual paper day: no live book, nothing created on disk
+    unmanaged = (f"live positions {held if held is not None else '(unknown)'} are unmanaged today. "
+                 "Check Alpaca now.")
     try:
         book = Book("live", broker, d)
-    except Exception as e:  # its entries/pending files are unreadable: set them aside, close all as untracked
-        aside = _set_aside_tracking(d)
+    except Exception as e:
+        # Only a tracking file that itself won't load is set aside (then everything closes as
+        # untracked); a corrupt nav.json or risk.json leaves the tracking alone for the human.
+        bad = _unloadable_tracking(d)
+        if not bad:
+            alert("urgent", f"[live] paper today, and the live book couldn't be opened ({e!r}): {unmanaged}")
+            return None
+        aside = _set_aside_tracking(d, bad)
         try:
             book = Book("live", broker, d)
         except Exception as e2:
-            alert("urgent", f"[live] paper today, and the live book couldn't be opened ({e2!r}): live positions "
-                            f"{held if held is not None else '(unknown)'} are unmanaged today. Check Alpaca now.")
+            alert("urgent", f"[live] paper today, and the live book couldn't be opened ({e2!r}): {unmanaged}")
             return None
         alert("urgent", f"[live] the live book's tracking files were unreadable ({e!r}); set aside as {aside}. "
                         "Its positions are closed as untracked (no trade rows).")
@@ -472,7 +479,7 @@ def wind_down_live_book(secrets, alert=notify) -> Book | None:
         book.blocked = WIND_DOWN
     tracked = sorted(set(book.entries) | set(book.pending))
     what = (f"still holds {held}" if held else f"still tracks {tracked}" if tracked
-            else "may hold positions (unreadable)")
+            else "may hold positions (unreadable)" if held is None else "holds no positions now")
     alert("urgent", f"[live] paper today, but the live account {what}: closing everything it holds at the first "
                     "minute after the open. No new live trades.")
     return book
@@ -490,11 +497,30 @@ def _tracks_anything(d) -> bool:
     return False
 
 
-def _set_aside_tracking(d) -> list[str]:
-    """Rename the live book's entries/pending files to <name>.corrupt-<time>. Never raises."""
+def _unloadable_tracking(d) -> list[str]:
+    """The live book's tracking files (entries.json, pending.json) that won't load as Book loads them."""
+    from trader.engine import Entry, Pending, _known
+
+    loaders = {"entries.json": lambda o: Entry(**_known(Entry, o | {"time": dt.datetime.fromisoformat(o["time"])})),
+               "pending.json": lambda o: Pending(**_known(Pending, o | {k: dt.datetime.fromisoformat(o[k])
+                                                                         for k in ("placed", "expires")}))}
+    bad = []
+    for name, load in loaders.items():
+        p = d / name
+        try:
+            if p.exists():
+                for o in json.loads(p.read_text()).values():
+                    load(o)
+        except Exception:
+            bad.append(name)
+    return bad
+
+
+def _set_aside_tracking(d, names) -> list[str]:
+    """Rename these live-book tracking files to <name>.corrupt-<time>. Never raises."""
     out = []
     stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
-    for name in ("entries.json", "pending.json"):
+    for name in names:
         p = d / name
         try:
             if p.exists():

@@ -158,3 +158,46 @@ def test_every_trading_client_request_has_a_timeout(monkeypatch):
         with pytest.raises(Stop):
             call()
     assert seen == [15] * 4
+
+
+# ---- never switch to a halted live book -------------------------------------------------
+
+
+def due(book):
+    arm(book, None, sessions_done=golive.VETO_SESSIONS)
+
+
+def test_go_live_waits_while_the_live_book_is_halted(env, tmp_path):
+    book, _ = env
+    due(book)
+    live_risk(tmp_path, {"halted": True})
+    sent = []
+    assert golive.resolve_mode(lambda level, msg: sent.append(msg), lambda: pytest.fail("no equity lookup"),
+                               session=DAYS[20]) == "paper"
+    assert golive.load_state()["status"] == "armed" and len(sent) == 1 and "halted" in sent[0]
+    live_risk(tmp_path, {"halted": False})
+    assert golive.resolve_mode(lambda *a: None, lambda: 1000.0, session=DAYS[21]) == "live"
+
+
+def test_a_halt_landing_before_the_switch_is_caught_under_the_lock(env, tmp_path):
+    book, _ = env
+    due(book)
+    sent = []
+
+    def equity():  # the halt arrives after the first check, before the save
+        live_risk(tmp_path, {"halted": True})
+        return 1000.0
+    assert golive.resolve_mode(lambda level, msg: sent.append(msg), equity, session=DAYS[20]) == "paper"
+    assert golive.load_state()["status"] == "armed"
+    assert len(sent) == 1 and "halted" in sent[0] and not any("GOING LIVE" in m for m in sent)
+
+
+def test_a_hold_between_send_and_clear_is_never_overwritten(env):
+    book, _ = env
+    write_book(book)
+
+    def notify(level, msg):  # a HOLD pressed while the arming alert is going out
+        golive.hold(lambda *a: None, by="test")
+    golive.after_session(notify, session=DAYS[20])
+    st = golive.load_state()
+    assert st["status"] == "vetoed" and golive.UNSENT not in st
