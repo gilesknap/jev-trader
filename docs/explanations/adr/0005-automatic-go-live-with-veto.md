@@ -17,7 +17,7 @@ experiment that runs unattended, but switching to real money shouldn't be invisi
   equity is checked separately, only at the switch.
 - When it passes, go-live **arms**: the human is alerted every session and gets three paper
   sessions to veto it (HOLD LIVE on the dashboard, or `trader hold-live`). Then the account goes
-  live by itself, at half size for its first five live sessions. A live halt demotes it to paper, and only the
+  live by itself, at half size for its first five live sessions (and again after every return to live). A live halt demotes it to paper, and only the
   human can re-arm.
 - `config/mode.yaml` can force `paper` or `live` instead of `auto`.
 - The charter says the gate is a safety floor, not a target. The strategist must never add

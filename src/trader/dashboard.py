@@ -153,6 +153,76 @@ def recent_trades(rows: list[dict], today: str | None) -> tuple[list[dict], int]
     return kept, len(rows) - len(kept)
 
 
+SKIP_REASONS = {  # the engine's skip_* outcomes, as the dashboard says them
+    "feed_stale": "market data stale",
+    "paused": "Jev calls paused after errors",
+    "no_time": "no time left in the minute",
+    "book_blocked": "account blocked (kill switch, STOP or unverified start)",
+    "symbol_busy": "the account already held or was buying the stock",
+    "order_resting": "its limit order was waiting to fill",
+    "unresolved": "its position's exit was being looked up",
+    "position_gone": "its position had closed",
+    "no_bars": "no price bars",
+    "outside_window": "outside its time window",
+}
+
+
+def _times(n: int) -> str:
+    return "once" if n == 1 else "twice" if n == 2 else f"{n} times"
+
+
+def _num_text(v) -> str:
+    return "unavailable" if v is None else f"{v:g}"
+
+
+def why_summary(x: dict) -> str:
+    """One plain-English line on what a rule did with a stock today, from the engine's counts
+    (status.json: classifiers[].symbols[sym].counts and .last_trigger)."""
+    counts = x.get("counts") if isinstance(x.get("counts"), dict) else {}
+    n = {k: v for k, v in counts.items() if isinstance(v, int) and v > 0}
+    checks, no_trig, errors = n.get("checks", 0), n.get("no_trigger", 0), n.get("jev_error", 0)
+    asked = sum(v for k, v in n.items() if k.startswith("asked_"))
+    skips = sorted(((k[5:], v) for k, v in n.items() if k.startswith("skip_")), key=lambda kv: -kv[1])
+    if checks:  # once it has been checked, minutes outside the window say nothing
+        skips = [(k, v) for k, v in skips if k != "outside_window"]
+    if not checks:
+        out = "Not checked yet today."
+    elif asked:
+        out = f"Checked {_times(checks)}; asked Jev {_times(asked)}."
+        if no_trig:
+            out += f" The trigger didn't pass on {no_trig} of the checks."
+    elif no_trig == checks:
+        out = f"Checked {_times(checks)}; the trigger never passed."
+    else:
+        out = f"Checked {_times(checks)}; Jev not asked."
+        if no_trig:
+            out += f" The trigger didn't pass on {no_trig} of them."
+    if errors:
+        out += f" Jev failed to answer {_times(errors)}."
+    if skips:
+        out += " Skipped: " + ", ".join(f"{SKIP_REASONS.get(k, k.replace('_', ' '))} ({v})" for k, v in skips) + "."
+    trig = x.get("last_trigger")
+    if no_trig and isinstance(trig, dict) and isinstance(trig.get("conditions"), list):
+        failed = [c for c in trig["conditions"] if isinstance(c, list) and len(c) == 5 and not c[4]]
+        if failed:
+            out += f" Last miss at {trig.get('at', '?')}: " + "; ".join(
+                f"{f} = {_num_text(v)} (needs {op} {need:g})" for f, op, need, v, _ in failed) + "."
+    return out
+
+
+def _with_why(status: dict | None) -> dict | None:
+    """status.json with a `why` line on each trading rule's stocks (probes are summarised elsewhere)."""
+    for c in (status.get("classifiers") or [] if isinstance(status, dict) else []):
+        if isinstance(c, dict) and c.get("mode") != "probe" and isinstance(c.get("symbols"), dict):
+            for x in c["symbols"].values():
+                if isinstance(x, dict):
+                    try:
+                        x["why"] = why_summary(x)
+                    except (TypeError, ValueError):  # a malformed count is shown as nothing, never an error
+                        x["why"] = ""
+    return status
+
+
 def _age_seconds(path: Path) -> float | None:
     try:
         return round(dt.datetime.now().timestamp() - path.stat().st_mtime)
@@ -309,7 +379,7 @@ def data(source: str = "live"):
     trades, omitted = recent_trades([r for d in book_dirs for r in _csv(d / "trades.csv")] + _sim_trades(source), today)
     return {
         "source": source,
-        "status": _json(base / "status.json"),
+        "status": _with_why(_json(base / "status.json")),
         "status_age_s": _age_seconds(base / "status.json"),
         "summary": _json(base / "summary.json"),
         "benchmark": _csv(base / "benchmark.csv"),

@@ -71,8 +71,8 @@ descriptions of observable conditions.
 An ENTER goes through several gates, each of which can only shrink or skip it:
 
 1. **Size.** `size_fraction` of current equity, or, with `risk_pct`, the size at which a
-   stop-out loses about `risk_pct`% of equity, whichever is smaller. The account's first five live
-   sessions ever run at half size. The result is capped by today's buying power: cash settled at the open, less
+   stop-out loses about `risk_pct`% of equity, whichever is smaller. The first five live sessions
+   after every switch to live run at half size. The result is capped by today's buying power: cash settled at the open, less
    today's buys (sale proceeds settle T+1 in a cash account, and re-using them can cause
    good-faith violations).
 2. **Allocation.** The book-level limits (aggregate planned stop loss, equity exposure and
@@ -103,7 +103,9 @@ filled in is checked only against the stop.) Per bar:
 
 1. **Stop:** the bar's low at or below the stop exits. It's tested first, because the order of
    prices inside a bar is unknown, so the engine assumes the worst.
-2. **Target:** the bar's high at or above the target exits.
+2. **Target:** the bar's high at or above the target exits. No profit order rests at the broker,
+   so this is a market sell once the touch has been seen, at the latest price, not a fill at the
+   target: a high that reverses within the minute is not a profit the engine could have taken.
 3. **Scale-out** (`scale_out: {at_pct, fraction, stop_to_breakeven}`): the first time the high
    reaches `at_pct`% above the entry, `fraction` of the position is sold; with
    `stop_to_breakeven`, the stop rises to the entry price.
