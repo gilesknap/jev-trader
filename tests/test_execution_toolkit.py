@@ -319,22 +319,26 @@ def test_alpaca_move_stop_falls_back_to_cancel_and_replace(monkeypatch):
     def no_replace(oid, req):
         raise RuntimeError("fractional orders can't be replaced")
 
-    monkeypatch.setattr(c, "replace_order_by_id", no_replace)
-    monkeypatch.setattr(c, "submit_order", lambda req: NS(id="s2"))
+    monkeypatch.setattr(c, "replace_order_by_id", no_replace, raising=False)
+    monkeypatch.setattr(c, "submit_order", lambda req: NS(id="s2"), raising=False)
     assert broker(c).move_stop("s1", "SPY", 0.5, 101.0, "x") == "s2" and ("cancel", "s1") in c.calls
 
 
 def test_alpaca_move_stop_keeps_the_old_id_if_it_fired(monkeypatch):
     c = FakeClient()
     c.orders["s1"] = {"status": "filled", "filled_qty": 0.5, "price": 100.4}
-    monkeypatch.setattr(c, "replace_order_by_id", lambda oid, req: (_ for _ in ()).throw(RuntimeError("filled")))
+    monkeypatch.setattr(
+        c, "replace_order_by_id", lambda oid, req: (_ for _ in ()).throw(RuntimeError("filled")), raising=False
+    )
     assert broker(c).move_stop("s1", "SPY", 0.5, 101.0, "x") == "s1"
 
 
 def test_alpaca_scale_out_cancels_the_stop_first_and_defers_if_it_fired(monkeypatch):
     c = FakeClient()
     c.orders["s1"] = {"status": "filled", "filled_qty": 0.5, "price": 99.5}
-    monkeypatch.setattr(c, "submit_order", lambda req: pytest.fail("must not sell when the stop already fired"))
+    monkeypatch.setattr(
+        c, "submit_order", lambda req: pytest.fail("must not sell when the stop already fired"), raising=False
+    )
     assert broker(c).sell_qty("SPY", 0.25, 100.0, None, "x", "s1") is None and ("cancel", "s1") in c.calls
 
 
@@ -492,7 +496,9 @@ def test_sim_limit_needs_a_trade_strictly_below(tmp_path, session):
 def test_exit_found_in_order_history_keeps_its_own_fill_time(monkeypatch):
     c = FakeClient()
     at = dt.datetime(2026, 10, 5, 19, 58, tzinfo=dt.UTC)  # 15:58 ET on the previous session
-    monkeypatch.setattr(c, "get_orders", lambda req: [NS(filled_qty="0.5", filled_avg_price="101", filled_at=at)])
+    monkeypatch.setattr(
+        c, "get_orders", lambda req: [NS(filled_qty="0.5", filled_avg_price="101", filled_at=at)], raising=False
+    )
     f = broker(c).exit_fill_since(
         "SPY", dt.datetime(2026, 10, 5, 10, tzinfo=ET), dt.datetime(2026, 10, 6, 9, 25, tzinfo=ET)
     )

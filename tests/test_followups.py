@@ -97,7 +97,7 @@ def test_exit_fill_since_blends_every_filled_sell(monkeypatch):
         NS(filled_qty="0.3", filled_avg_price="106"),
         NS(filled_qty="0", filled_avg_price=None),
     ]
-    monkeypatch.setattr(c, "get_orders", lambda req: orders)
+    monkeypatch.setattr(c, "get_orders", lambda req: orders, raising=False)
     f = broker(c).exit_fill_since("SPY", dt.datetime(2026, 10, 6, 10, tzinfo=ET), None)
     assert f is not None
     assert abs(f.qty - 0.5) < 1e-12 and abs(f.price - 104.0) < 1e-9

@@ -19,7 +19,8 @@ class APIError(Exception):
 
 
 class FakeClient:
-    """Scripted stand-in for alpaca TradingClient."""
+    """Scripted stand-in for alpaca TradingClient. A test adds the calls it needs that this lacks
+    (submit_order, get_orders, ...) with monkeypatch.setattr(..., raising=False)."""
 
     def __init__(self):
         self.orders = {}
@@ -164,7 +165,7 @@ def test_a_fill_whose_price_is_never_reported_is_unknown_not_the_reference_price
     assert broker(c)._settle("o1") == (1.0, 0.0)
     c.orders["o2"] = {"status": "filled", "filled_qty": 1.0, "price": "0", "script": [{}, {"price": 100.2}]}
     assert broker(c)._settle("o2") == (1.0, 100.2)
-    monkeypatch.setattr(c, "submit_order", lambda req: NS(id="o1"))
+    monkeypatch.setattr(c, "submit_order", lambda req: NS(id="o1"), raising=False)
     fill = broker(c).buy_notional("SPY", 100.0, 101.5, None, "t-SPY-10141000")
     assert (fill.qty, fill.price, fill.order_id, fill.estimated) == (1.0, 0.0, "o1", True)
 

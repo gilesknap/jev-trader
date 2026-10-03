@@ -137,7 +137,7 @@ def test_session_symbols_cover_held_resting_and_unreadable_books(tmp_path):
 def test_session_symbols_stay_within_the_stream_limit(tmp_path):
     # One subscribe over the limit is refused whole: the stream would get no symbols at all.
     book = Book("paper", SimBroker(250.0), tmp_path / "paper")
-    broker_of(book, Broker).positions = {"ZZZZ": Position("ZZZZ", 1.0, 10.0)}
+    broker_of(book, SimBroker).positions = {"ZZZZ": Position("ZZZZ", 1.0, 10.0)}
     book.entries["XLV"] = Entry("removed", 0.5, 100.0, 99.0, 101.0, _at(9, 40))
     names = [f"S{i:02d}" for i in range(STREAM_SYMBOL_LIMIT - 2)]
     alerts = []
