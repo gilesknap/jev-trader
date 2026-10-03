@@ -178,7 +178,8 @@ def _partial_then_stopped(tmp_path, session, swept):
 
 
 @pytest.mark.parametrize("swept", [False, True])
-def test_a_late_fill_after_the_position_closed_is_one_round_trip_and_never_a_guessed_trade(tmp_path, session, swept):
+def test_a_late_fill_after_the_position_closed_is_one_round_trip_and_never_a_guessed_trade(tmp_path, session, swept, monkeypatch):
+    monkeypatch.setattr(golive, "START_DATE", dt.date(2000, 1, 1))  # its trades predate the pinned start date
     book, eng, br = _partial_then_stopped(tmp_path, session, swept)
     t = rows(tmp_path)
     assert list(t.side) == ["buy", "sell"] and list(t.reason) == ["ENTER", "stop"]  # no second entry, no guessed sell
@@ -219,7 +220,8 @@ def test_shares_booked_just_before_a_crash_are_adopted_not_orphan_sold(tmp_path,
     assert book2.buys_today == pytest.approx(0.1 * 99.95) and eng2.states[0].symbols["SPY"].trades == 1
 
 
-def test_an_exit_at_a_guessed_price_is_not_gate_or_promotion_evidence(tmp_path):
+def test_an_exit_at_a_guessed_price_is_not_gate_or_promotion_evidence(tmp_path, monkeypatch):
+    monkeypatch.setattr(golive, "START_DATE", dt.date(2000, 1, 1))  # its trades predate the pinned start date
     book, eng = make(tmp_path, [spec()])
     now = dt.datetime(2026, 9, 21, 10, 0, tzinfo=ET)
     eng.start_day(now.date(), {})
@@ -319,7 +321,8 @@ def test_an_unpriced_market_fill_takes_the_positions_average_cost_at_once(tmp_pa
     assert list(rows(tmp_path).reason) == ["ENTER"] and book.buys_today == pytest.approx(0.5 * 100.03)
 
 
-def test_an_unpriced_market_fill_with_no_cost_is_protected_at_a_guess_that_is_not_evidence(tmp_path, session):
+def test_an_unpriced_market_fill_with_no_cost_is_protected_at_a_guess_that_is_not_evidence(tmp_path, session, monkeypatch):
+    monkeypatch.setattr(golive, "START_DATE", dt.date(2000, 1, 1))  # its trades predate the pinned start date
     bars, br, book, eng = _unpriced(tmp_path, session, 0.0)
     e = book.entries["SPY"]
     assert not book.pending and e.price == 100.0 and e.stop_id == "s1" and e.price_estimated  # the last price

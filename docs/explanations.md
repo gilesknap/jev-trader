@@ -13,5 +13,6 @@ explanations/evidence
 explanations/strategist
 explanations/limitations
 explanations/design
+explanations/adr
 explanations/related-work
 ```

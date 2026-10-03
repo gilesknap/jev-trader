@@ -140,6 +140,19 @@ def _equity_points(rows: list[dict]) -> list:
     return _downsample(out)
 
 
+TRADES_TAIL = 40  # earlier fills sent after the latest day's, so a busy day never pushes its own fills off
+
+
+def recent_trades(rows: list[dict], today: str | None) -> tuple[list[dict], int]:
+    """(fills to show, newest first; how many older ones were left out). Every fill from `today`
+    (the New York date; a replay has none, so its latest day), plus the TRADES_TAIL before them."""
+    rows = sorted((r for r in rows if isinstance(r.get("time"), str)), key=lambda r: r["time"], reverse=True)
+    day = today or (rows[0]["time"][:10] if rows else "")
+    n_day = sum(1 for r in rows if r["time"][:10] >= day)
+    kept = rows[: n_day + TRADES_TAIL]
+    return kept, len(rows) - len(kept)
+
+
 def _age_seconds(path: Path) -> float | None:
     try:
         return round(dt.datetime.now().timestamp() - path.stat().st_mtime)
@@ -281,13 +294,18 @@ def data(source: str = "live"):
         eq = _csv(d / "equity.csv")
         books[d.name] = {
             "equity": _equity_points(eq),
-            "trades": _csv(d / "trades.csv")[-60:],
             "nav": _json(d / "nav.json"),
             "risk": _json(d / "risk.json"),
         }
     sims = _sim_dirs(source)
     if sims:  # every sim account's trades together; each account's own state is in status.json
-        books["sim"] = {"equity": [], "trades": _sim_trades(source)[-60:], "nav": None, "risk": None, "accounts": len(sims)}
+        books["sim"] = {"equity": [], "nav": None, "risk": None, "accounts": len(sims)}
+    today = None
+    if source == "live":
+        from zoneinfo import ZoneInfo
+
+        today = dt.datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+    trades, omitted = recent_trades([r for d in book_dirs for r in _csv(d / "trades.csv")] + _sim_trades(source), today)
     return {
         "source": source,
         "status": _json(base / "status.json"),
@@ -295,6 +313,8 @@ def data(source: str = "live"):
         "summary": _json(base / "summary.json"),
         "benchmark": _csv(base / "benchmark.csv"),
         "books": books,
+        "trades": trades,
+        "trades_omitted": omitted,
     }
 
 
@@ -462,6 +482,51 @@ def journal(kind: str, name: str):
     if kind not in JOURNAL_KINDS or name not in _journal_names(kind):
         raise HTTPException(404, "no such journal entry")
     return {"kind": kind, "name": name, "text": _strategist_text(config.STRATEGIST_ROOT / "journal" / kind / name)}
+
+
+def _ny_today() -> str:
+    """Today's New York date: trading days, trade times and journal entries are all New York dates."""
+    from zoneinfo import ZoneInfo
+
+    return dt.datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+
+
+DAILY_SECTIONS = {"premarket": "Pre-market", "postclose": "Post-close"}  # pinned in prompts/premarket.md, postclose.md
+
+
+def _heading_key(title: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", title.lower())
+
+
+def journal_section(text: str, heading: str) -> str | None:
+    """The body of the first `## <heading>` section, or None. Matched case-insensitively by prefix,
+    ignoring spaces and punctuation, so "## Pre-market (09:05)" and "## Premarket" both match
+    "Pre-market". The section runs to the next `#` or `##` heading."""
+    want, body, fenced = _heading_key(heading), None, False
+    for line in text.splitlines():
+        fenced ^= line.startswith("```")  # a "# comment" in a code block isn't a heading
+        m = None if fenced else re.match(r"(#{1,2})\s+(.*)", line)
+        if m and body is not None:
+            break
+        if m and m.group(1) == "##" and _heading_key(m.group(2)).startswith(want):
+            body = []
+        elif body is not None:
+            body.append(line)
+    return "\n".join(body).strip() if body is not None else None
+
+
+@app.get("/api/today-read")
+def today_read():
+    """The strategist's read on today for the Today page: the Pre-market and Post-close sections of
+    the latest daily journal entry. `is_today` is false when today's entry hasn't been written."""
+    today = _ny_today()
+    names = [n for n in _journal_names("daily") if n[:10] <= today]  # never a misdated future entry
+    if not names:
+        return {"today": today, "name": None, "is_today": False, "sections": {}}
+    name = names[0]
+    text = _strategist_text(config.STRATEGIST_ROOT / "journal" / "daily" / name) or ""
+    return {"today": today, "name": name, "is_today": name == f"{today}.md",
+            "sections": {k: journal_section(text, h) for k, h in DAILY_SECTIONS.items()}}
 
 
 def _strategist_stamp() -> Path:

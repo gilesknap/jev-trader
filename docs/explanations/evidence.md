@@ -13,7 +13,7 @@ real money, from its own logs with thresholds the strategist can't change.
 | Sim trades (`mode: sim`) | no | no | separate "sim" board |
 | Probe decisions (`mode: probe`) | no | no | no (Probes page) |
 | Replays (backtests) | no | no | per replay |
-| Paper trades before `experiment.start_date` | no | only if on the current spec | hidden unless asked |
+| Paper trades before `experiment.start_date` | no | no | hidden unless asked |
 | Round trips logged `(price estimated)` | no | no | no |
 
 All judgements are made after a slippage haircut of 0.05% a side (0.1% a round trip) on broker
