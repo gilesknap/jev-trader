@@ -103,7 +103,10 @@ and HOLD LIVE works from any state too, including demoted and corrupt.
   and no automatic transition over it until a human HOLDs or releases.
 - `config/mode.yaml` set to `paper` or `live` overrides all of this.
 
-`trader golive` prints the current state and the gate's numbers.
+`trader golive` prints the current state and the gate's numbers. The
+[rule lifecycle](design.md#rule-lifecycle) table in the design sets these account states beside
+each classifier's modes: who moves each one, on what evidence, where it is stored and when it
+takes effect.
 
 ## Promotion to `mode: live`
 
