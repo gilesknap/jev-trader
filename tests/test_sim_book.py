@@ -184,3 +184,18 @@ def test_stale_sim_positions_are_closed_at_startup_even_without_a_rule(tmp_path,
     # Today's positions are the engine's business, not the reconciler's.
     runner.reconcile_sim_accounts(tmp_path / "sim", dt.date(2026, 9, 22), lambda *a: None, tmp_path / "q")
     assert len(_trades(tmp_path / "sim" / "gone")) == 2
+
+
+def test_a_sim_account_sells_a_target_at_the_bar_close_never_the_next_open(tmp_path, session):
+    """Only a replay sets next_open: a live sim account, like paper, sells a target touch at
+    market at the close it has seen, never at the target level and never at a future bar."""
+    bars = session(path=[100.0] * 390)
+    bars.iloc[10, bars.columns.get_loc("high")] = 101.5  # 09:40 spikes through the 1% target
+    bars.iloc[11, bars.columns.get_loc("open")] = 99.0   # a future price the account must not see
+    book = Book("sim:t", PersistentSimBroker(tmp_path / "acct.json"), tmp_path / "sim")
+    _run(tmp_path, bars, [spec()], {"live": book, "shadow": book})
+    assert book.broker.next_open == {}
+    t = _trades(tmp_path / "sim")
+    sell = t[t.side == "sell"].iloc[0]
+    assert sell.reason == "target" and sell.time.startswith("2026-09-21T09:41")
+    assert sell.price == pytest.approx(100.0 * (1 - 0.0005))

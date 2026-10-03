@@ -376,7 +376,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--days", type=int, default=5)
     s.add_argument("--source", default="alpaca", choices=["alpaca", "yfinance"])
     s.add_argument("--decider", default="jev", choices=["jev", "stub"])
-    s.add_argument("--cash", type=float, default=250.0)
+    s.add_argument("--cash", type=float, help="starting cash (default: capital.replay_cash in config.yaml)")
     s.add_argument("--pace", type=float, default=0.0, help="seconds to sleep per simulated minute")
     s.add_argument("--name", help="run id (default: timestamp)")
     s.set_defaults(fn=cmd_replay)

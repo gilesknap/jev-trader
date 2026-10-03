@@ -276,6 +276,13 @@ class SymbolState:
     last_choice: str = ""
     last_probs: dict[str, float] = field(default_factory=dict)
     note: str = ""
+    # Today's outcomes, for the dashboard's "why wasn't Jev called" (see Engine._run_classifiers):
+    # outcome -> count, and the trigger's values the last time it failed.
+    counts: dict[str, int] = field(default_factory=dict)
+    last_trigger: dict | None = None
+
+    def count(self, outcome: str) -> None:
+        self.counts[outcome] = self.counts.get(outcome, 0) + 1
 
 
 @dataclass
