@@ -6,7 +6,11 @@ has none for a while. Features named in minutes (`ret_5m_pct`, `or15_*`, `rel_vo
 are therefore defined on elapsed exchange time, never on counting rows: the opening range is
 the bars labelled before 09:45, and a return over n minutes compares the price now with the
 price n minutes ago. A price is carried forward over missing minutes (no trade, no new price)
-for at most STALE_MIN minutes; beyond that the return is NaN (unavailable). Indicators named
+for at most STALE_MIN minutes; beyond that the return is NaN (unavailable). Likewise every
+level feature that compares the current price with something (`or*_break_pct`,
+`or15_low_dist_pct`, `vwap_dist_pct`, `ret_since_open_pct`, `rel_spy_since_open_pct`,
+`range_pos`, `prev_*_dist_pct`) is NaN while the latest price is older than that, so a
+halted or thin symbol's last print never passes for the current price. Indicators named
 in bars (`rsi_14`, `atr_14_pct`, `ema_9_21_diff_pct`, `realized_vol_30m_pct`,
 `trend_slope_30m`) count the bars there are."""
 
@@ -46,6 +50,12 @@ def _close_at(bars: pd.DataFrame, t: pd.Timestamp) -> float:
     if i == 0 or bars.index[i - 1] < t - STALE_MIN * MINUTE:
         return NAN
     return float(bars.close.iloc[i - 1])
+
+
+def _price(bars: pd.DataFrame, ctx) -> float:
+    """The current price: the latest close, NaN once it is older than STALE_MIN minutes (a
+    halted or thin symbol), so no level feature compares a stale print with anything."""
+    return _close_at(bars, _now(bars, ctx)) if len(bars) else NAN
 
 
 def _ret(bars: pd.DataFrame, ctx, n: int) -> float:
@@ -100,7 +110,7 @@ def ret_30m(bars, ctx):
 @feature("ret_since_open_pct")
 def ret_since_open(bars, ctx):
     """% change from today's first open to the latest close."""
-    return (bars.close.iloc[-1] / bars.open.iloc[0] - 1) * 100 if len(bars) else NAN
+    return (_price(bars, ctx) / bars.open.iloc[0] - 1) * 100 if len(bars) else NAN
 
 
 @feature("gap_pct")
@@ -115,7 +125,7 @@ def gap(bars, ctx):
 def vwap_dist(bars, ctx):
     """% above (negative: below) today's volume-weighted average price."""
     v = _vwap(bars)
-    return (bars.close.iloc[-1] / v - 1) * 100 if v == v else NAN
+    return (_price(bars, ctx) / v - 1) * 100 if v == v else NAN
 
 
 def _opening_range(bars, ctx, minutes, ready_at):
@@ -133,12 +143,12 @@ def _opening_range(bars, ctx, minutes, ready_at):
 
 def _or_break(bars, ctx, minutes):
     rng = _opening_range(bars, ctx, minutes, minutes)  # from the first bar after the range
-    return (bars.close.iloc[-1] / rng[0] - 1) * 100 if rng else NAN
+    return (_price(bars, ctx) / rng[0] - 1) * 100 if rng else NAN
 
 
 def _or_breakdown(bars, ctx, minutes):
     rng = _opening_range(bars, ctx, minutes, minutes)
-    return (bars.close.iloc[-1] / rng[1] - 1) * 100 if rng else NAN
+    return (_price(bars, ctx) / rng[1] - 1) * 100 if rng else NAN
 
 
 @feature("or15_break_pct")
@@ -206,7 +216,10 @@ def atr14(bars, ctx):
 def range_pos(bars, ctx):
     """Where the close sits in today's high-low range, 0..1."""
     hi, lo = bars.high.max(), bars.low.min()
-    return float((bars.close.iloc[-1] - lo) / (hi - lo)) if hi > lo else 0.5
+    px = _price(bars, ctx)
+    if px != px:
+        return NAN
+    return float((px - lo) / (hi - lo)) if hi > lo else 0.5
 
 
 @feature("rel_spy_since_open_pct")
@@ -253,7 +266,7 @@ def prev_high(bars, ctx):
     """% above (negative: below) the previous session's high."""
     if ctx.prev_day.empty:
         return NAN
-    return (bars.close.iloc[-1] / ctx.prev_day.high.max() - 1) * 100
+    return (_price(bars, ctx) / ctx.prev_day.high.max() - 1) * 100
 
 
 @feature("prev_low_dist_pct")
@@ -261,7 +274,7 @@ def prev_low(bars, ctx):
     """% above (negative: below) the previous session's low."""
     if ctx.prev_day.empty:
         return NAN
-    return (bars.close.iloc[-1] / ctx.prev_day.low.min() - 1) * 100
+    return (_price(bars, ctx) / ctx.prev_day.low.min() - 1) * 100
 
 
 @feature("minutes_since_open")
