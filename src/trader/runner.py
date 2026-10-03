@@ -887,7 +887,7 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
             f"{sum(s['trades'] for s in sims.values())} trades"
         )
     halted = "live" in books and books["live"] is not books["shadow"] and books["live"].blocked == "halt"
-    st = golive.after_session(notify, live_book_halted=halted, session=open_.date())
+    st = golive.after_session(notify, live_book_halted=halted, session=open_.date(), live_equity=live_equity)
     if st["status"] == "pending" and st.get("last_gate"):
         parts.append(
             "go-live gate: " + ", ".join(st["last_gate"]["blocking"])
