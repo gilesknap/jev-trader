@@ -8,12 +8,16 @@ asks two questions per probe and horizon:
    averaged across days. Rows from the same day (overlapping horizons, correlated symbols)
    are far from independent, so the day is the unit of evidence and t is mean/se over days.
 2. Does Jev add anything over its own inputs? A plain (ridge) linear model of the forward return on
-   everything Jev was shown (the features, minutes since open and the last ten 1-minute
-   returns) is fitted walk-forward (days before d only, scored on day d), with and without
-   P(ENTER) as an extra input. If adding Jev doesn't lift the out-of-sample IC, its inputs
-   alone carry whatever signal there is and a deterministic rule would do. A lift is weaker
-   evidence: a linear model is a low bar, so it says Jev combines its inputs usefully, not
-   that no rule could.
+   everything Jev was shown (the symbol, the features, minutes since open and the last ten
+   1-minute returns) is fitted walk-forward (days before d only, scored on day d), with and
+   without P(ENTER) as an extra input. Both are fitted and scored on exactly the same rows and
+   days, and `jev_increment` is the paired per-day difference in IC (with Jev minus without)
+   with a 95% interval. Only an interval above zero says Jev adds something its inputs don't;
+   one below zero says Jev does worse than its inputs alone; anything else is "inconclusive:
+   no detectable incremental value", which is not proof that a plain rule would do. The test
+   is per probe and horizon, so a few readings will disagree by chance. And a linear model is
+   a low bar: a lift says Jev combines its inputs usefully, not that no rule could, nor that
+   it trades better.
 
 Forward returns run from the close the question was asked at, to the close `h` minutes later,
 cut off at the end-of-day flatten (close - 15 min, from the exchange calendar: 15:45 ET, or
@@ -35,6 +39,7 @@ import pandas as pd
 from trader.data import ET
 from trader.features.lib import STALE_MIN
 from trader.market_calendar import Calendar
+from trader.stats import t95
 
 SLIPPAGE_ROUND_TRIP_PCT = 0.1  # 0.05% a side, as everywhere else
 MIN_DAYS_TO_FIT = 3  # walk-forward baselines start once this many earlier days exist
@@ -143,26 +148,71 @@ def _day_stat(ics: list[float]) -> dict:
     return {"mean": round(m, 4), "t": None if t is None else round(float(t), 2), "days": len(v)}
 
 
-def _walk_forward_ic(g: pd.DataFrame, cols: list[str], y: str) -> dict:
-    """Per-day out-of-sample IC of a ridge regression fitted only on earlier days. The ridge
-    penalty keeps a dozen inputs over a few hundred noisy rows from fitting noise."""
+def _ridge_ic(train: pd.DataFrame, test: pd.DataFrame, cols: list[str], y: str) -> float:
+    """Out-of-sample IC on `test` of a ridge regression fitted on `train`. The ridge penalty keeps
+    a dozen inputs over a few hundred noisy rows from fitting noise. The symbol is an input as
+    one 0/1 column per symbol seen in training (a symbol first seen on the test day gets none),
+    so a ticker effect Jev can see is open to the baseline too. Dummies are scaled by their
+    training sd like every other input (but not centred, so an unseen symbol sits on the
+    intercept): under one shared penalty, a rare symbol's effect would otherwise be shrunk far
+    more than the same effect carried by P(ENTER), and Jev would get credit for the ticker."""
+    syms = sorted(train.s.unique()) if "s" in train and train.s.nunique() > 1 else []
+    mu, sd = train[cols].mean(), train[cols].std().replace(0, 1)
+    dsd = [(train.s == s).to_numpy(float).std(ddof=1) or 1.0 for s in syms]
+
+    def design(df):
+        return np.c_[np.ones(len(df)), ((df[cols] - mu) / sd).to_numpy(),
+                     *[(df.s == s).to_numpy(float) / k for s, k in zip(syms, dsd, strict=True)]]
+
+    X = design(train)
+    pen = RIDGE * len(train) * np.eye(X.shape[1])
+    pen[0, 0] = 0.0  # never shrink the intercept
+    beta = np.linalg.solve(X.T @ X + pen, X.T @ train[y].to_numpy())
+    return _spearman(pd.Series(design(test) @ beta, index=test.index), test[y])
+
+
+def _walk_forward(g: pd.DataFrame, cols: list[str], y: str) -> dict:
+    """Per-day out-of-sample IC with only Jev's inputs and with P(ENTER) added, each fitted on
+    earlier days only. Both use exactly the same rows (any missing input drops the row from
+    both) and the same days, so their per-day difference is a fair pairing."""
+    need = cols + ["p_enter", y]
+    g = g.dropna(subset=need)
     days = sorted(g.day.unique())
-    ics = []
+    base, plus = [], []
     for i, d in enumerate(days):
         if i < MIN_DAYS_TO_FIT:
             continue
-        train = g[g.day.isin(days[:i])].dropna(subset=cols + [y])
-        test = g[g.day == d].dropna(subset=cols + [y])
-        if len(train) < 5 * (len(cols) + 1) or len(test) < 5:
+        train, test = g[g.day.isin(days[:i])], g[g.day == d]
+        # Five rows per coefficient of the larger (with-Jev) model, symbol dummies included.
+        if len(train) < 5 * (len(cols) + 2 + train.s.nunique()) or len(test) < 5:
             continue
-        mu, sd = train[cols].mean(), train[cols].std().replace(0, 1)
-        X = np.c_[np.ones(len(train)), ((train[cols] - mu) / sd).to_numpy()]
-        pen = RIDGE * len(train) * np.eye(X.shape[1])
-        pen[0, 0] = 0.0  # never shrink the intercept
-        beta = np.linalg.solve(X.T @ X + pen, X.T @ train[y].to_numpy())
-        pred = np.c_[np.ones(len(test)), ((test[cols] - mu) / sd).to_numpy()] @ beta
-        ics.append(_spearman(pd.Series(pred, index=test.index), test[y]))
-    return _day_stat(ics)
+        b, p = _ridge_ic(train, test, cols, y), _ridge_ic(train, test, cols + ["p_enter"], y)
+        if math.isfinite(b) and math.isfinite(p):
+            base.append(b)
+            plus.append(p)
+    return {"wf_inputs_only": _day_stat(base), "wf_inputs_plus_jev": _day_stat(plus),
+            "jev_increment": _increment([p - b for b, p in zip(base, plus, strict=True)])}
+
+
+def _increment(deltas: list[float]) -> dict:
+    """Mean per-day IC gain from adding Jev, with a 95% interval across days and a verdict that
+    is allowed to say "inconclusive"."""
+    n = len(deltas)
+    m = float(np.mean(deltas)) if n else None
+    sd = float(np.std(deltas, ddof=1)) if n > 1 else 0.0
+    half = float(t95(n - 1) * sd / math.sqrt(n)) if n >= MIN_DAYS_FOR_T and sd > 1e-9 else None  # identical deltas: fp dust
+    if n < MIN_DAYS_FOR_T:
+        verdict = f"inconclusive: too few days ({n})"
+    elif half is None:
+        verdict = "inconclusive: no spread across days"
+    elif m - half > 0:
+        verdict = "Jev adds to its inputs: 95% interval above zero"
+    elif m + half < 0:
+        verdict = "Jev does worse than its inputs alone: 95% interval below zero"
+    else:
+        verdict = "inconclusive: no detectable incremental value"
+    return {"mean": None if m is None else round(m, 4), "ci95": None if half is None else round(half, 4),
+            "days": n, "verdict": verdict}
 
 
 def _bins(p: pd.Series, y: pd.Series, n: int = 5) -> list[dict] | None:
@@ -205,8 +255,7 @@ def score(rows: pd.DataFrame, horizons: list[int], thresholds: dict[str, float] 
                 "by_p_enter": _bins(gg.p_enter, gg[y]),
                 "jev_ic": _day_stat([_spearman(d.p_enter, d[y]) for _, d in gg.groupby("day")]),
                 "feature_ic": {k[2:]: _day_stat([_spearman(d[k], d[y]) for _, d in gg.groupby("day")]) for k in feats},
-                "wf_inputs_only": _walk_forward_ic(gg, inputs, y) if inputs else None,
-                "wf_inputs_plus_jev": _walk_forward_ic(gg, inputs + ["p_enter"], y),
+                **_walk_forward(gg, inputs, y),
             }
         report[c] = out
     return report

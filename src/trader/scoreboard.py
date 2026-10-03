@@ -22,23 +22,14 @@ import math
 import statistics
 
 from trader.golive import MIN_TRADES, SLIPPAGE_PER_SIDE_PCT, START_DATE
+from trader.stats import (
+    t95,
+)
 
 MIN_TO_JUDGE = 10  # below this many closed trades, don't even show a verdict on the sign
 MIN_DAYS = 3  # ...or this many distinct trading days
 FAMILIES = ("novel", "conventional", "control", "unlabelled")
 EXPERIMENT_START = START_DATE  # the live board, like the go-live gate, ignores earlier test sessions
-
-# Two-sided 95% Student-t critical values by degrees of freedom; 1.96 beyond the table.
-_T95 = {1: 12.71, 2: 4.30, 3: 3.18, 4: 2.78, 5: 2.57, 6: 2.45, 7: 2.36, 8: 2.31, 9: 2.26,
-        10: 2.23, 12: 2.18, 15: 2.13, 20: 2.09, 25: 2.06, 30: 2.04, 60: 2.00, 120: 1.98}
-
-
-def t95(df: float) -> float:
-    if df < 1:
-        return math.inf
-    keys = [k for k in _T95 if k <= df]
-    return _T95[max(keys)] if df <= 120 else 1.96
-
 
 def _num(v, default=0.0):
     try:
