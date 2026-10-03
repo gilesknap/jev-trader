@@ -360,6 +360,7 @@ def sources():
 def data(source: str = "live"):
     base, book_dirs = _source_dir(source)
     books = {}
+    bench = _csv(base / "benchmark.csv")
     for d in book_dirs:
         eq = _csv(d / "equity.csv")
         books[d.name] = {
@@ -415,6 +416,7 @@ def scoreboard(source: str = "live", all_days: bool | None = None):
         all_days = dt.datetime.now(ZoneInfo("America/New_York")).date() < SB.EXPERIMENT_START
     from_date = SB.EXPERIMENT_START.isoformat() if source == "live" and not all_days else None
     books = {}
+    bench = _csv(base / "benchmark.csv")
     for d in book_dirs:
         eq = _csv(d / "equity.csv")
         # On the live board sim classifiers trade only their own accounts, so they're listed under "sim".
@@ -423,7 +425,7 @@ def scoreboard(source: str = "live", all_days: bool | None = None):
             _csv(d / "trades.csv"), families, current, _num(eq[0].get("equity")) if eq else None,
             since=since if d.name == "paper" else None,  # the promotion record is kept on paper
             slippage_per_side_pct=SB.SLIPPAGE_PER_SIDE_PCT if source == "live" else 0.0,  # sim fills include it
-            from_date=from_date,
+            from_date=from_date, equity=eq, benchmark=bench,
         )
     if _sim_dirs(source) or (source == "live" and sim_ids):
         from trader.broker import SIM_START_CASH

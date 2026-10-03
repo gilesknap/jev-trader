@@ -115,6 +115,18 @@ def load_custom_inprocess(directory: Path) -> tuple[list[str], dict[str, str]]:
     return loaded, errors
 
 
+def _session_clock(bars: pd.DataFrame) -> tuple[list[float], float]:
+    """Each bar's minutes_since_open (1 for the 09:30 bar) and the session's length in minutes,
+    from the sample's own last bar (samples are cut at their close: 210 for a 13:00 close, 390
+    for a full session). Worked out once per session, never per bar."""
+    if bars.empty:
+        return [], 390.0
+    first = bars.index[0]
+    open_ = first.replace(hour=9, minute=30, second=0, microsecond=0, nanosecond=0)
+    minute = [float(m) for m in (bars.index - open_) // pd.Timedelta(minutes=1) + 1]
+    return minute, minute[-1]
+
+
 def evaluate(names: list[str], sessions: list[tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]]) -> dict[str, str]:
     """sessions: (bars, prev_day, spy) per day. Returns name -> error for failures."""
     errors = {}
@@ -124,9 +136,10 @@ def evaluate(names: list[str], sessions: list[tuple[pd.DataFrame, pd.DataFrame, 
         elapsed = 0.0
         try:
             for bars, prev, spy in sessions:
+                minute, length = _session_clock(bars)
                 for i in range(30, len(bars)):
-                    # As the engine sees bar i: minute i + 1 of the session (the first bar is 1).
-                    ctx = F.FeatureContext(prev, spy.iloc[: i + 1], i + 1, 390 - (i + 1))
+                    # As the engine sees bar i at the tick after it: minute 1 is the 09:30 bar.
+                    ctx = F.FeatureContext(prev, spy.iloc[: i + 1], minute[i], length - minute[i])
                     t = time.perf_counter()
                     v = fn(bars.iloc[: i + 1], ctx)
                     elapsed += time.perf_counter() - t

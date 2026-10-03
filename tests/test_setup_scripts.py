@@ -382,17 +382,8 @@ TRADER_CODE_ROOT={ROOT} exec {sys.executable} -m trader.cli "$@"
 
 
 def template_config():
-    """The data template's config.yaml: templates/data/main's when this tree has it, else this
-    tree's config.yaml with the starter's placeholders (as sync-starter.sh writes them)."""
-    tpl = ROOT / "templates" / "data" / "main" / "config.yaml"
-    if tpl.exists():
-        return tpl.read_text()
-    raw = yaml.safe_load((ROOT / "config.yaml").read_text())
-    raw["owner"].update(name="Your Name", github_repo="your-github-user/your-data-repo")
-    raw["dashboard"]["users"] = []
-    raw["experiment"]["start_date"] = "2099-01-05"
-    raw["schedule"]["runner_start"] = str(raw["schedule"]["runner_start"])
-    return "# TEMPLATE: set owner, dashboard.users and experiment.start_date\n" + yaml.safe_dump(raw, sort_keys=False)
+    """The data template's config.yaml (the code repo carries no config.yaml of its own)."""
+    return (ROOT / "templates" / "data" / "main" / "config.yaml").read_text()
 
 
 @pytest.fixture

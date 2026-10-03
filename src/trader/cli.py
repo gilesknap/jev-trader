@@ -26,7 +26,7 @@ def _gate_samples(source: str = "alpaca"):
     from trader.replay import load_sessions
 
     secrets = config.load_secrets()
-    end = dt.date.today() - dt.timedelta(days=1)
+    end = config.ny_today() - dt.timedelta(days=1)
     # Count sessions, not calendar days: a run of holidays (or a data gap) can leave a short
     # window with too few sessions, and an empty sample set would reject every custom feature.
     for lookback in (7, 21, 60):
@@ -87,7 +87,7 @@ def cmd_validate(a):
         from trader.golive import START_DATE
 
         plumbing = [s.id for s in specs if s.id.startswith("test_")]
-        if plumbing and dt.date.today() >= START_DATE:  # the runner drops these: say so before it happens
+        if plumbing and config.ny_today() >= START_DATE:  # the runner drops these: say so before it happens
             raise ValueError(f"the test_ prefix is reserved for pre-launch plumbing and the runner ignores it "
                              f"from {START_DATE}: rename or remove {plumbing}")
         print(f"classifiers OK: {[s.id for s in specs]}")
@@ -110,7 +110,7 @@ def cmd_replay(a):
     if a.only:
         specs = [s for s in specs if s.id in a.only.split(",")]
     run_dir = config.REPLAY_DIR / run_id
-    end = dt.date.fromisoformat(a.end) if a.end else dt.date.today() - dt.timedelta(days=1)
+    end = dt.date.fromisoformat(a.end) if a.end else config.ny_today() - dt.timedelta(days=1)
     start = dt.date.fromisoformat(a.start) if a.start else end - dt.timedelta(days=a.days)
     summary = replay(
         specs, start, end, _decider(a.decider, secrets), set(config.universe()), run_dir,
@@ -126,13 +126,14 @@ def cmd_probe_report(a):
     from trader import probe
     from trader.classifier import ClassifierSpec
     from trader.data import ET, fetch, split_sessions
+    from trader.market_calendar import load_calendar
 
     if a.replay:
         dirs = [config.REPLAY_DIR / a.replay / "decisions"]
     else:
         dirs = [config.RUNTIME_DIR / "decisions", config.STRATEGIST_ROOT / "logs" / "decisions"]
     end = dt.date.fromisoformat(a.end) if a.end else None
-    start = dt.date.fromisoformat(a.start) if a.start else (None if a.replay else (end or dt.date.today()) - dt.timedelta(days=a.days))
+    start = dt.date.fromisoformat(a.start) if a.start else (None if a.replay else (end or config.ny_today()) - dt.timedelta(days=a.days))
     only = set(a.only.split(",")) if a.only else None
     rows = probe.load_rows(probe.decision_files(dirs, start, end), only)
     if rows.empty:
@@ -143,8 +144,10 @@ def cmd_probe_report(a):
     # SIP's most recent 15 minutes aren't on the free plan: stop short of them during a session.
     t1 = min(dt.datetime.combine(days[-1] + dt.timedelta(days=1), dt.time(0), ET),
              dt.datetime.now(ET) - dt.timedelta(minutes=16))
-    raw = fetch(sorted(rows.s.unique()), t0, t1, config.load_secrets(), "alpaca")
-    rows = probe.forward_returns(rows, {s: split_sessions(b) for s, b in raw.items()}, horizons)
+    secrets = config.load_secrets()
+    calendar = load_calendar(secrets, days[0], days[-1])  # early closes cut horizons at their own flatten
+    raw = fetch(sorted(rows.s.unique()), t0, t1, secrets, "alpaca")
+    rows = probe.forward_returns(rows, {s: calendar.trim(split_sessions(b)) for s, b in raw.items()}, horizons, calendar)
     thresholds = {}
     try:  # each spec on its own, so one bad spec doesn't cost the others their thresholds
         raw = (yaml.safe_load(Path(a.file).read_text()) or {}).get("classifiers") or []
@@ -315,6 +318,28 @@ def cmd_golive_status(a):
                       "gate_now": gate}, indent=1, default=str))
 
 
+def cmd_daily_returns(a):
+    """Each book's daily returns vs SPY (scoreboard.daily), for the weekly review. Read-only."""
+    import csv
+
+    from trader import scoreboard as SB
+
+    def rows(p: Path) -> list[dict]:
+        try:
+            with p.open(newline="") as f:
+                return list(csv.DictReader(f))
+        except OSError:
+            return []
+
+    books = config.RUNTIME_DIR / "books"
+    bench = rows(config.RUNTIME_DIR / "benchmark.csv")
+    since = a.since or SB.EXPERIMENT_START.isoformat()
+    out = {}
+    for d in sorted(p for p in books.glob("*") if (p / "equity.csv").exists()):
+        out[d.name] = SB.daily(rows(d / "equity.csv"), bench, rows(d / "trades.csv"), since)
+    print(json.dumps({"since": since, "books": out}, indent=1))
+
+
 def cmd_housekeeping(a):
     from trader.housekeeping import run
 
@@ -419,6 +444,10 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("golive", help="show go-live gate and state")
     s.set_defaults(fn=cmd_golive_status)
 
+    s = sub.add_parser("daily-returns", help="each book's daily returns, drawdown and exposure vs SPY (read-only)")
+    s.add_argument("--since", type=lambda v: dt.date.fromisoformat(v).isoformat(),
+                   help="first day to include, YYYY-MM-DD (default: the experiment's start date)")
+    s.set_defaults(fn=cmd_daily_returns)
     s = sub.add_parser("housekeeping", help="daily checks: API credit, token expiry, undeployed merges, disk")
     s.set_defaults(fn=cmd_housekeeping)
 

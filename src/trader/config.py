@@ -208,6 +208,12 @@ def load_settings(path: Path | None = None) -> Settings:
 SETTINGS = load_settings()
 
 
+def ny_today() -> dt.date:
+    """Today's date in New York: sessions, trade times and the go-live record are all New York
+    dates. The host's `date.today()` is UTC on the server, already tomorrow on a US evening."""
+    return dt.datetime.now(ZoneInfo("America/New_York")).date()
+
+
 def setting(key: str, settings: Settings | None = None):
     """A dotted key from config.yaml (e.g. `schedule.strategist.premarket`), for the CLI and templates."""
     node = (settings or SETTINGS).model_dump(mode="json")
