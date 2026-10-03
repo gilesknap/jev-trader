@@ -658,3 +658,72 @@ def test_survivor_alert_says_when_origin_cannot_be_checked(sandbox):
     assert sandbox.run("weekly").returncode == 1
     alerts = sandbox.read("alerts")
     assert "could NOT revert" in alerts and "Could not check origin/strategist" in alerts
+
+
+# ---- human-owned files inside the allowed dirs (#201) ----
+
+def push_steering(s, text="S1 human\n"):
+    git(s.seed, "fetch", "-q", "origin", env=s.env)
+    git(s.seed, "checkout", "-q", "-B", "strategist", "origin/strategist", env=s.env)
+    (s.seed / "state" / "steering.md").write_text(text)
+    git(s.seed, "add", "-A", env=s.env)
+    git(s.seed, "commit", "-qm", "steering", env=s.env)
+    git(s.seed, "push", "-q", "origin", "strategist", env=s.env)
+
+
+@pytest.mark.parametrize("mode", ["monorepo", "split"])
+def test_steering_edit_is_reverted_and_the_human_merge_is_kept(tmp_path, mode):
+    # The human's steering arrives between runs; the run's edit to it is reverted, its other strategy
+    # changes publish.
+    s = make_sandbox(tmp_path, split=mode == "split")
+    push_steering(s)
+    fake_claude(s, "echo mine >> state/steering.md\necho n > state/n.md\n")
+    r = s.run("weekly")
+    assert r.returncode == 0, r.stderr
+    assert "touched non-strategy paths (reverted): state/steering.md" in s.read("alerts")
+    assert (s.repo / "state" / "steering.md").read_text() == "S1 human\n"
+    assert git(s.repo, "status", "--porcelain") == ""
+    assert origin_show(s, "state/steering.md") == "S1 human\n"
+    assert "state/n.md" in origin_files(s)
+
+
+@pytest.mark.parametrize("mode", ["monorepo", "split"])
+def test_steering_created_or_deleted_by_the_run_is_reverted(tmp_path, mode):
+    s = make_sandbox(tmp_path, split=mode == "split")
+    fake_claude(s, "echo mine > state/steering.md\n")
+    assert s.run("weekly").returncode == 0
+    assert "(reverted): state/steering.md" in s.read("alerts")
+    assert "state/steering.md" not in origin_files(s)
+
+    s2 = make_sandbox(tmp_path / "b", split=mode == "split")
+    push_steering(s2)
+    fake_claude(s2, "rm state/steering.md\n")
+    assert s2.run("weekly").returncode == 0
+    assert "(reverted): state/steering.md" in s2.read("alerts")
+    assert origin_show(s2, "state/steering.md") == "S1 human\n"
+
+
+def test_steering_edit_the_run_pushed_itself_is_reverted_on_origin(sandbox):
+    push_steering(sandbox)
+    fake_claude(sandbox, """echo mine >> state/steering.md
+echo n > state/n.md
+git add -A && git commit -qm "model commit" && git push -q origin strategist
+""")
+    assert sandbox.run("premarket").returncode == 0
+    alerts = sandbox.read("alerts")
+    assert "pushed non-strategy paths to origin/strategist (reverted): state/steering.md" in alerts
+    assert "NOT reverted" not in alerts
+    assert origin_show(sandbox, "state/steering.md") == "S1 human\n"
+    assert "state/n.md" in origin_files(sandbox)
+
+
+def test_human_steering_pushed_during_a_run_is_kept_and_named(sandbox):
+    # Merging during a run is against the how-to; the wrapper keeps the human's commit and says so.
+    fake_claude(sandbox, f"""echo n > state/n.md
+cd {sandbox.seed} && git fetch -q origin && git checkout -q -B strategist origin/strategist
+echo human > state/steering.md && git add -A && git commit -qm "human steering" && git push -q origin strategist
+""")
+    assert sandbox.run("premarket").returncode == 0
+    alerts = sandbox.read("alerts")
+    assert "NOT reverted" in alerts and "state/steering.md" in alerts
+    assert origin_show(sandbox, "state/steering.md") == "human\n"

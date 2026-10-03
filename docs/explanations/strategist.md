@@ -47,7 +47,7 @@ rather than editing the file (see [Steer the strategist](../how-to/steer-the-str
 ## What it may change
 
 The `strategist` branch may change only `state/`, `journal/`, `features/custom/`, `logs/` and
-`proposals/`. That's enforced by the wrapper, not by trust:
+`proposals/`, and not the human's `state/steering.md`. That's enforced by the wrapper, not by trust:
 
 - Code, the universe, the prompts or the charter: a **proposal**. It clones the deployed code
   from `/srv/trading/main` into scratch space (a clone whose only origin is that local path),

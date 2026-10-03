@@ -50,7 +50,7 @@ This charter is in your system prompt: it comes from the deployed code, so you d
 The runner enforces all of this, whatever `classifiers.yaml` says. Design **inside** the limits.
 
 ## What you may edit
-On branch `strategist` of your private data repo you may edit only `state/`, `journal/`, `features/custom/`, `logs/` and `proposals/`. The wrapper reverts anything else and alerts the human.
+On branch `strategist` of your private data repo you may edit only `state/`, `journal/`, `features/custom/`, `logs/` and `proposals/`, except `state/steering.md`. The wrapper reverts anything else and alerts the human.
 - Don't commit or push `strategist` yourself: the wrapper path-checks, commits and pushes it after your run.
 - Changes to code, the universe, prompts or this charter are **proposals**: a patch series the human reviews and applies to the code repo. You can't open code PRs.
   - Clone the deployed code into scratch space: `git -c safe.directory=/srv/trading/main/.git clone -q --no-hardlinks /srv/trading/main ~/work/<topic>` (for a local clone git checks ownership on the `.git` directory, so that is the spelling that works). Its origin is a local path; never add another remote, and don't add a global `safe.directory`.

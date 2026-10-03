@@ -166,6 +166,12 @@ fi
 git checkout -q strategist >>"$LOG" 2>&1 || alert "strategist $KIND: left repo off the strategist branch"
 ALLOWED='^(state/|journal/|features/custom/|logs/)'
 if [[ -n "$SPLIT" ]]; then ALLOWED='^(state/|journal/|features/custom/|logs/|proposals/)'; fi
+# Human-owned files inside the allowed dirs: the strategist reads them but may not change them, so
+# the path check treats them as outside (#201). state/steering.md is the human's steering.
+HUMAN_OWNED='^state/steering\.md$'
+is_allowed() { [[ $1 =~ $ALLOWED && ! $1 =~ $HUMAN_OWNED ]]; }
+# Filter a newline-separated path list on stdin down to the paths outside the strategy paths.
+outside_only() { local p; while IFS= read -r p || [[ -n $p ]]; do is_allowed "$p" || printf '%s\n' "$p"; done; }
 POST=$(git rev-parse HEAD)
 # Undo any commits the run made itself, so everything goes through the path check below.
 [[ "$POST" != "$PRE" ]] && git reset -q --soft "$PRE"
@@ -185,7 +191,7 @@ outside_paths() {
         xy=${rec:0:2}; path=${rec:3}; orig=""
         if [[ $xy == *[RC]* ]]; then IFS= read -r -d '' orig || rc=1; fi
         for p in "$path" ${orig:+"$orig"}; do
-            [[ $p =~ $ALLOWED ]] && continue
+            is_allowed "$p" && continue
             OUT_ALL+=("$p")
             if [[ $xy == '??' ]]; then OUT_UNTRACKED+=("$p"); else OUT_TRACKED+=("$p"); fi
         done
@@ -202,7 +208,7 @@ origin_note() {
     local diff out
     if git fetch -q origin strategist >>"$LOG" 2>&1 \
         && diff=$(git diff --name-only --no-renames "$PRE" refs/remotes/origin/strategist 2>>"$LOG"); then
-        mapfile -t out < <(printf '%s' "$diff" | grep -Ev "$ALLOWED")
+        mapfile -t out < <(printf '%s' "$diff" | outside_only)
         (( ${#out[@]} )) && printf ' Also, origin/strategist differs from the run'\''s start outside strategy paths (NOT reverted; pushed by the run, or by a human during it): %s' "$(joined "${out[@]}")"
     else
         printf ' Could not check origin/strategist for pushed non-strategy paths.'
@@ -247,7 +253,7 @@ git fetch -q origin strategist >>"$LOG" 2>&1
 REMOTE=$(git rev-parse -q --verify refs/remotes/origin/strategist) || REMOTE=$PRE
 BASE=$(git merge-base "$POST" "$REMOTE" 2>/dev/null) || BASE=$PRE
 git merge-base --is-ancestor "$PRE" "$BASE" 2>/dev/null || BASE=$PRE
-PUSHED_OUTSIDE=$(git diff --name-only --no-renames "$PRE" "$BASE" | grep -Ev "$ALLOWED" || true)
+PUSHED_OUTSIDE=$(git diff --name-only --no-renames "$PRE" "$BASE" | outside_only)
 [[ -n "$PUSHED_OUTSIDE" ]] && alert "strategist $KIND pushed non-strategy paths to origin/strategist (reverted): $(echo $PUSHED_OUTSIDE | head -c 300)"
 TREE=$(git write-tree)
 if [[ "$TREE" != "$(git rev-parse "$BASE^{tree}")" ]]; then
@@ -264,7 +270,7 @@ fi
 # Invariant: strategist differs from the run's start only under the allowed paths. The rebase
 # above trusts origin, so a pushed commit the run later amended, reset away or force-pushed
 # over would otherwise stay there unnoticed.
-LEAKED=$(git diff --name-only --no-renames "$PRE" HEAD | grep -Ev "$ALLOWED" || true)
+LEAKED=$(git diff --name-only --no-renames "$PRE" HEAD | outside_only)
 [[ -n "$LEAKED" ]] && alert "strategist $KIND: strategist now differs from the run's start outside strategy paths (NOT reverted; a human push during the run, or the run pushed then rewrote its history): $(echo $LEAKED | head -c 300)"
 touch "$REPO/.last_run"
 [[ "$KIND" == postclose ]] && touch "$REPO/.last_postclose"
