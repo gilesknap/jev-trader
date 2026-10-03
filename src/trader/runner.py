@@ -23,7 +23,7 @@ from trader import features as F
 from trader import guardrails as G
 from trader.alerts import notify
 from trader.broker import AlpacaBroker
-from trader.data import ET, fetch_alpaca, prior_sessions, split_sessions
+from trader.data import ET, fetch_alpaca, gate_samples, prior_sessions, split_sessions
 from trader.engine import Book, Engine, stale_feed
 from trader.market_calendar import Calendar, fetch_calendar, session_from_row
 
@@ -169,21 +169,11 @@ def _load_specs(file, secrets, calendar: Calendar | None = None):
 
     calendar = calendar or Calendar()
     end = dt.datetime.now(ET) - dt.timedelta(minutes=20)
-    try:
-        raw = _fetch_within(STARTUP_FETCH_TIMEOUT_S, ["SPY", "QQQ"], end - dt.timedelta(days=7), end, secrets)
-        spy, qqq = calendar.trim(split_sessions(raw["SPY"])), calendar.trim(split_sessions(raw["QQQ"]))
-        days = sorted(spy)[-3:]
-        samples = [(per[d], per[days[i - 1]], spy[d]) for per in (spy, qqq) for i, d in enumerate(days) if i and d in per and days[i - 1] in per]
-    except Exception as e:  # no samples: every custom feature fails the gate, library-only rules still trade
-        notify("urgent", f"could not fetch the custom-feature gate's sample sessions ({e!r}): custom features "
-                         "are rejected today")
-        samples = []
-        report_note = " (the gate had no sample sessions)"
-    else:
-        report_note = ""
+    samples = gate_samples(lambda days: {s: calendar.trim(split_sessions(b)) for s, b in _fetch_within(
+        STARTUP_FETCH_TIMEOUT_S, ["SPY", "QQQ"], end - dt.timedelta(days=days), end, secrets).items()})
     report = run_gate(config.CUSTOM_FEATURES_DIR, samples, alert=notify)
     if report.errors:
-        notify("urgent", f"Custom features rejected{report_note}: {report.errors}")
+        notify("urgent", f"Custom features rejected: {report.errors}")
     specs, dropped = load_specs_report(file, F.known_features(), set(config.universe()))
     _alert_dropped(dropped)
     return specs

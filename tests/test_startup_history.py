@@ -71,19 +71,16 @@ def test_a_symbol_missing_from_iex_alone_is_named_for_its_volume(monkeypatch):
     assert len(alerts) == 1 and alerts[0][0] == "info" and "['BBB']" in alerts[0][1]
 
 
-def test_the_gate_samples_fetch_failing_rejects_custom_features_but_still_loads_the_file(monkeypatch, tmp_path):
-    import trader.classifier
+def test_a_hung_gate_sample_fetch_is_given_up_on(monkeypatch, hang):
+    """Bounded, not swallowed: like any gate-sample failure it fails the file loudly (see
+    test_runner_gate_samples), but it can no longer hold the session start indefinitely."""
     import trader.features.harness
 
-    seen = {}
-    monkeypatch.setattr(runner, "fetch_alpaca", lambda *a, **k: (_ for _ in ()).throw(ConnectionError("503")))
-    monkeypatch.setattr(trader.features.harness, "run_gate", lambda d, samples, alert=None: seen.update(samples=samples)
-                        or type("R", (), {"errors": {}})())
-    monkeypatch.setattr(trader.classifier, "load_specs_report", lambda *a, **k: (["spec"], {}))
-    alerts = []
-    monkeypatch.setattr(runner, "notify", lambda level, msg, **k: alerts.append(msg))
-    assert runner._load_specs(tmp_path / "c.yaml", {}) == ["spec"]
-    assert seen["samples"] == [] and any("gate's sample sessions" in a and "ConnectionError" in a for a in alerts)
+    monkeypatch.setattr(runner, "STARTUP_FETCH_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(runner, "fetch_alpaca", hang)
+    monkeypatch.setattr(trader.features.harness, "run_gate", lambda *a, **k: pytest.fail("gated without samples"))
+    with pytest.raises(TimeoutError):
+        runner._load_specs("unused.yaml", {})
 
 
 OPEN = dt.datetime.combine(DAY, dt.time(9, 30), ET)
