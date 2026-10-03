@@ -136,7 +136,7 @@ host both processes set `TRADER_SECRETS`: the strategist's `trader` command poin
 | `TRADER_DATA_ROOT` | The data checkout holding `config.yaml`, `config/mode.yaml` and the rendered deploy files (the data repository's `main`). Default: the code root. A code checkout has no `config.yaml` of its own, so set this to run `trader` from one |
 | `TRADER_STRATEGIST_ROOT` | The strategist's checkout (`state/`, `features/custom/`). Default: the data root |
 | `TRADER_RUNTIME` | The runner's runtime directory. Default: `runtime/` in the code root |
-| `TRADER_REPLAY_DIR` | Where replays are written. Default: `replay/` in the runtime directory |
+| `TRADER_REPLAY_DIR` | Where replays are written. Default: `replay/` in the runtime directory, which suits a development checkout. On the host the runtime directory is read-only to the strategist, so its `trader` command, `trader-python`, its unit and `services.env` set `/srv/trading/strategist/replays` |
 | `TRADER_SECRETS` | The secrets file to read first |
 | `TRADER_CONFIG` | An alternative `config.yaml`. Default: `config.yaml` in the data root |
 | `TRADER_STRATEGIST_STAMP` | Where the watchdog and the dashboard look for the strategist's last-run stamp (and, beside it, `.last_postclose`). The wrapper always writes `.last_run` in its own checkout, so this only moves where they look; it must point there |
