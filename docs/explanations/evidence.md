@@ -13,7 +13,7 @@ real money, from its own logs with thresholds the strategist can't change.
 | Sim trades (`mode: sim`) | no | no | separate "sim" board |
 | Probe decisions (`mode: probe`) | no | no | no (Probes page) |
 | Replays (backtests) | no | no | per replay |
-| Paper trades before `experiment.start_date` | no | only if on the current spec | hidden unless asked |
+| Paper trades before `experiment.start_date` | no | no | hidden unless asked |
 | Round trips logged `(price estimated)` | no | no | no |
 
 All judgements are made after a slippage haircut of 0.05% a side (0.1% a round trip) on broker
@@ -147,7 +147,9 @@ Fills are simulated (`src/trader/broker.py`):
 - stops at their level (or the bar's open, if it gapped through), less 0.05%;
 - targets at their level (or the open, if it gapped above), less 0.05%;
 - limit entries only when a later bar trades strictly below the limit, at the limit (or the open,
-  if lower), with no slippage.
+  if lower), plus 0.05%: the same cost a market entry pays, so a limit-entry rule doesn't look
+  better than a market-entry one just because of how it is simulated. The booked price can
+  therefore sit up to 0.05% above the limit, which a real limit order never would.
 
 That flatters a strategy a little, more so on thin names. Sim trades count towards nothing; to
 promote an idea it moves to `mode: shadow`, and only its paper trades count from then on.

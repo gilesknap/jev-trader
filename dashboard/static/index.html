@@ -267,6 +267,11 @@ code { font-family: var(--mono); font-size: .9em; }
       <dl class="kv" id="btinfo"></dl>
       <p class="note">A replay over past market data with a pretend account. It can flatter a strategy, so only forward paper results count towards going live.</p></section>
   </div>
+  <section id="sec-read"><h2>Strategist's read on today <span>from its daily journal</span></h2>
+    <details class="about"><summary>About this</summary>
+      <p>The strategist's pre-market run checks futures, news and the day's economic calendar about an hour before the open, and notes what it decided for today. After the close, its review adds what happened. Both are sections of the day's journal entry, shown in full on Strategist's notes.</p></details>
+    <p class="dayline" id="read-day" hidden></p>
+    <div class="md" id="read"><p class="muted">Loading…</p></div></section>
   <section id="sec-positions"><h2>Open positions <span>sold automatically at the stop-loss or target, and 15 min before the close</span></h2>
     <details class="about"><summary>About positions</summary>
       <p>Shares held right now. Each has a <b>stop-loss</b> (sold automatically if the price falls to it) and a <b>target</b> (sold to take the profit). Everything is sold 15 minutes before the US close, so nothing is held overnight.</p></details>
@@ -1137,6 +1142,20 @@ function renderOverviewState(h) {
     `<span class="d">${h.decision_errors > 0 ? "failed calls: no decision was made, and new decisions pause for a few minutes after each (details on Today and in the runner log)" : "decision calls that failed"}</span></div>`;
 }
 
+// The latest daily journal entry's Pre-market and Post-close sections (the server extracts them).
+async function renderRead() {
+  const r = await api("/api/today-read");
+  const note = !r.name ? "The strategist hasn't written a daily journal entry yet."
+    : r.is_today ? "" : `No journal entry for today yet. On a trading day the pre-market run writes one about an hour before the open; if it's later than that, the run didn't happen or failed. Showing the latest, from ${dayLabel(r.name.slice(0, 10), r.today)}.`;
+  $("read-day").hidden = !note; $("read-day").textContent = note;
+  if (!r.name) { $("read").innerHTML = ""; return; }
+  const parts = [["premarket", "Pre-market"], ["postclose", "Post-close"]].filter(([k]) => r.sections[k]);
+  $("read").innerHTML = (parts.length ? parts.map(([k, h]) => `<h3>${h}</h3>` + md(r.sections[k])).join("")
+    : '<p class="muted">This entry has no Pre-market or Post-close section.</p>') +
+    `<p class="note"><a href="#notes" id="read-link">Full entry for ${esc(r.name.slice(0, 10))} on Strategist's notes</a></p>`;
+  $("read-link").onclick = e => { e.preventDefault(); docSel = `j:daily/${r.name}`; showPage("notes"); renderDocs().catch(() => {}); };
+}
+
 let docs = null, docSel = "strategy";
 async function renderDocs() {
   docs = await api("/api/docs");
@@ -1162,7 +1181,7 @@ function banner(src, d, h) {
   const b = $("banner");
   $("clock").innerHTML = marketClock();
   // Live-system panels mean nothing inside a finished backtest.
-  for (const id of ["sec-positions", "sec-glance"]) $(id).hidden = src !== "live";
+  for (const id of ["sec-positions", "sec-glance", "sec-read"]) $(id).hidden = src !== "live";
   $("sec-backtest").hidden = src === "live";
   if (src !== "live") {
     const r = SOURCES.replays.find(x => x.id === src) || {};
@@ -1195,6 +1214,7 @@ async function refresh() {
       try { renderProbeResults(r, src); } catch (e) { $("proberesults").innerHTML = `<p class="neg">Couldn't show the probe report: ${esc(e.message)}</p>`; }
     });
     banner(src, d, h);
+    if (src === "live") renderRead().catch(e => { $("read").innerHTML = `<p class="neg">Couldn't read the journal: ${esc(e.message)}</p>`; });
     renderHealth(d, h);
     renderOverviewState(h);
     loadRules();

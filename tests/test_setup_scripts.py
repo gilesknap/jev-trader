@@ -42,9 +42,7 @@ def test_scripts_parse(path):
 # ---- cfg.sh ------------------------------------------------------------------------------
 
 def test_cfg_reads_the_data_root_config_when_set(tmp_path):
-    raw = yaml.safe_load((ROOT / "config.yaml").read_text()) if (ROOT / "config.yaml").exists() else None
-    if raw is None:
-        pytest.skip("no config.yaml at the code root")
+    raw = yaml.safe_load((ROOT / "templates" / "data" / "main" / "config.yaml").read_text())
     raw["owner"]["github_repo"] = "someone/their-data"
     (tmp_path / "config.yaml").write_text(yaml.safe_dump(raw))
     env = {**os.environ, "TRADER_DATA_ROOT": str(tmp_path)}
@@ -56,6 +54,14 @@ def test_cfg_falls_back_to_the_checkout_root():
     env = {k: v for k, v in os.environ.items() if k != "TRADER_DATA_ROOT"}
     r = subprocess.run(["bash", "-c", f'. "{SETUP}/cfg.sh" && echo "$CONFIG_YAML"'], capture_output=True, text=True, env=env)
     assert r.stdout.strip() == str(ROOT / "config.yaml")
+
+
+def test_cfg_without_a_config_file_names_the_fix(tmp_path):
+    """The code carries no config.yaml: without TRADER_DATA_ROOT the scripts must say what to set."""
+    env = {**os.environ, "TRADER_DATA_ROOT": str(tmp_path)}
+    r = subprocess.run(["bash", "-c", f'. "{SETUP}/cfg.sh" && cfg_repo'], capture_output=True, text=True, env=env)
+    assert r.returncode != 0 and r.stdout == ""
+    assert f"no {tmp_path}/config.yaml" in r.stderr and "TRADER_DATA_ROOT" in r.stderr
 
 
 def cfg_repo_in(tmp_path, slug):

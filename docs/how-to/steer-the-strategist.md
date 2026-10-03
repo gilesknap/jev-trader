@@ -9,7 +9,8 @@ picks up the result at its next run with no deploy.
 ## How the strategist hears you
 
 Decisions go in `state/steering.md` on the `strategist` branch. The file is yours: the strategist
-reads it every run and never edits it. Each entry has an id, a date, a status, the decision and
+reads it every run and never edits it (the wrapper reverts any change a run makes to it, with an
+alert). Each entry has an id, a date, a status, the decision and
 the reasoning:
 
 ```markdown

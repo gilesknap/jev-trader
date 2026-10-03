@@ -360,3 +360,17 @@ def test_pre_start_trades_show_by_default_only_until_the_start(tmp_path, monkeyp
     monkeypatch.setattr(SB, "EXPERIMENT_START", dt.date(2020, 2, 3))  # started: tests hidden
     r = c.get("/api/scoreboard?source=live").json()
     assert not r["all_days"] and r["books"]["paper"]["days"] == [] and r["books"]["paper"]["hidden_before_start"] == 1
+
+
+def test_promotion_column_never_counts_trades_before_the_start_even_with_all_days_shown():
+    """Matches golive.shadow_record: the pre-start toggle shows the earlier trades but they never
+    count towards promotion, whenever the classifier's current spec started."""
+    start = SB.EXPERIMENT_START
+    before = (start - dt.timedelta(days=2)).isoformat()
+    rows = round_trip(before, "idea", 1.0) + round_trip(start.isoformat(), "idea", 1.0)
+    b = SB.build(rows, {"idea": "novel"}, {"idea"}, 250.0, since={"idea": before}, from_date=None)
+    (row,) = b["classifiers"]
+    assert row["n"] == 2 and row["promotion"] == {"n": 1, "of": golive.MIN_TRADES, "since": start.isoformat()}
+    later = (start + dt.timedelta(days=1)).isoformat()  # a spec edited after the start keeps its own date
+    b = SB.build(rows, {"idea": "novel"}, {"idea"}, 250.0, since={"idea": later}, from_date=None)
+    assert b["classifiers"][0]["promotion"]["n"] == 0

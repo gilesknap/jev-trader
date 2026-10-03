@@ -95,8 +95,9 @@ before reading that as a weaker signal.
   keep working; the stream's bars win any minute both have. A failed REST poll alerts at most
   every 30 minutes, and the positions rely on their server-side stops and the kill switch.
 - **IEX live data and SIP backtest data differ.** IEX is a few percent of consolidated volume, so
-  volume-based features differ in level between live and replay; ratios within a session travel
-  better. Paper fills are optimistic too, which is why every judgement applies a slippage haircut.
+  raw volume differs in level between live and replay; ratios travel better. The prior session's
+  volume that features see comes from the same feed as today's bars (IEX live), so a ratio such as
+  `rel_volume_15m` means the same in both. Paper fills are optimistic too, which is why every judgement applies a slippage haircut.
 
 ## Custom features
 
