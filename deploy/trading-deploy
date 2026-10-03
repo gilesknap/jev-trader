@@ -384,7 +384,7 @@ partial_switch_help() {  # RC: a step of the switch failed, so the checkouts may
     {
         echo "PARTIAL SWITCH: a step of the switch failed (exit $1); the runner's checkouts may be half deployed."
         echo "Either run trading-deploy again (the same target, tested again), or roll back, as runner:"
-        echo "  git -C $CODE_DIR reset -q --hard $OLD_CODE && (cd $CODE_DIR && uv sync -q --frozen --extra dev)"
+        echo "  git -C $CODE_DIR reset -q --hard $OLD_CODE && (cd $CODE_DIR && uv sync -q --frozen --no-dev)"
         if (( SPLIT )); then echo "  git -C $CONFIG_DIR reset -q --hard $OLD_DATA"; fi
         if (( SPLIT )); then
             echo "  cp $CODE_DIR/deploy/systemd/*.service $CODE_DIR/deploy/systemd/trader-watchdog.timer $CONFIG_DIR/deploy/systemd/trader-runner.timer ~/.config/systemd/user/"
@@ -397,7 +397,7 @@ partial_switch_help() {  # RC: a step of the switch failed, so the checkouts may
 TEST_ENV=("${FIXED_ENV[@]}")
 if (( SPLIT )); then TEST_ENV+=(TRADER_DATA_ROOT="$dcand"); fi
 echo "testing $what in a temporary checkout..."
-if ! (cd "$cand" && env -i "${TEST_ENV[@]}" bash -c 'uv sync -q --frozen --extra dev && uv run --frozen pytest -q tests'); then
+if ! (cd "$cand" && env -i "${TEST_ENV[@]}" bash -c 'uv sync -q --frozen --no-dev --group test && uv run --frozen --no-dev --group test pytest -q tests'); then
     if (( SPLIT )); then
         echo "TESTS FAILED: nothing deployed; the runner keeps code ${OLD_CODE:0:7} + data ${OLD_DATA:0:7}" >&2
     else
@@ -428,7 +428,7 @@ if (( SPLIT )); then
 fi
 # Fixed environment again: an inherited UV_PROJECT_ENVIRONMENT or VIRTUAL_ENV would build the venv
 # elsewhere and leave .venv (what the units run) on the old code's dependencies.
-env -i "${FIXED_ENV[@]}" uv sync -q --frozen --extra dev
+env -i "${FIXED_ENV[@]}" uv sync -q --frozen --no-dev
 if (( SPLIT )); then
     unit_sources "$CODE_DIR" "$CONFIG_DIR"
     cp -- "${UNIT_SRC[@]}" ~/.config/systemd/user/   # services.env is left alone

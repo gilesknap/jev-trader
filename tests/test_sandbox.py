@@ -544,6 +544,9 @@ def test_out_of_sequence_reply_fails_closed(tmp_path):
         def kill(self):
             pass
 
+        def wait(self, timeout=None):
+            return -9
+
     sb._proc = P()
     s = __import__("conftest").make_session()
     out = sb.compute(["x"], s, F.FeatureContext(s, s, 60, 330))
@@ -565,6 +568,9 @@ def test_reply_with_right_id_but_wrong_nonce_fails_closed(tmp_path):
 
         def kill(self):
             pass
+
+        def wait(self, timeout=None):
+            return -9
 
     sb._proc = P()
     s = __import__("conftest").make_session()

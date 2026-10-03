@@ -88,7 +88,7 @@ sed -i '/^# TEMPLATE:/d' "$D/config.yaml"
 # Render with this checkout's templates (it also proves config.yaml loads). TRADER_DATA_ROOT
 # because the settings load at import, from the data root.
 (cd "$CODE" && env -u TRADER_CODE_ROOT -u TRADER_CONFIG -u TRADER_STRATEGIST_ROOT TRADER_DATA_ROOT="$D" \
-    uv run -q trader config render-deploy --data-root "$D") || die "render-deploy failed (see above)"
+    uv run -q --no-dev trader config render-deploy --data-root "$D") || die "render-deploy failed (see above)"
 CODE_SHA=$(git -C "$CODE" rev-parse --short HEAD 2>/dev/null || echo unknown)
 git -C "$D" add -A
 git -C "$D" commit -q -m "Data repo main from the code's templates/data/main ($CODE_SHA)"

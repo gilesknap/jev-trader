@@ -5,7 +5,7 @@ Everything is one command, `trader`. How you run it depends on where you are:
 - **As `trader` on the host** (the strategist, or you in its account): plain `trader <command>`.
   It's `~/.local/bin/trader`, which runs the deployed code from `trader`'s own virtual
   environment with the production paths set (see [Architecture](../explanations/architecture.md#the-strategist-runs-the-deployed-code)).
-- **As `runner` on the host**: `uv run trader <command>` in `/srv/trading/main`, with the
+- **As `runner` on the host**: `uv run --no-dev trader <command>` in `/srv/trading/main`, with the
   services environment loaded. Run the commands that change runtime state (`run`, `stop`,
   `clear-halt`, `watchdog`, `hold-live`, `release-live`, `rebase-paper`, and
   `compact --scope runtime`) this way:

@@ -42,7 +42,8 @@ def test_numeric_looking_ids_stay_text(tmp_path, session, monkeypatch):
     monkeypatch.setattr(golive, "spec_hash", lambda spec, digest="": h)
     _, trades = run(tmp_path, session(path=[100.0] * 390), [spec()], Always())
     assert len(trades) == 2 and set(trades.code_sha) == {sha} and set(trades.spec_hash) == {h}
-    rows = list(csv.DictReader((tmp_path / "sim" / "trades.csv").open()))
+    with (tmp_path / "sim" / "trades.csv").open() as f:
+        rows = list(csv.DictReader(f))
     assert {(r["code_sha"], r["spec_hash"]) for r in rows} == {(sha, h)}
     assert [t["spec_hash"] for t in SB.closed_trades(rows)] == [h]
     with gzip.open(tmp_path / "decisions" / "2026-09-21.jsonl.gz", "rt") as f:
@@ -74,7 +75,8 @@ def test_sell_keeps_the_spec_hash_it_opened_under(tmp_path):
         book.entries[sym] = e
         book.record_exit(sym, e, Fill(sym, "sell", 1.0, 101.0, now), "target")
     book.append_trade({"time": "2026-09-21T11:05", "book": "paper", "classifier": "x", "symbol": "IWM", "side": "buy"})
-    rows = list(csv.DictReader((tmp_path / "trades.csv").open()))
+    with (tmp_path / "trades.csv").open() as f:
+        rows = list(csv.DictReader(f))
     assert [r["spec_hash"] for r in rows] == ["old", "", "new"]
     assert {r["model"] for r in rows} == {"m"} and {r["code_sha"] for r in rows} == {"c0de"}
 
@@ -101,7 +103,8 @@ def test_old_trades_file_gains_the_columns_and_old_readers_still_work(tmp_path):
     df = pd.read_csv(tmp_path / "trades.csv", dtype=str, keep_default_na=False)
     assert list(df.columns) == TRADE_COLS and len(df) == 3
     assert list(df.spec_hash) == ["", "", "h1"]
-    rows = list(csv.DictReader((tmp_path / "trades.csv").open()))
+    with (tmp_path / "trades.csv").open() as f:
+        rows = list(csv.DictReader(f))
     assert len(SB.closed_trades(rows)) == 1  # readers by column name are unaffected
 
 
@@ -111,7 +114,8 @@ def test_a_file_that_cant_be_upgraded_keeps_its_header(tmp_path):
     book = Book("paper", SimBroker(1000.0), tmp_path)
     book.provenance = Provenance("m", "c0de", {"x": "h1"})
     book.append_trade({"time": "2026-09-22T10:00", "book": "paper", "classifier": "x", "symbol": "SPY", "side": "buy"})
-    rows = list(csv.reader((tmp_path / "trades.csv").open()))
+    with (tmp_path / "trades.csv").open() as f:
+        rows = list(csv.reader(f))
     assert rows[0] == OLD_COLS.split(",") + ["note"] and len(rows[1]) == len(rows[0])
 
 
@@ -158,7 +162,8 @@ def test_archive_leaves_a_row_still_being_written_for_next_time(tmp_path, monkey
     src.write_text(full, newline="")  # the runner finished the line
     assert compact.archive()["trades_added"] == 1
     assert compact.archive()["trades_added"] == 0
-    rows = list(csv.reader((logs / "trades.csv").open(newline="")))
+    with (logs / "trades.csv").open(newline="") as f:
+        rows = list(csv.reader(f))
     assert rows == [r.split(",") for r in [OLD_COLS] + OLD_ROWS.splitlines()]
     src.write_text(OLD_COLS[:10], newline="")  # even the header unfinished: nothing, no crash
     assert compact._merge_csv(src, tmp_path / "other.csv") == 0

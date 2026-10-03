@@ -15,6 +15,7 @@ import io
 import json
 import math
 import time
+import weakref
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -51,6 +52,9 @@ EXIT_LOOKUP_TRIES = 10
 # Book.blocked for the live book on a paper day (runner.wind_down_live_book): it trades nothing and
 # everything it holds is closed at the first tick.
 WIND_DOWN = "wind-down"
+# Calendar days of intraday SPY marks (spy_marks.csv) kept: the performance chart's intraday
+# ranges go back 7 days, and its longer ranges plot daily closes from benchmark.csv.
+SPY_MARK_DAYS = 10
 
 TRADE_COLS = [
     "time",
@@ -466,6 +470,7 @@ class Engine:
         self._outage_errors = 0
         self._tick_started = 0.0
         self._decisions_fh = None
+        self._decisions_finalizer: weakref.finalize | None = None
         self.last_tick: dt.datetime | None = None
         self.prices: dict[str, float] = {}  # last closes seen, for a flatten outside the tick
         self.flattened_at: dt.datetime | None = None  # the last minute flatten_for_close ran
@@ -584,9 +589,17 @@ class Engine:
         self._floor_trades_from_ledger(today)
         ddir = self.run_dir / "decisions"
         ddir.mkdir(exist_ok=True)
+        self._close_decisions()
+        self._decisions_fh = (ddir / f"{day.isoformat()}.jsonl").open("a")
+        # end_day closes it; an engine dropped without one (a crash, a test) closes it when collected.
+        self._decisions_finalizer = weakref.finalize(self, self._decisions_fh.close)
+
+    def _close_decisions(self) -> None:
+        if self._decisions_finalizer is not None:
+            self._decisions_finalizer.detach()
+            self._decisions_finalizer = None
         if self._decisions_fh:
             self._decisions_fh.close()
-        self._decisions_fh = (ddir / f"{day.isoformat()}.jsonl").open("a")
 
     def _read_equity(self, b: Book) -> float | None:
         """Equity, retried briefly; None (alerted) if it still can't be read. Never raises (#119)."""
@@ -697,7 +710,14 @@ class Engine:
             "day": self.day.isoformat(),
             "states": {
                 cs.spec.id: {
-                    s: {"status": st.status, "trades": st.trades, "counts": st.counts, "last_trigger": st.last_trigger}
+                    s: {
+                        "status": st.status,
+                        "trades": st.trades,
+                        "counts": st.counts,
+                        "last_trigger": st.last_trigger,
+                        "note": st.note,
+                        "alloc_note": st.alloc_note,
+                    }
                     for s, st in cs.symbols.items()
                 }
                 for cs in self.states
@@ -767,6 +787,15 @@ class Engine:
                         damaged.append(f"{cs.spec.id}/{sym}")
                     trades, status = 0, "armed"
                 self._resume_symbol(cs, sym, st, status, trades)
+                # Display only, and absent from older files. A saved note still holds if the status
+                # does; one that changed while we were down (a limit filled, or gone) drops it.
+                alloc = saved.get("alloc_note")
+                st.alloc_note = alloc if isinstance(alloc, str) else ""
+                note = saved.get("note")
+                if st.status == status:
+                    st.note = note if isinstance(note, str) else ""
+                elif st.status == "holding":
+                    st.note = st.alloc_note
         if damaged:
             self._alert_every(
                 "classifier-state",
@@ -859,9 +888,10 @@ class Engine:
                 "wins": b.wins_today,
                 "nav": round(b.nav.nav_per_unit, 5),
             }
+        self._mark_spy(now, prune=True)
         self._record_benchmark()
         if self._decisions_fh:
-            self._decisions_fh.close()
+            self._close_decisions()
             self._decisions_fh = None
             path = self.run_dir / "decisions" / f"{self.day.isoformat()}.jsonl"
             if path.exists():
@@ -891,6 +921,33 @@ class Engine:
             tmp.replace(p)
         except Exception as e:
             self.alert("info", f"could not record the SPY benchmark for {self.day}: {e!r}")
+
+    def _mark_spy(self, now: dt.datetime, prune: bool = False) -> None:
+        """SPY's last price beside each equity mark, stamped like it, so the performance chart's
+        SPY line moves during the day (benchmark.csv holds only each day's open and close). One
+        file per run directory, not per book: every book marks at the same minutes. Blank before
+        today's first SPY bar. `prune` (at the close) drops marks older than SPY_MARK_DAYS.
+        Display only, so it never raises."""
+        p = self.run_dir / "spy_marks.csv"
+        try:
+            new = not p.exists()
+            with p.open("a") as f:
+                if new:
+                    f.write("time,spy\n")
+                spy = f"{self._spy_day[1]:.4f}" if self._spy_day else ""
+                f.write(f"{now.isoformat(timespec='minutes')},{spy}\n")
+            if prune and self.day is not None:
+                cutoff = (self.day - dt.timedelta(days=SPY_MARK_DAYS - 1)).isoformat()
+                lines = p.read_text().splitlines()
+                keep = [line for line in lines[1:] if line[:10] >= cutoff]
+                if len(keep) < len(lines) - 1:
+                    tmp = p.with_suffix(".tmp")
+                    tmp.write_text("\n".join([lines[0], *keep]) + "\n")
+                    tmp.replace(p)
+        except Exception as e:
+            self._alert_every(
+                "spy-mark", "info", f"could not record SPY's intraday mark: {e!r}", seconds=86400
+            )  # display-only, like benchmark.csv: once a day is enough
 
     # ---- per-minute tick --------------------------------------------------------
 
@@ -933,6 +990,7 @@ class Engine:
                     b.append_equity(now, b.broker.equity())
                 except Exception as ex:
                     self._alert_every(f"equity-mark:{b.name}", "urgent", f"[{b.name}] equity mark failed: {ex!r}")
+            self._mark_spy(now)
         self.write_status(now, minutes_to_close)
         if failed and not G.flatten_due(minutes_to_close):
             raise failed[0]  # counted by the runner; in the flatten window it was alerted above
@@ -1415,9 +1473,10 @@ class Engine:
         size, binding = A.allocate(
             sym, size, stop_pct / 100, eq, book.day_start_equity, book.realised_today, self._exposures(book, positions)
         )
+        st.alloc_note = ""  # a fresh attempt: an earlier entry's trim no longer applies
         if binding != "requested":
             floor = A.trim_floor(requested)
-            st.note = f"allocator: {binding}; allowed ${size:.2f} of ${requested:.2f}"
+            st.note = st.alloc_note = f"allocator: {binding}; allowed ${size:.2f} of ${requested:.2f}"
             if size < floor:
                 st.note += f"; skipped, under the ${floor:.2f} floor for a trimmed entry"
             self._log_decision(
@@ -1486,7 +1545,7 @@ class Engine:
             return
         if limit is not None:
             book.save_pending()
-            st.note = f"limit {limit:.2f} resting" + (f" ({st.note})" if binding != "requested" else "")
+            st.note = f"limit {limit:.2f} resting" + (f" ({st.alloc_note})" if st.alloc_note else "")
             return
         p.order_id = fill.order_id  # so a fill it can't price yet is followed up by id (#134)
         self._settle_pending(book, sym, p, OrderState("filled", fill.qty, fill.price), now, place_stop=True)
@@ -1626,8 +1685,7 @@ class Engine:
         if st is not None:
             st.status = "holding"
             st.trades += 1
-            if st.note.startswith("limit ") and " resting" in st.note:  # filled: keep only the allocator's part
-                st.note = st.note.partition(" resting")[2].strip().removeprefix("(").removesuffix(")")
+            st.note = st.alloc_note  # filled: a resting or in-doubt order's note is over; any trim still applies
         book.append_trade(
             {
                 "time": (filled_at or now).isoformat(timespec="minutes"),
@@ -1738,6 +1796,11 @@ class Engine:
                     f"[{b.name}] {sym}: {delta:g} more filled after its position closed; "
                     "not a new trade, sold as an untracked position",
                 )
+                st = self._state(p.classifier, sym)
+                if first and st is not None:  # it never opened a position: only a flatten marks such an order exited
+                    st.note = "entry filled after the flatten; sold as an untracked position"
+                    if st.status == "pending":
+                        st.status = "armed"  # display only: a flatten blocks its book (or retires it) for the day
             return
         e = b.entries.get(sym)
         if e is None:
@@ -1855,8 +1918,12 @@ class Engine:
         b.buys_today = max(0.0, b.buys_today + p.filled_cost - p.reserved)
         b.write_risk(buys_today=round(b.buys_today, 4))
         st = self._state(p.classifier, sym)
-        if p.filled_qty <= 0 and st is not None and st.status == "pending":
-            st.status, st.note = "armed", "limit expired unfilled" if p.limit else "market order not filled"
+        if p.filled_qty <= 0 and st is not None and st.status in ("pending", "retired"):
+            # Nothing filled, so the note is still this order's. Retired: the EOD flatten retired the
+            # rule while its cancel was settling, and only the note changes.
+            st.note = "limit expired unfilled" if p.limit else "market order not filled"
+            if st.status == "pending":
+                st.status = "armed"
 
     def _scale_out(self, b: Book, sym, e: Entry, ref, now) -> bool:
         """Sell scale_fraction of the position. Returns False if the scan should stop here: to

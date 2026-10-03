@@ -104,7 +104,10 @@ again at the switch, and holds it through the switch:
 ## What the switch installs
 
 Both checkouts are reset to the deployed commits, their permissions closed to group and other
-writes, and the code's virtual environment synced. Then, into `runner`'s systemd units: every
+writes, and the code's virtual environment synced with the runtime dependencies only
+(`uv sync --frozen --no-dev`: none of the `dev`, `test` or `docs` dependency groups in
+`pyproject.toml`; the test run beforehand installs the `test` group in its own temporary
+checkout). Then, into `runner`'s systemd units: every
 `.service` and `trader-watchdog.timer` from the code, and `trader-runner.timer` (rendered from your
 schedule) from the config. `runner`'s `~/.config/trading/services.env` is never touched: change it
 by hand when a release note says so.
@@ -122,7 +125,7 @@ It ends by printing the deployed code and config commits, and:
 Nothing to do in most cases: the strategist's `trader` command runs the code in
 `/srv/trading/main` and reads the config in `/srv/trading/config`, so its next run uses what you
 just deployed. Its checkout holds only data and never merges anything from the code. Each run
-starts by syncing `trader`'s virtual environment with the deployed `uv.lock`, so a dependency
-change is picked up too. If that sync fails, the run alerts and stops; re-running
+starts by syncing `trader`'s virtual environment with the deployed `uv.lock` (runtime plus the
+`test` group, which `trader-test` needs), so a dependency change is picked up too. If that sync fails, the run alerts and stops; re-running
 `bash /srv/trading/main/deploy/setup/2-strategist.sh` as `trader` rebuilds the environment by
 hand.

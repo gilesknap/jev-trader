@@ -94,11 +94,8 @@ def test_replay_appends_a_row_per_classifier(roots, monkeypatch, session):
     t = rows[0]
     assert t["spec_hash"] == h and t["family"] == "conventional" and t["stub"] == "0"
     assert (t["days"], t["start"], t["end"]) == ("1", str(DAY), str(DAY))
-    closed = [
-        r
-        for r in csv.DictReader((roots / "replays" / "r1" / "sim" / "trades.csv").open())
-        if r["side"] == "sell" and r["classifier"] == "t"
-    ]
+    with (roots / "replays" / "r1" / "sim" / "trades.csv").open() as f:
+        closed = [r for r in csv.DictReader(f) if r["side"] == "sell" and r["classifier"] == "t"]
     assert int(t["trades"]) == len(closed) > 0
     assert float(t["net_pct_after_slip"]) == pytest.approx(
         sum(float(r["pnl_pct"]) for r in closed) / len(closed), abs=1e-4

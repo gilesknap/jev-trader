@@ -19,14 +19,15 @@ WRAPPER = ROOT / "scripts" / "strategist.sh"
 pytestmark = pytest.mark.skipif(not (shutil.which("flock") and shutil.which("git")), reason="needs flock and git")
 
 FAKE_UV = """#!/bin/bash
-case "$*" in
+args="$*"; args=${args/#run --no-dev /run }  # the wrapper runs `uv run --no-dev trader ...`
+case "$args" in
   sync\\ *) echo "$UV_PROJECT_ENVIRONMENT $*" >> "$HOME/uv_sync"; echo sync >> "$HOME/seq"
            flock -n -s "$XDG_STATE_HOME/trader/strategist.lock" true && echo free >> "$HOME/sync_lock" || echo held >> "$HOME/sync_lock"
            [[ -e "$HOME/sync_fails" ]] && exit 1; exit 0 ;;
   "run trader session") echo '{"minutes_to_open": 45, "minutes_to_close": 400}' ;;
   "run trader config get models.strategist") echo cfg-model ;;
   run\\ python*) echo "${@: -1}" >> "$HOME/alerts" ;;
-  *) echo "$*" >> "$HOME/uv_calls" ;;
+  *) echo "$args" >> "$HOME/uv_calls" ;;
 esac
 """
 FAKE_TRADER = """#!/bin/bash
@@ -194,7 +195,7 @@ def test_housekeeping_leaves_a_busy_checkout_alone(sandbox):
 def test_postclose_writes_the_probe_report_and_survives_its_failure(sandbox):
     (sandbox.home / ".local" / "bin" / "uv").write_text(
         FAKE_UV.replace('"minutes_to_close": 400', '"minutes_to_close": -30').replace(
-            "  *) echo", '  *probe-report*) echo "$*" >> "$HOME/uv_calls"; exit 1 ;;\n  *) echo'
+            "  *) echo", '  *probe-report*) echo "$args" >> "$HOME/uv_calls"; exit 1 ;;\n  *) echo'
         )
     )
     r = sandbox.run("postclose")
@@ -483,12 +484,12 @@ def test_split_syncs_trader_venv_first_under_the_lock(split):
     # the venv, while the run lock is held (a deploy takes it too).
     assert split.run("premarket").returncode == 0
     venv = split.home / ".local" / "share" / "trader" / "venv"
-    assert split.read("uv_sync") == f"{venv} sync -q --frozen --extra dev --project {ROOT}\n"
+    assert split.read("uv_sync") == f"{venv} sync -q --frozen --no-dev --group test --project {ROOT}\n"
     assert split.read("seq") == "sync\nsession\n"
     assert split.read("sync_lock") == "held\n"
     assert split.read("claude_runs") == "run\n" and split.read("alerts") == ""
     setup = (ROOT / "deploy" / "setup" / "2-strategist.sh").read_text()
-    assert 'UV_PROJECT_ENVIRONMENT=$VENV uv sync -q --frozen --extra dev --project "$CODE"' in setup
+    assert 'UV_PROJECT_ENVIRONMENT=$VENV uv sync -q --frozen --no-dev --group test --project "$CODE"' in setup
     assert "VENV=$HOME/.local/share/trader/venv" in setup
 
 

@@ -17,7 +17,7 @@ else
     SPLIT=""
     CODE="$REPO"
     SELF="$REPO/scripts/strategist.sh"
-    TRADER_BIN=(uv run trader); PY_BIN=(uv run python)
+    TRADER_BIN=(uv run --no-dev trader); PY_BIN=(uv run --no-dev python)
 fi
 LOGDIR="${XDG_STATE_HOME:-$HOME/.local/state}/trader"
 mkdir -p "$LOGDIR"
@@ -72,7 +72,7 @@ fi
 # not match the deployed code, so nothing runs (the note in the log is in case the alert, which
 # uses that venv, can't be sent).
 if [[ -n "$SPLIT" ]]; then
-    if ! UV_PROJECT_ENVIRONMENT="$HOME/.local/share/trader/venv" uv sync -q --frozen --extra dev --project "$CODE" >>"$LOG" 2>&1; then
+    if ! UV_PROJECT_ENVIRONMENT="$HOME/.local/share/trader/venv" uv sync -q --frozen --no-dev --group test --project "$CODE" >>"$LOG" 2>&1; then
         echo "$(date -u +%FT%TZ) $KIND: trader's venv sync failed; not running" >>"$LOG"
         alert "strategist $KIND: could not sync trader's venv with $CODE (uv sync failed; see $LOG); not running"
         exit 1
