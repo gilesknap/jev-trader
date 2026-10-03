@@ -90,7 +90,8 @@ def fetch(symbols, start, end, secrets, source="alpaca") -> dict[str, pd.DataFra
 def split_sessions(bars: pd.DataFrame) -> dict[dt.date, pd.DataFrame]:
     """Regular-hours bars grouped by trading day."""
     rth = bars.between_time("09:30", "15:59")
-    return dict(rth.groupby(rth.index.date))
+    # Not dict(groupby): dict() sees GroupBy.keys and treats it as a mapping.
+    return {d: g for d, g in rth.groupby(rth.index.date)}  # noqa: C416
 
 
 def prior_sessions(
