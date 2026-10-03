@@ -908,7 +908,7 @@ function renderScore(sb) {
   const b = sb.books[scoreBook];
   $("slipnote").textContent = b.slippage_per_side_pct ? "charged here, as the go-live gate does" : "already in the simulated fills";
   $("bookpick").innerHTML = (names.length > 1 ? `<div class="segs">${names.map(n => `<button data-b="${esc(n)}" class="${n === scoreBook ? "on" : ""}">${esc(n)}</button>`).join("")}</div>` : "") +
-    (scoreBook === "sim" && sb.source === "live" ? '<p class="note">Sim rules, each trading its own simulated $250 account on the live prices. Fills are simulated (the bar close with slippage; stops and targets at their own level), so they flatter a strategy a little, and <b>none of this counts towards going live</b>: a rule has to trade on paper for that.</p>' : "");
+    (scoreBook === "sim" && sb.source === "live" ? '<p class="note">Sim rules, each trading its own simulated $250 account on the live prices. Fills are simulated (the bar close with slippage; stops at their own level), so they flatter a strategy a little, and <b>none of this counts towards going live</b>: a rule has to trade on paper for that.</p>' : "");
   $("bookpick").querySelectorAll("button[data-b]").forEach(x => x.onclick = () => { scoreBook = x.dataset.b; renderScore(sb); });
   $("famtiles").innerHTML = b.families.map(f => `<div class="stat family ${esc(f.family)}"><span class="l">${famBadge(f.family)} ${f.classifiers} rule${f.classifiers === 1 ? "" : "s"} · ${f.n} trades</span>` +
     `<span class="n ci ${cls(f.mean_pct)}" title="average per trade after slippage, with 95% interval">${pp(f.mean_pct)}<small> ± ${f.ci_pct == null || !isFinite(f.ci_pct) ? "–" : Math.abs(f.ci_pct).toFixed(2)}</small></span>` +
