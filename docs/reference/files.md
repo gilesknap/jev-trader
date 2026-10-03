@@ -12,7 +12,7 @@ read-only to the strategist). The dashboard reads it.
 | `session.lock` | Held (shared) by the runner for the whole session; `trading-deploy` refuses while it's held |
 | `golive.json` | The go-live state: `pending`, `armed`, `live`, `vetoed` or `demoted` |
 | `promotion.json` | Each classifier's spec hash, the date its record started, and its family label |
-| `classifier_state.json` | Today's per-symbol trade counts and retirements, for a mid-session restart |
+| `classifier_state.json` | Today's per-symbol trade counts, retirements and outcome tallies (checks, trigger misses, Jev asked, skips), for a mid-session restart |
 | `alerts.log` | Every alert the runner, watchdog and dashboard sent |
 | `benchmark.csv` | SPY's open and close per session, for the buy-and-hold comparison |
 | `decisions/<date>.jsonl[.gz]` | One line per decision (below). Kept 14 days here; the strategist archives them |

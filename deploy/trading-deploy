@@ -122,27 +122,29 @@ split_layout() {  # 0: two-repo layout, 1: single repo, 2: CONFIG_DIR holds some
 }
 review=()  # (repo base tip) triples whose diff the human reads before the typed yes
 inspect_repo() {  # DIR BASE TARGET PLAINFILE LABEL FULL: show, refuse or plan one repo's change
-    local dir=$1 base=$2 target=$3 plain=$4 label=$5 full=$6 planout rc kind sha rest commit f n binaries=""
+    # Not named `plain`: an exit in here runs the EXIT trap in this scope, and a local `plain`
+    # would hide the global one from its rm (leaking that temp file).
+    local dir=$1 base=$2 target=$3 plainfile=$4 label=$5 full=$6 planout rc kind sha rest commit f n binaries=""
     local found=()
     echo "=== ${label}files changed since last deploy ($(git -C "$dir" rev-parse --short "$base") -> ${target:0:7}) ==="
     git -C "$dir" diff --stat "$base" "$target"
     echo
     # Diffs go through files (quitting the pager early can't abort the script), with attribute/
     # driver tricks disabled so nothing can hide as "binary" or be rewritten by a textconv.
-    git -C "$dir" --no-pager diff --patch --summary --text --no-ext-diff --no-textconv "$base" "$target" > "$plain"
+    git -C "$dir" --no-pager diff --patch --summary --text --no-ext-diff --no-textconv "$base" "$target" > "$plainfile"
     # Refuse diffs that could visually hide code: terminal control characters (colour/conceal
     # escapes) and invisible or direction-changing Unicode (Trojan Source). Each check tests the
     # file directly with grep -q (never a pipeline's status, which pipefail/SIGPIPE can flip).
     local CTRL='[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]'
     local UNI='[\x{061C}\x{200B}-\x{200F}\x{2028}-\x{202E}\x{2060}-\x{2069}\x{FEFF}\x{E0000}-\x{E007F}]'
-    if LC_ALL=C grep -qaP "$CTRL" "$plain"; then
+    if LC_ALL=C grep -qaP "$CTRL" "$plainfile"; then
         echo "REFUSING: the ${label}diff contains terminal control characters:" >&2
-        { LC_ALL=C grep -naP "$CTRL" "$plain" | cat -v | head -20; } >&2 || true
+        { LC_ALL=C grep -naP "$CTRL" "$plainfile" | cat -v | head -20; } >&2 || true
         exit 1
     fi
-    if LC_ALL=C.UTF-8 grep -qP "$UNI" "$plain"; then
+    if LC_ALL=C.UTF-8 grep -qP "$UNI" "$plainfile"; then
         echo "REFUSING: the ${label}diff contains invisible or bidi Unicode characters:" >&2
-        { LC_ALL=C.UTF-8 grep -nP "$UNI" "$plain" | cat -v | head -20; } >&2 || true
+        { LC_ALL=C.UTF-8 grep -nP "$UNI" "$plainfile" | cat -v | head -20; } >&2 || true
         exit 1
     fi
     # Binary = contains NUL bytes, judged by content (not .gitattributes, which a commit could set),
@@ -305,7 +307,9 @@ elif ! git cat-file -e "$TARGET:config.yaml" 2>/dev/null; then
 elif [[ "$(git rev-parse HEAD)" == "$TARGET" ]]; then
     echo "already at origin/main ($(git rev-parse --short HEAD)); nothing to deploy"; exit 0
 fi
-tmp=$(mktemp); plain=$(mktemp); plain_data=$(mktemp); trap 'rm -f "$tmp" "$plain" "$plain_data"' EXIT
+tmp="" plain="" plain_data=""
+trap 'rm -f "$tmp" "$plain" "$plain_data"' EXIT  # set first: a failed mktemp must not leak the others
+tmp=$(mktemp); plain=$(mktemp); plain_data=$(mktemp)
 if (( SPLIT )); then
     if [[ $OLD_CODE != "$TARGET" ]]; then inspect_repo "$CODE_DIR" HEAD "$TARGET" "$plain" "code repo " 0; fi
     if [[ $OLD_DATA != "$TARGET_DATA" ]]; then inspect_repo "$CONFIG_DIR" HEAD "$TARGET_DATA" "$plain_data" "data repo " 1; fi

@@ -87,8 +87,10 @@ and HOLD LIVE works from any state too, including demoted and corrupt.
   3-session window.
 - If the live account holds less than $100 when the switch is due, the runner stays on paper and
   alerts until it's funded.
-- The account's first 5 live sessions ever trade at **half size**. The count lives in the live
-  book's `risk.json` and isn't reset by a demotion, so going live again later is full size.
+- The first 5 live sessions trade at **half size**, and every return to live starts a fresh
+  half-size week: after a demotion, a HOLD LIVE and re-arm, or a `config/mode.yaml` override, any
+  paper session, and clearing a live halt, resets the count (`live_sessions` in the live book's
+  `risk.json`).
 - A HOLD always wins, even one pressed while the runner is re-checking the gate: every automatic
   write to `golive.json` is a compare-and-swap under a lock.
 - An unreadable or invalid `golive.json` reads as a non-live `corrupt` state: paper, one alert,
@@ -146,9 +148,9 @@ carries over between days.
 
 Fills are simulated (`src/trader/broker.py`):
 
-- market entries and model exits at the bar close, ± 0.05%;
+- market entries, model exits, targets, scale-outs and time stops at the bar close, ± 0.05%,
+  as on paper (a target is a market sell once the touch is seen, not a resting order);
 - stops at their level (or the bar's open, if it gapped through), less 0.05%;
-- targets at their level (or the open, if it gapped above), less 0.05%;
 - limit entries only when a later bar trades strictly below the limit, at the limit (or the open,
   if lower), plus 0.05%: the same cost a market entry pays, so a limit-entry rule doesn't look
   better than a market-entry one just because of how it is simulated. The booked price can
@@ -165,3 +167,11 @@ probes stay probes, and only log their answers. Backtests never qualify
 anything: only forward paper results count. The strategist's charter adds research hygiene on
 top: tune on older sessions and confirm on recent ones it didn't look at, log every variant it
 replays, and treat anything under about 30 trades as a hypothesis, not evidence.
+
+Replay fills follow the sim rules above with one difference. The engine decides on a completed
+bar, so a market order (an entry, a model exit, a target or scale-out, a time stop, a flatten or a
+kill) executes at the **next bar's open**, ± 0.05%, not at the close it has just seen: a gap after
+the signal bar moves the price. Paper and live orders fill at market a few seconds after that
+close, which is what the next open approximates. A sim account fills at the close itself, the
+only price it has. Stops and limit entries are resting orders, so they fill where a bar traded
+through them, as in sim. No latency beyond that one bar is modelled.
