@@ -39,7 +39,35 @@ REST_POLL_TIMEOUT_S = 6.0
 # REST_MAX_CALLS run at once, so a hanging API can't pile up threads.
 REST_HUNG_S = 300.0
 REST_MAX_CALLS = 2
+# Each history fetch on the session-start path (the feature gate's samples, prior-session SIP and
+# IEX bars) gets at most this long. They run about 2 minutes before the open, in turn, before the
+# stream subscribes, so a hung call can't hold the start indefinitely. A failed prior-session fetch
+# costs NaN context features; a failed gate-sample fetch fails the classifiers file loudly (as any
+# gate-sample failure does: nothing trades that day, held positions are still managed). Today's
+# bars at a late start get CATCH_UP_TIMEOUT_S.
+STARTUP_FETCH_TIMEOUT_S = 60.0
+CATCH_UP_TIMEOUT_S = 15.0
 BAR_COLS = ["ts", "open", "high", "low", "close", "volume"]
+
+
+def _fetch_within(timeout: float, *args, **kw) -> dict[str, pd.DataFrame]:
+    """fetch_alpaca(*args, **kw), or TimeoutError after `timeout` s. The client has no request
+    timeout of its own, so the call runs in a daemon thread that a hung API can't keep alive."""
+    out: dict = {}
+
+    def run():
+        try:
+            out["bars"] = fetch_alpaca(*args, **kw)
+        except Exception as e:
+            out["error"] = e
+    call = threading.Thread(target=run, daemon=True)
+    call.start()
+    call.join(timeout)
+    if "error" in out:
+        raise out["error"]
+    if "bars" not in out:
+        raise TimeoutError(f"no answer in {timeout:g} s")
+    return out["bars"]
 
 
 def _session_today(client):
@@ -148,7 +176,8 @@ def _load_specs(file, secrets, calendar: Calendar | None = None, now: dt.datetim
 
     def sessions_for(days):  # completed sessions only: a mid-session restart's partial today is no sample
         return {s: {d: b for d, b in calendar.trim(split_sessions(bars)).items() if d < now.date()}
-                for s, bars in fetch_alpaca(["SPY", "QQQ"], end - dt.timedelta(days=days), end, secrets).items()}
+                for s, bars in _fetch_within(STARTUP_FETCH_TIMEOUT_S, ["SPY", "QQQ"], end - dt.timedelta(days=days),
+                                             end, secrets).items()}
     try:
         samples = gate_samples(sessions_for)
     except GateSampleError:
@@ -239,6 +268,25 @@ def stream_bars(rows: dict[str, list], tick: dt.datetime) -> dict[str, pd.DataFr
     }
 
 
+def catch_up_bars(rows: dict[str, list], lock, base: list[str], extra: list[str], open_: dt.datetime,
+                  tick: dt.datetime, secrets, alert=notify) -> None:
+    """Today's IEX bars from the open to `tick`, added to the stream's rows: once, at the first
+    tick of a stream that subscribed late (under 90 s before the open). It runs after the subscription, so no minute
+    falls between the two; a minute both have is the same bar (stream_bars keeps one). Each fetch
+    gets CATCH_UP_TIMEOUT_S. Never raises: a failure alerts and those symbols start from live bars."""
+    for syms, why in ((base, "features and stops may be missing today's earlier bars"),
+                      (extra, "their stops may be missing today's earlier bars")):  # held from before: a rejected one mustn't stop the rest
+        if not syms:
+            continue
+        try:
+            got = _fetch_within(CATCH_UP_TIMEOUT_S, syms, open_, tick, secrets, feed="iex")
+            with lock:
+                for s, b in got.items():
+                    rows[s].extend((ts, *r) for ts, r in zip(b.index, b.itertuples(index=False)) if ts < tick)
+        except Exception as e:
+            alert("urgent", f"could not fetch today's bars so far for {syms}: {e!r}; {why}")
+
+
 class RestBars:
     """Stops that keep working through a data outage (#50). While the whole stream is stale (the
     engine's SPY test, never a quiet single symbol) and a paper or live book holds positions,
@@ -327,21 +375,33 @@ def prev_day_bars(symbols: list[str], day: dt.date, now: dt.datetime, secrets, a
     calendar = calendar or Calendar()
     start, end = now - dt.timedelta(days=7), now - dt.timedelta(minutes=16)
     try:
-        sip = {s: calendar.trim(split_sessions(b)) for s, b in fetch_alpaca(symbols, start, end, secrets).items()}
+        sip = {s: calendar.trim(split_sessions(b))
+               for s, b in _fetch_within(STARTUP_FETCH_TIMEOUT_S, symbols, start, end, secrets).items()}
     except Exception as e:
-        alert("urgent", f"could not fetch recent history at startup: {e}; prev-day features are NaN today")
+        alert("urgent", f"could not fetch recent history at startup: {e!r}; prev-day features are NaN today")
         return {}
     try:
-        iex = {s: calendar.trim(split_sessions(b)) for s, b in fetch_alpaca(symbols, start, end, secrets, feed="iex").items()}
+        iex = {s: calendar.trim(split_sessions(b))
+               for s, b in _fetch_within(STARTUP_FETCH_TIMEOUT_S, symbols, start, end, secrets, feed="iex").items()}
     except Exception as e:
-        alert("urgent", f"could not fetch recent IEX history at startup: {e}; prior-session volume is NaN today "
+        alert("urgent", f"could not fetch recent IEX history at startup: {e!r}; prior-session volume is NaN today "
                         "(rel_volume_15m and the like); price levels are unaffected")
-        iex = {}
+        iex = None  # said once above; not again per symbol
     try:
-        return prior_sessions(sip, day, volume_from=iex)
+        prev = prior_sessions(sip, day, volume_from=iex or {})
     except Exception as e:  # never a startup crash loop over context data
         alert("urgent", f"could not combine prior-session prices and IEX volume: {e!r}; prior-session volume is NaN today")
-        return prior_sessions(sip, day, volume_from={})
+        prev, iex = prior_sessions(sip, day, volume_from={}), None
+    # A symbol either feed returned nothing for is NaN in silence otherwise: name them, once.
+    missing = sorted(set(symbols) - set(prev))
+    if missing:
+        alert("urgent", f"no prior session in the startup history for {missing}: their prev-day features are NaN today")
+    if iex is not None:
+        no_volume = sorted(s for s, b in prev.items() if b.volume.isna().all())
+        if no_volume:
+            alert("info", f"no IEX bars for the prior session of {no_volume}: their prior-session volume is NaN "
+                          "today (rel_volume_15m and the like); price levels are unaffected")
+    return prev
 
 
 def _last_resort_flatten(engine: Engine, tick: dt.datetime, bars: dict, minutes_to_close: float) -> None:
@@ -507,21 +567,10 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
     engine.write_status(now, (close - now).total_seconds() / 60)
     notify("info", f"runner started session {open_:%a %d %b} ({mode}, {len(specs)} classifiers)", title="Session start")
 
-    # Live IEX bars; seed with anything already printed today (restart mid-session).
+    # Live IEX bars. A stream that subscribes after the open (a restart, or a slow start) has
+    # missed today's earlier bars: they're caught up over REST at the first tick (catch_up_bars).
     lock = threading.Lock()
     rows: dict[str, list] = defaultdict(list)
-    if dt.datetime.now(ET) > open_ + dt.timedelta(minutes=1):
-        try:
-            seed = fetch_alpaca(base, open_, dt.datetime.now(ET), secrets, feed="iex")
-        except Exception as e:
-            notify("urgent", f"could not fetch today's bars so far: {e}; features and stops start from live bars only")
-            seed = {}
-        try:  # symbols held from before startup: a rejected one mustn't stop the session
-            seed |= fetch_alpaca(extra, open_, dt.datetime.now(ET), secrets, feed="iex") if extra else {}
-        except Exception as e:
-            notify("urgent", f"could not fetch today's bars for held {extra}: {e}; their stops use live bars only")
-        for s, b in seed.items():
-            rows[s] = [(ts, *r) for ts, r in zip(b.index, b.itertuples(index=False))]
 
     from alpaca.data.enums import DataFeed
     from alpaca.data.live import StockDataStream
@@ -535,6 +584,9 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
 
     stream.subscribe_bars(on_bar, *symbols)
     threading.Thread(target=stream.run, daemon=True).start()
+    # The 09:30 bar is published at about 09:31. A stream asked for well before the open has
+    # connected by then (the margin covers a slow websocket connect); any later one catches up.
+    caught_up = dt.datetime.now(ET) < open_ - dt.timedelta(seconds=90)
 
     rest = RestBars(lambda syms, start, end: fetch_alpaca(syms, start, end, secrets, feed="iex"),
                     open_, engine._alert_every)
@@ -550,6 +602,10 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
             break  # the 16:00 tick would send orders after the bell, to queue for tomorrow's open
         if tick <= open_:
             continue
+        if not caught_up:
+            caught_up = True
+            if not G.flatten_due((close - tick).total_seconds() / 60):  # the EOD flatten never waits on REST
+                catch_up_bars(rows, lock, base, extra, open_, tick, secrets)
         with lock:
             live = stream_bars(rows, tick)
         minutes_to_close = (close - tick).total_seconds() / 60
