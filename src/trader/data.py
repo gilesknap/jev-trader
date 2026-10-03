@@ -88,3 +88,28 @@ def split_sessions(bars: pd.DataFrame) -> dict[dt.date, pd.DataFrame]:
     """Regular-hours bars grouped by trading day."""
     rth = bars.between_time("09:30", "15:59")
     return {d: g for d, g in rth.groupby(rth.index.date)}
+
+
+def prior_sessions(sessions: dict[str, dict[dt.date, pd.DataFrame]], day: dt.date,
+                   volume_from: dict[str, dict[dt.date, pd.DataFrame]] | None = None) -> dict[str, pd.DataFrame]:
+    """Each symbol's last session before `day`: the features' `prev_day`. Prices are always
+    `sessions`' (SIP's, with the official close). When today's bars come from another feed (live
+    IEX), pass that feed's sessions as `volume_from`: the volume column is then taken from it, so
+    a volume ratio never divides one feed's volume by another's. A minute that feed has no bar
+    for has volume 0 (nothing traded on it), so the mean is per session minute; a symbol or
+    session it lacks gets NaN volume, never the other feed's."""
+    out = {}
+    for s, per in sessions.items():
+        earlier = [d for d in per if d < day]
+        if not earlier:
+            continue
+        d = max(earlier)
+        prev = per[d]
+        if volume_from is not None:
+            other = volume_from.get(s, {}).get(d)
+            if other is not None:
+                other = other[~other.index.duplicated(keep="last")]  # as the live stream keeps a repeated minute
+            prev = prev.assign(volume=float("nan") if other is None
+                               else other.volume.reindex(prev.index, fill_value=0).astype(float))
+        out[s] = prev
+    return out
