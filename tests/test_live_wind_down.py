@@ -188,3 +188,29 @@ def test_a_restart_after_a_mid_session_hold_winds_the_live_book_down(tmp_path, m
     assert live.name == "live" and live.broker is made["live"] and live.blocked == WIND_DOWN
     assert "XLV" in seen["symbols"]  # streamed, so the close has prices
     assert any("still holds ['XLV']" in a for a in alerts)
+
+
+def test_a_corrupt_nav_or_risk_file_never_sets_healthy_tracking_aside(live_env, monkeypatch):
+    live_dir, alerts, alert = live_env
+    live_dir.mkdir(parents=True)
+    entries = json.dumps({"SPY": {"classifier": "t", "qty": 0.5, "price": 100.0, "stop": 90.0, "target": 120.0,
+                                  "time": _at(9, 0).isoformat()}})
+    (live_dir / "entries.json").write_text(entries)
+    (live_dir / "nav.json").write_text("{torn")
+    monkeypatch.setattr(runner, "AlpacaBroker", lambda *a, **k: FakeLive(["SPY"]))
+    assert runner.wind_down_live_book(SECRETS, alert) is None
+    assert (live_dir / "entries.json").read_text() == entries and not list(live_dir.glob("*.corrupt-*"))
+    assert len(alerts) == 1 and "unmanaged" in alerts[0][1] and "['SPY']" in alerts[0][1]
+
+
+def test_only_the_unloadable_tracking_file_is_set_aside(live_env, monkeypatch):
+    live_dir, alerts, alert = live_env
+    live_dir.mkdir(parents=True)
+    (live_dir / "entries.json").write_text(json.dumps({"SPY": {"classifier": "t", "qty": 0.5, "price": 100.0,
+                                                               "stop": 90.0, "target": 120.0, "time": "not a time"}}))
+    (live_dir / "pending.json").write_text("{}")
+    monkeypatch.setattr(runner, "AlpacaBroker", lambda *a, **k: FakeLive())
+    b = runner.wind_down_live_book(SECRETS, alert)
+    assert b.blocked == WIND_DOWN and (live_dir / "pending.json").exists()
+    assert [p.name.split(".corrupt-")[0] for p in live_dir.glob("*.corrupt-*")] == ["entries.json"]
+    assert any("holds no positions now" in m for _, m in alerts)

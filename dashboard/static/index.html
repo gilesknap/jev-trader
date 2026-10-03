@@ -646,7 +646,7 @@ function render(d) {
     const eq = b.equity ?? nav.last_equity, pnl = b.equity != null && !b.start_unverified ? b.equity - b.day_start_equity : null;
     const blocked = b.blocked || (f.risk && f.risk.halted ? "halt" : null) || (b.start_unverified ? "unverified" : null);
     const label = { paper: "paper · practice money", live: "LIVE · real money", sim: "sim · backtest money" }[n] || n;
-    const blockedTxt = { kill: "KILL SWITCH: off for today", halt: "HALTED: needs you", stop: "STOPPED for today", unverified: "NO NEW ENTRIES: start equity unreadable" }[blocked] || (blocked || "").toUpperCase();
+    const blockedTxt = { kill: "KILL SWITCH: off for today", halt: "HALTED: needs you", stop: "STOPPED for today", unverified: "NO NEW ENTRIES: start equity unreadable", "wind-down": "WINDING DOWN: closing live positions, no new trades" }[blocked] || (blocked || "").toUpperCase();
     const navv = b.nav ?? (nav.units ? nav.last_equity / nav.units : null);
     const hwm = b.hwm ?? nav.hwm;
     return `<div class="stat${blocked ? " alert" : ""}"><span class="l">${esc(label)}</span><span class="n">$${fmt(eq)}</span>
