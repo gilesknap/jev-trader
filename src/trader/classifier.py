@@ -282,6 +282,9 @@ class SymbolState:
     last_choice: str = ""
     last_probs: dict[str, float] = field(default_factory=dict)
     note: str = ""
+    # The allocator's trim of the entry in flight, kept apart from `note` (which a resting limit
+    # wraps it in), so a fill shows it again without parsing the note.
+    alloc_note: str = ""
     # Today's outcomes, for the dashboard's "why wasn't Jev called" (see Engine._run_classifiers):
     # outcome -> count, and the trigger's values the last time it failed.
     counts: dict[str, int] = field(default_factory=dict)
