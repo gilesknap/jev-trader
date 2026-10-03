@@ -97,7 +97,7 @@ def test_generated_files_carry_the_settings():
     files = config.render_deploy(ROOT, DATA)
     s = config.load_settings(DATA / "config.yaml")
     assert f"OnCalendar=Mon..Fri {s.schedule.runner_start} {s.schedule.local_tz}" in files["deploy/systemd/trader-runner.timer"]
-    assert f"TRADER_DASHBOARD_USERS={','.join(s.dashboard.users)}" in files["deploy/systemd/trader.env"]
+    assert "TRADER_DASHBOARD_USERS" not in files["deploy/systemd/trader.env"]  # config.yaml is the only source
     for k in config.STRATEGIST_KINDS:
         t = files[f"deploy/systemd-trader/trader-strategist-{k}.timer"]
         assert f"OnCalendar={getattr(s.schedule.strategist, k)} {s.schedule.local_tz}\n" in t

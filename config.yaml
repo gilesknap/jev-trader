@@ -12,7 +12,7 @@ owner:
   github_repo: your-github-user/your-repo   # owner/repo on GitHub (a private repo)
 
 dashboard:
-  users: []   # Tailscale logins allowed in (empty = nobody); TRADER_DASHBOARD_USERS overrides
+  users: []   # Tailscale logins allowed in (empty = nobody)
   tailscale_port: 8444                # `tailscale serve --https=<port>` on the tailnet
 
 experiment:

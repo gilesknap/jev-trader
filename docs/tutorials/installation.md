@@ -350,7 +350,7 @@ Before the experiment starts, push real orders through every execution path on p
 
 Edit it on a branch of your data repository, re-render from a code checkout (`TRADER_DATA_ROOT=<data checkout> uv run trader config render-deploy --data-root <data checkout>`), open a pull request on the data repository, merge it with a merge commit, and deploy ([Deploy a change](../how-to/deploy.md)). The deploy shows you the whole config diff and refuses if the rendered files don't match. Then:
 - **A schedule change** also needs the strategist's timers reinstalled, as trader: `bash /srv/trading/main/deploy/setup/2-strategist.sh` (the deploy reminds you; `check.sh` fails until you do). The runner timer is reinstalled by the deploy.
-- **A dashboard users change** also needs `TRADER_DASHBOARD_USERS` in `/home/runner/.config/trading/services.env` updated to match, then a dashboard restart. That file is installed once and is never overwritten, and its value wins over `config.yaml`.
+- **A dashboard users change** needs nothing more: the deploy restarts the dashboard, which reads `config.yaml`. (An install from before `services.env` stopped carrying it may still have a `TRADER_DASHBOARD_USERS` line in `/home/runner/.config/trading/services.env`, which would override `config.yaml`: delete that line.)
 - **A start date change** takes effect at the runner's next session start.
 
 [Configuration](../reference/configuration.md#when-a-change-takes-effect) lists every key.
