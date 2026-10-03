@@ -550,7 +550,7 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
         _apply_cashflows(live_book, live)
         books["live"] = live_book
     else:
-        winding = wind_down_live_book(secrets)
+        winding = wind_down_live_book(secrets, notify)
         if winding is not None:  # under its own key: no classifier's book, so nothing enters on it
             books[WIND_DOWN_KEY] = winding
     count_live_session(mode, open_.date(), BOOKS_DIR / "live", notify)
