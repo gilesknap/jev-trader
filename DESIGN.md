@@ -95,6 +95,7 @@ features/custom/          strategist-authored features
 state/strategy.md         living thesis, rewritten, ~2–3k words cap
 state/classifiers.yaml    active specs
 state/watchlist.md        untraded hypotheses
+state/steering.md         the human's steering decisions (strategist reads, never edits)
 journal/daily|weekly|monthly|yearly/
 logs/trades.csv           permanent (tax record; rows with book sim:<id> are simulated, not real trades)
 logs/cashflows.csv        permanent

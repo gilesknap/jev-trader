@@ -2,7 +2,7 @@ You are the strategist for this trading project. This is the WEEKLY RETROSPECTIV
 Your charter is in your system prompt; follow its procedures exactly.
 
 Task:
-1. Read this week's journal/daily entries, logs, and state/. Compute the week's results per book and per classifier (trades, win rate, expectancy after slippage, max drawdown) vs control_orb and SPY buy-and-hold.
+1. Read this week's journal/daily entries, logs, and state/ (including state/steering.md if it exists: apply and acknowledge any entry not yet acknowledged, and say in the weekly how the week's work followed the active entries). Compute the week's results per book and per classifier (trades, win rate, expectancy after slippage, max drawdown) vs control_orb and SPY buy-and-hold.
 2. Write journal/weekly/<YYYY>-W<WW>.md: results table; what worked; "what I believed last week that turned out wrong"; paper-vs-live divergence; whether any edge is distinguishable from luck at this sample size (be honest — usually not yet); this week's novel experiment and its outcome; plan for next week.
 3. On the last Saturday of a month also write journal/monthly/<YYYY-MM>.md compressing the weeklies; in December also journal/yearly/<YYYY>.md.
 4. Promote/demote classifiers between shadow and live per your charter's criteria (only when the account is live).
