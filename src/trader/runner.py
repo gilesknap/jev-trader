@@ -437,11 +437,11 @@ def wind_down_live_book(secrets, alert=notify) -> Book | None:
     raises. Every call on the trading client has its own HTTP timeout (AlpacaBroker)."""
     if not secrets.get("ALPACA_LIVE_KEY"):
         return None
+    d = BOOKS_DIR / "live"
     try:
         broker = AlpacaBroker(secrets["ALPACA_LIVE_KEY"], secrets["ALPACA_LIVE_SECRET"], paper=False)
-        book = Book("live", broker, BOOKS_DIR / "live")
     except Exception as e:
-        alert("urgent", f"[live] paper today, and the live book couldn't be opened ({e!r}): anything the live "
+        alert("urgent", f"[live] paper today, and the live broker couldn't be set up ({e!r}): anything the live "
                         "account holds is unmanaged today. Check Alpaca now.")
         return None
     held: list[str] | None = None
@@ -450,15 +450,59 @@ def wind_down_live_book(secrets, alert=notify) -> Book | None:
     except Exception as e:
         alert("urgent", f"[live] paper today, and the live positions couldn't be read ({e!r}): the live book "
                         "winds down anyway, closing anything it finds after the open")
-    if held == [] and not book.entries and not book.pending:
-        return None
-    _apply_cashflows(book, broker)  # as on a live day, so its NAV marks stay right
+    if held == [] and not _tracks_anything(d):
+        return None  # the usual paper day: no live book, nothing created on disk
+    try:
+        book = Book("live", broker, d)
+    except Exception as e:  # its entries/pending files are unreadable: set them aside, close all as untracked
+        aside = _set_aside_tracking(d)
+        try:
+            book = Book("live", broker, d)
+        except Exception as e2:
+            alert("urgent", f"[live] paper today, and the live book couldn't be opened ({e2!r}): live positions "
+                            f"{held if held is not None else '(unknown)'} are unmanaged today. Check Alpaca now.")
+            return None
+        alert("urgent", f"[live] the live book's tracking files were unreadable ({e!r}); set aside as {aside}. "
+                        "Its positions are closed as untracked (no trade rows).")
+    try:
+        _apply_cashflows(book, broker)  # as on a live day, so its NAV marks stay right
+    except Exception as e:
+        alert("urgent", f"[live] cashflow bookkeeping failed ({e!r}); winding down anyway")
     if not book.blocked:  # a halt flattens the same way, and stays for the human to clear
         book.blocked = WIND_DOWN
-    what = held if held is not None else sorted(set(book.entries) | set(book.pending))
-    alert("urgent", f"[live] paper today, but the live account still holds {what}: closing it at the first "
+    tracked = sorted(set(book.entries) | set(book.pending))
+    what = (f"still holds {held}" if held else f"still tracks {tracked}" if tracked
+            else "may hold positions (unreadable)")
+    alert("urgent", f"[live] paper today, but the live account {what}: closing everything it holds at the first "
                     "minute after the open. No new live trades.")
     return book
+
+
+def _tracks_anything(d) -> bool:
+    """Whether the live book's entries or resting-order files are non-empty (or unreadable: then yes)."""
+    for name in ("entries.json", "pending.json"):
+        p = d / name
+        try:
+            if p.exists() and json.loads(p.read_text()):
+                return True
+        except Exception:
+            return True
+    return False
+
+
+def _set_aside_tracking(d) -> list[str]:
+    """Rename the live book's entries/pending files to <name>.corrupt-<time>. Never raises."""
+    out = []
+    stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+    for name in ("entries.json", "pending.json"):
+        p = d / name
+        try:
+            if p.exists():
+                p.rename(p.with_name(f"{name}.corrupt-{stamp}"))
+                out.append(f"{name}.corrupt-{stamp}")
+        except OSError:
+            pass
+    return out
 
 
 def count_live_session(mode: str, day: dt.date, live_dir, alert=None) -> None:

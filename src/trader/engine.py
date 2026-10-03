@@ -680,7 +680,12 @@ class Engine:
     def end_day(self, now: dt.datetime) -> dict:
         summary = {}
         for b in self.unique_books():
-            eq = b.broker.equity()
+            try:
+                eq = b.broker.equity()
+            except Exception as ex:  # one account's API failure mustn't stop the session's end (gate, summary)
+                self._alert_every(f"end-equity:{b.name}", "urgent",
+                                  f"[{b.name}] equity unreadable at the close ({ex!r}): no closing mark today")
+                continue
             b.nav.mark(eq)
             b.nav.save(b.dir / "nav.json")
             b.append_equity(now, eq)

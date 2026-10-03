@@ -72,6 +72,7 @@ def test_nothing_held_means_no_wind_down(live_env, monkeypatch):
     _, alerts, alert = live_env
     monkeypatch.setattr(runner, "AlpacaBroker", lambda *a, **k: FakeLive())
     assert runner.wind_down_live_book(SECRETS, alert) is None and not alerts
+    assert not (runner.BOOKS_DIR / "live").exists()  # a never-live system gets no empty live book
     assert runner.wind_down_live_book({}, alert) is None  # no live keys at all
 
 
@@ -90,6 +91,7 @@ def test_tracked_entries_or_an_unreadable_account_wind_down_too(live_env, monkey
         "classifier": "t", "qty": 0.5, "price": 100.0, "stop": 90.0, "target": 120.0, "time": _at(9, 0).isoformat()}}))
     monkeypatch.setattr(runner, "AlpacaBroker", lambda *a, **k: FakeLive())  # gone at the broker: still reconciled
     assert runner.wind_down_live_book(SECRETS, alert).blocked == WIND_DOWN
+    assert any("still tracks ['SPY']" in m for _, m in alerts)
     (live_dir / "entries.json").unlink()
     alerts.clear()
     monkeypatch.setattr(runner, "AlpacaBroker", lambda *a, **k: FakeLive(fail=True))
@@ -110,6 +112,32 @@ def test_an_unopenable_live_book_alerts_and_never_raises(live_env, monkeypatch):
     monkeypatch.setattr(runner, "AlpacaBroker", lambda *a, **k: (_ for _ in ()).throw(ValueError("bad key")))
     assert runner.wind_down_live_book(SECRETS, alert) is None
     assert alerts[0][0] == "urgent" and "unmanaged" in alerts[0][1]
+
+
+def test_unreadable_tracking_files_are_set_aside_and_everything_closes_as_untracked(live_env, monkeypatch):
+    live_dir, alerts, alert = live_env
+    live_dir.mkdir(parents=True)
+    (live_dir / "entries.json").write_text("{torn")
+    monkeypatch.setattr(runner, "AlpacaBroker", lambda *a, **k: FakeLive(["XLV"]))
+    b = runner.wind_down_live_book(SECRETS, alert)
+    assert b.blocked == WIND_DOWN and not b.entries and not (live_dir / "entries.json").exists()
+    assert [p.name.split(".corrupt-")[0] for p in live_dir.glob("*.corrupt-*")] == ["entries.json"]
+    assert any("set aside" in m for _, m in alerts) and any("still holds ['XLV']" in m for _, m in alerts)
+
+
+def test_an_unreadable_live_equity_at_the_close_doesnt_stop_the_session_end(tmp_path):
+    class NoEquity(Broker):
+        def equity(self):
+            raise ConnectionError("account 503")
+
+    paper = Book("paper", Broker(), tmp_path / "paper")
+    live = Book("live", NoEquity(), tmp_path / "live")
+    alerts = []
+    eng = Engine([], {"live": paper, "shadow": paper, runner.WIND_DOWN_KEY: live}, Always(), {"SPY"},
+                 tmp_path / "rt", alert=lambda lvl, msg: alerts.append(msg))
+    eng.day = DAY
+    summary = eng.end_day(dt.datetime.combine(DAY, dt.time(16), ET))
+    assert list(summary) == ["paper"] and any("[live] equity unreadable at the close" in m for m in alerts)
 
 
 def test_a_restart_after_a_mid_session_hold_winds_the_live_book_down(tmp_path, monkeypatch):
