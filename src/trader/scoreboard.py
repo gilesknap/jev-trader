@@ -168,7 +168,9 @@ def build(rows: list[dict], families: dict[str, str], current: set[str], start_e
         row = {"id": cid, "family": fam(cid), "active": cid in current, **summarise(ts),
                "net_usd": round(sum(t["net_usd"] for t in ts), 2), "curve": curve(ts)}
         if since and cid in since and fam(cid) != "control":
-            row["promotion"] = {"n": sum(t["day"] >= since[cid] for t in ts), "of": MIN_TRADES, "since": since[cid]}
+            # Counted like golive.shadow_record: nothing before the start date, even when all days are shown.
+            start = max(since[cid], EXPERIMENT_START.isoformat())
+            row["promotion"] = {"n": sum(t["day"] >= start for t in ts), "of": MIN_TRADES, "since": start}
         classifiers.append(row)
     classifiers.sort(key=lambda r: (FAMILIES.index(r["family"]), not r["active"], -r["net_usd"], r["id"]))
 

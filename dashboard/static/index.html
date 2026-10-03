@@ -267,6 +267,11 @@ code { font-family: var(--mono); font-size: .9em; }
       <dl class="kv" id="btinfo"></dl>
       <p class="note">A replay over past market data with a pretend account. It can flatter a strategy, so only forward paper results count towards going live.</p></section>
   </div>
+  <section id="sec-read"><h2>Strategist's read on today <span>from its daily journal</span></h2>
+    <details class="about"><summary>About this</summary>
+      <p>The strategist's pre-market run checks futures, news and the day's economic calendar about an hour before the open, and notes what it decided for today. After the close, its review adds what happened. Both are sections of the day's journal entry, shown in full on Strategist's notes.</p></details>
+    <p class="dayline" id="read-day" hidden></p>
+    <div class="md" id="read"><p class="muted">Loading…</p></div></section>
   <section id="sec-positions"><h2>Open positions <span>sold automatically at the stop-loss or target, and 15 min before the close</span></h2>
     <details class="about"><summary>About positions</summary>
       <p>Shares held right now. Each has a <b>stop-loss</b> (sold automatically if the price falls to it) and a <b>target</b> (sold to take the profit). Everything is sold 15 minutes before the US close, so nothing is held overnight.</p></details>
@@ -326,11 +331,12 @@ code { font-family: var(--mono); font-size: .9em; }
 
 <!-- ============ TRADES ============ -->
 <div class="page" id="page-trades" hidden>
-  <section><h2>Recent trades <span>the last 40 fills, newest first, grouped by New York trading day, times in New York time</span></h2>
+  <section><h2>Recent trades <span>all of today's fills and the 40 before them, newest first, grouped by New York trading day, times in New York time</span></h2>
     <details class="about"><summary>About trades</summary>
       <p>Every buy and sell. P&amp;L (profit and loss) appears on the sell that closes a trade. <b>paper</b> is the Alpaca practice account, <b>live</b> is real money, and <b>sim</b> is the pretend account inside a backtest.</p></details>
     <p class="dayline" id="trades-day" hidden></p>
-    <div class="table-wrap" id="trades"></div></section>
+    <div class="table-wrap" id="trades"></div>
+    <p class="note" id="trades-more" hidden></p></section>
 </div>
 
 <!-- ============ NOTES ============ -->
@@ -705,10 +711,13 @@ function render(d) {
     { h: "asked at", v: r => r.x.last_eval || "–", num: 1 }, { h: "note", v: r => r.x.note || "" },
   ], rows, r => r.first ? "grp" : "", "No rules loaded yet. The runner loads them shortly before the open.");
 
-  const trades = Object.values(d.books).flatMap(b => b.trades).sort((a, b) => b.time.localeCompare(a.time)).slice(0, 40);
+  // The server sends every fill from today (a replay: its last day) and a bounded tail before them, newest first.
+  const trades = d.trades || [];
   const today = d.source === "live" ? nyToday() : null, td = tradeDays(trades, today);
   badge("n-trades", td.nToday);
   $("trades-day").hidden = !td.note; $("trades-day").textContent = td.note;
+  $("trades-more").hidden = !d.trades_omitted;
+  $("trades-more").textContent = `Showing the last ${trades.length} of ${trades.length + (d.trades_omitted || 0)} fills.`;
   const tcols = [
     { h: "NY time", v: r => r.time.slice(11, 16), num: 1 },
     { h: "stock", raw: 1, v: r => `<span class="sym">${esc(r.symbol)}</span>` },
@@ -1133,6 +1142,20 @@ function renderOverviewState(h) {
     `<span class="d">${h.decision_errors > 0 ? "failed calls: no decision was made, and new decisions pause for a few minutes after each (details on Today and in the runner log)" : "decision calls that failed"}</span></div>`;
 }
 
+// The latest daily journal entry's Pre-market and Post-close sections (the server extracts them).
+async function renderRead() {
+  const r = await api("/api/today-read");
+  const note = !r.name ? "The strategist hasn't written a daily journal entry yet."
+    : r.is_today ? "" : `No journal entry for today yet. On a trading day the pre-market run writes one about an hour before the open; if it's later than that, the run didn't happen or failed. Showing the latest, from ${dayLabel(r.name.slice(0, 10), r.today)}.`;
+  $("read-day").hidden = !note; $("read-day").textContent = note;
+  if (!r.name) { $("read").innerHTML = ""; return; }
+  const parts = [["premarket", "Pre-market"], ["postclose", "Post-close"]].filter(([k]) => r.sections[k]);
+  $("read").innerHTML = (parts.length ? parts.map(([k, h]) => `<h3>${h}</h3>` + md(r.sections[k])).join("")
+    : '<p class="muted">This entry has no Pre-market or Post-close section.</p>') +
+    `<p class="note"><a href="#notes" id="read-link">Full entry for ${esc(r.name.slice(0, 10))} on Strategist's notes</a></p>`;
+  $("read-link").onclick = e => { e.preventDefault(); docSel = `j:daily/${r.name}`; showPage("notes"); renderDocs().catch(() => {}); };
+}
+
 let docs = null, docSel = "strategy";
 async function renderDocs() {
   docs = await api("/api/docs");
@@ -1158,7 +1181,7 @@ function banner(src, d, h) {
   const b = $("banner");
   $("clock").innerHTML = marketClock();
   // Live-system panels mean nothing inside a finished backtest.
-  for (const id of ["sec-positions", "sec-glance"]) $(id).hidden = src !== "live";
+  for (const id of ["sec-positions", "sec-glance", "sec-read"]) $(id).hidden = src !== "live";
   $("sec-backtest").hidden = src === "live";
   if (src !== "live") {
     const r = SOURCES.replays.find(x => x.id === src) || {};
@@ -1191,6 +1214,7 @@ async function refresh() {
       try { renderProbeResults(r, src); } catch (e) { $("proberesults").innerHTML = `<p class="neg">Couldn't show the probe report: ${esc(e.message)}</p>`; }
     });
     banner(src, d, h);
+    if (src === "live") renderRead().catch(e => { $("read").innerHTML = `<p class="neg">Couldn't read the journal: ${esc(e.message)}</p>`; });
     renderHealth(d, h);
     renderOverviewState(h);
     loadRules();
