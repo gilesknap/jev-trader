@@ -357,6 +357,24 @@ def count_live_session(mode: str, day: dt.date, live_dir, alert=None) -> None:
                                     "Set live_sessions to 0 there before the account goes live again.")
 
 
+def _record_missed_demotion(golive, session: dt.date) -> None:
+    """A start after the close never processes the session again, but a crash between the close
+    and after_session would otherwise lose a live-halt demotion: still `live`, the account would go
+    live again once the halt is cleared, with no `release-live`. So if go-live is live and the live
+    book is halted, demote now (after_session is idempotent per session date, so a session already
+    processed is untouched). Nothing else of after_session runs here: a crashed session never counts
+    towards the veto window or arms the gate. Never raises."""
+    try:
+        if golive.load_state()["status"] != "live":
+            return
+        p = BOOKS_DIR / "live" / "risk.json"
+        if p.exists() and json.loads(p.read_text()).get("halted"):
+            golive.after_session(notify, live_book_halted=True, session=session)
+    except Exception as e:
+        notify("urgent", f"post-close check for a missed live-halt demotion failed: {e!r}. If the live book is "
+                         "halted, run `trader hold-live` before clearing it.")
+
+
 def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
     from trader.jev import JevClient, StubDecider
 
@@ -389,6 +407,7 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
                                          f"{sorted(held)}. The runner closes them after tomorrow's open; check Alpaca now.")
                 except Exception as e:
                     notify("urgent", f"[{kind.lower()}] post-close position check failed: {e}")
+        _record_missed_demotion(golive, open_.date())
         print("session already over")
         return 0
     mode = golive.resolve_mode(notify, live_equity, session=open_.date())
@@ -744,6 +763,10 @@ def clear_halt(book: str) -> str:
         return f"{book} is not halted: nothing changed"
     if _runner_live():
         return "the runner is running (it holds NAV in memory): retry after it exits after the close; nothing changed"
+    if book == "live":  # first, so a failure leaves the halt in place: never back to live unreleased
+        from trader import golive
+
+        golive.demote_on_halt_cleared(notify)  # a demotion lost to a crash after the close
     risk.update(halted=False)
     risk.pop("reason", None)
     if book == "live":  # a live halt ends the stint: whatever the path back (even mode.yaml), half size again
