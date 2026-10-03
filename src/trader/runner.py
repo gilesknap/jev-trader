@@ -24,7 +24,7 @@ from trader import guardrails as G
 from trader.alerts import notify
 from trader.broker import AlpacaBroker
 from trader.data import ET, GATE_LOOKBACKS, GateSampleError, fetch_alpaca, gate_samples, prior_sessions, split_sessions
-from trader.engine import Book, Engine, stale_feed
+from trader.engine import WIND_DOWN, Book, Engine, stale_feed
 from trader.market_calendar import Calendar, fetch_calendar, session_from_row
 
 BOOKS_DIR = config.RUNTIME_DIR / "books"
@@ -423,6 +423,114 @@ def _last_resort_flatten(engine: Engine, tick: dt.datetime, bars: dict, minutes_
         engine._alert_every("eod-status", "urgent", f"status write failed in the flatten window: {e!r}")
 
 
+WIND_DOWN_KEY = "live:wind-down"
+
+
+def wind_down_live_book(secrets, alert=notify) -> Book | None:
+    """On a paper day the live account can still hold positions: a HOLD LIVE (or a live halt
+    cleared with `clear-halt`) mid-session, then a runner restart, or a mode.yaml switch to paper.
+    Without the live book in the engine they'd be unmanaged until a later live session (their
+    server-side stops lapse at the close). So when the live book tracks entries or resting orders,
+    or the live account holds anything (or that can't be read), the live book joins the session in
+    wind-down: no classifier trades it, and the engine closes all it holds at the first tick after
+    the open (Engine._book_checks); the EOD flatten backs that up. None: nothing to wind down. Never
+    raises. Every call on the trading client has its own HTTP timeout (AlpacaBroker)."""
+    if not secrets.get("ALPACA_LIVE_KEY"):
+        return None
+    d = BOOKS_DIR / "live"
+    try:
+        broker = AlpacaBroker(secrets["ALPACA_LIVE_KEY"], secrets["ALPACA_LIVE_SECRET"], paper=False)
+    except Exception as e:
+        alert("urgent", f"[live] paper today, and the live broker couldn't be set up ({e!r}): anything the live "
+                        "account holds is unmanaged today. Check Alpaca now.")
+        return None
+    held: list[str] | None = None
+    try:
+        held = sorted(broker.get_positions())
+    except Exception as e:
+        alert("urgent", f"[live] paper today, and the live positions couldn't be read ({e!r}): the live book "
+                        "winds down anyway, closing anything it finds after the open")
+    if held == [] and not _tracks_anything(d):
+        return None  # the usual paper day: no live book, nothing created on disk
+    unmanaged = (f"live positions {held if held is not None else '(unknown)'} are unmanaged today. "
+                 "Check Alpaca now.")
+    try:
+        book = Book("live", broker, d)
+    except Exception as e:
+        # Only a tracking file that itself won't load is set aside (then everything closes as
+        # untracked); a corrupt nav.json or risk.json leaves the tracking alone for the human.
+        bad = _unloadable_tracking(d)
+        if not bad:
+            alert("urgent", f"[live] paper today, and the live book couldn't be opened ({e!r}): {unmanaged}")
+            return None
+        aside = _set_aside_tracking(d, bad)
+        try:
+            book = Book("live", broker, d)
+        except Exception as e2:
+            alert("urgent", f"[live] paper today, and the live book couldn't be opened ({e2!r}): {unmanaged}")
+            return None
+        alert("urgent", f"[live] the live book's tracking files were unreadable ({e!r}); set aside as {aside}. "
+                        "Its positions are closed as untracked (no trade rows).")
+    try:
+        _apply_cashflows(book, broker)  # as on a live day, so its NAV marks stay right
+    except Exception as e:
+        alert("urgent", f"[live] cashflow bookkeeping failed ({e!r}); winding down anyway")
+    if not book.blocked:  # a halt flattens the same way, and stays for the human to clear
+        book.blocked = WIND_DOWN
+    tracked = sorted(set(book.entries) | set(book.pending))
+    what = (f"still holds {held}" if held else f"still tracks {tracked}" if tracked
+            else "may hold positions (unreadable)" if held is None else "holds no positions now")
+    alert("urgent", f"[live] paper today, but the live account {what}: closing everything it holds at the first "
+                    "minute after the open. No new live trades.")
+    return book
+
+
+def _tracks_anything(d) -> bool:
+    """Whether the live book's entries or resting-order files are non-empty (or unreadable: then yes)."""
+    for name in ("entries.json", "pending.json"):
+        p = d / name
+        try:
+            if p.exists() and json.loads(p.read_text()):
+                return True
+        except Exception:
+            return True
+    return False
+
+
+def _unloadable_tracking(d) -> list[str]:
+    """The live book's tracking files (entries.json, pending.json) that won't load as Book loads them."""
+    from trader.engine import Entry, Pending, _known
+
+    loaders = {"entries.json": lambda o: Entry(**_known(Entry, o | {"time": dt.datetime.fromisoformat(o["time"])})),
+               "pending.json": lambda o: Pending(**_known(Pending, o | {k: dt.datetime.fromisoformat(o[k])
+                                                                         for k in ("placed", "expires")}))}
+    bad = []
+    for name, load in loaders.items():
+        p = d / name
+        try:
+            if p.exists():
+                for o in json.loads(p.read_text()).values():
+                    load(o)
+        except Exception:
+            bad.append(name)
+    return bad
+
+
+def _set_aside_tracking(d, names) -> list[str]:
+    """Rename these live-book tracking files to <name>.corrupt-<time>. Never raises."""
+    out = []
+    stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+    for name in names:
+        p = d / name
+        try:
+            if p.exists():
+                p.rename(p.with_name(f"{name}.corrupt-{stamp}"))
+                out.append(f"{name}.corrupt-{stamp}")
+        except OSError:
+            pass
+    return out
+
+
 def count_live_session(mode: str, day: dt.date, live_dir, alert=None) -> None:
     """The live book's `live_sessions`: the engine trades its first 5 at half size. Every return to
     live starts a fresh half-size week, whatever the path back (a runner demotion after a live halt,
@@ -473,6 +581,8 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
     secrets = config.load_secrets()
     from trader import golive
 
+    golive.resend_unsent(notify)  # go-live alerts a crash kept from going out (never raises)
+
     def live_equity():
         if not secrets.get("ALPACA_LIVE_KEY"):
             return None
@@ -511,6 +621,10 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
         live_book = Book("live", live, BOOKS_DIR / "live")
         _apply_cashflows(live_book, live)
         books["live"] = live_book
+    else:
+        winding = wind_down_live_book(secrets, notify)
+        if winding is not None:  # under its own key: no classifier's book, so nothing enters on it
+            books[WIND_DOWN_KEY] = winding
     count_live_session(mode, open_.date(), BOOKS_DIR / "live", notify)
 
     # Wait for the open; the pre-market strategist run may still be editing classifiers.
@@ -545,6 +659,12 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
         notify("info" if msg.startswith("[sim:") else level, msg)
 
     engine = Engine(specs, books, decider, universe, config.RUNTIME_DIR, alert=engine_alert)
+    try:  # the trial ledger is research bookkeeping: never a reason not to trade
+        from trader import trials
+
+        trials.note_shadow_starts(specs, engine.provenance.specs, open_.date(), stub=decider_name == "stub")
+    except Exception as e:
+        notify("info", f"trial ledger: could not record today's new specs: {e!r}")
 
     # Settled cash at startup, before anything sells: sale proceeds (orphan closes too) settle T+1, mustn't fund buys.
     settled_at_open = {}

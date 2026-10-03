@@ -29,6 +29,10 @@ unset STRATEGIST_LOG STRATEGIST_LOCKED STRATEGIST_SYNCED STRATEGIST_COPIED
 unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
 export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
 cd "$REPO" || exit 1
+# The trading day is the New York date (config.ny_today): on a US evening UTC is already tomorrow, so a
+# post-close retry after 00:00 UTC must still count as the same session, and the publish commit and the
+# strategist's "today" must name the day the session was. Log timestamps stay UTC.
+NY_TODAY=$(TZ=America/New_York date +%F)
 
 skip() { echo "$(date -u +%FT%TZ) $KIND: $1" >>"$LOG"; exit 0; }
 alert() { "${PY_BIN[@]}" -c "from trader.alerts import notify; import sys; notify('urgent', sys.argv[1])" "$1"; }
@@ -82,7 +86,7 @@ if [[ "$KIND" == premarket || "$KIND" == postclose ]]; then
     [[ $rc -ne 0 ]] && { alert "strategist $KIND: session lookup failed"; exit 1; }
     MTO=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['minutes_to_open'])" "$SESSION")
     MTC=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['minutes_to_close'])" "$SESSION")
-    STAMP="$LOGDIR/done-$KIND-$(date -u +%F)"
+    STAMP="$LOGDIR/done-$KIND-$NY_TODAY"
     [[ -e "$STAMP" ]] && skip "already ran today"
     if [[ "$KIND" == premarket ]]; then (( MTO >= 30 && MTO <= 75 )) || skip "outside window (${MTO} min to open)"; fi
     if [[ "$KIND" == postclose ]]; then (( MTC <= -20 )) || skip "too early (${MTC} min to close)"; fi
@@ -147,7 +151,7 @@ fi
 [[ "$KIND" == weekly ]] && "${TRADER_BIN[@]}" compact >>"$LOG" 2>&1
 
 PROMPT="$(cat "$CODE/prompts/$KIND.md")
-Today (UTC): $(date -u '+%A %F %H:%M'). Session: ${SESSION:-n/a}"
+Today (UTC): $(date -u '+%A %F %H:%M'); the trading day (New York date) is $NY_TODAY. Session: ${SESSION:-n/a}"
 PRE=$(git rev-parse HEAD)
 LIMIT=50m; [[ "$KIND" == premarket ]] && LIMIT=25m
 if ! MODEL=$("${TRADER_BIN[@]}" config get models.strategist 2>>"$LOG") || [[ -z "$MODEL" ]]; then
@@ -243,6 +247,25 @@ if (( ${#OUT_ALL[@]} )); then
     fi
     alert "strategist $KIND touched non-strategy paths (reverted): $TOUCHED"
 fi
+# The trial ledger is append-only: the tools add rows at its end, and nothing may change or remove
+# one. So the ledger may only have grown since the last commit (PRE), with the committed bytes
+# unchanged at its start (this also covers a dirty checkout left by an earlier failed run). Anything
+# else (an edited, truncated, removed or replaced ledger) goes back to PRE's: the runner's rows come
+# back with the next archive, but rows the tools added since PRE are lost.
+LEDGER=logs/trials.csv
+if [[ $(git cat-file -t "$PRE:$LEDGER" 2>/dev/null) == blob ]] && OLD_SIZE=$(git cat-file -s "$PRE:$LEDGER"); then
+    OLD_SUM=$(git cat-file blob "$PRE:$LEDGER" | sha256sum)
+else
+    OLD_SIZE=-1
+fi
+if (( OLD_SIZE >= 0 )) || [[ -e $LEDGER || -L $LEDGER ]]; then
+    if [[ ! -f $LEDGER || -L $LEDGER ]] \
+        || { (( OLD_SIZE >= 0 )) && [[ $(head -c "$OLD_SIZE" -- "$LEDGER" | sha256sum) != "$OLD_SUM" ]]; }; then
+        rm -rf -- "$LEDGER"
+        (( OLD_SIZE >= 0 )) && git --literal-pathspecs checkout -q "$PRE" -- "$LEDGER" >>"$LOG" 2>&1
+        alert "strategist $KIND changed or removed rows of $LEDGER, which is append-only: reverted it to the last commit (rows added since then are lost)"
+    fi
+fi
 # Only existing dirs: a missing pathspec makes `git add` add nothing at all (and none would add everything).
 DIRS=$(ls -d state journal features/custom logs ${SPLIT:+proposals} 2>/dev/null)
 [[ -n "$DIRS" ]] && git add -A -- $DIRS >>"$LOG" 2>&1
@@ -257,7 +280,7 @@ PUSHED_OUTSIDE=$(git diff --name-only --no-renames "$PRE" "$BASE" | outside_only
 [[ -n "$PUSHED_OUTSIDE" ]] && alert "strategist $KIND pushed non-strategy paths to origin/strategist (reverted): $(echo $PUSHED_OUTSIDE | head -c 300)"
 TREE=$(git write-tree)
 if [[ "$TREE" != "$(git rev-parse "$BASE^{tree}")" ]]; then
-    BASE=$(git commit-tree "$TREE" -p "$BASE" -m "strategist: $KIND $(date -u +%F)")
+    BASE=$(git commit-tree "$TREE" -p "$BASE" -m "strategist: $KIND $NY_TODAY")
 fi
 git reset -q --soft "$BASE"
 # Someone else pushed to strategist during the run: replay this run's commit on top.
