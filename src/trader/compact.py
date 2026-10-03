@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import csv
 import datetime as dt
+import io
 import shutil
 
 from trader import config
@@ -47,11 +48,16 @@ def archive() -> dict:
 
 def _merge_csv(src, dst) -> int:
     """Rows of `src` not already in `dst`. Columns `src` has that `dst` lacks (new ones added at the
-    end, e.g. trade provenance) are added to `dst` first, blank on its existing rows."""
+    end, e.g. trade provenance) are added to `dst` first, blank on its existing rows. The runner
+    may be appending to `src` meanwhile: a last line without its newline is still being written,
+    so it's left for the next archive (copied now, its torn copy would stay beside the full row)."""
     with src.open(newline="") as f:
-        reader = csv.DictReader(f)
-        rows = list(reader)
-        cols = list(reader.fieldnames or [])
+        text = f.read()
+    if not text.endswith("\n"):
+        text = text[: text.rfind("\n") + 1]  # nothing at all if even the header is unfinished
+    reader = csv.DictReader(io.StringIO(text, newline=""))
+    rows = list(reader)
+    cols = list(reader.fieldnames or [])
     old_cols, existing = [], []
     if dst.exists():
         with dst.open(newline="") as f:

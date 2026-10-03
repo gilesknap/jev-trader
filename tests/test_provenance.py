@@ -103,3 +103,26 @@ def test_archive_widens_the_repo_trades_log(tmp_path, monkeypatch):
     assert compact.archive()["trades_added"] == 0  # idempotent across the header change
     df = pd.read_csv(logs / "trades.csv", dtype=str, keep_default_na=False)
     assert list(df.columns) == TRADE_COLS and list(df.spec_hash) == ["", "", "h1"]
+
+
+def test_archive_leaves_a_row_still_being_written_for_next_time(tmp_path, monkeypatch):
+    """The runner may be mid-append: a last line without its newline is torn. Archived now, its
+    short copy would stay in the log beside the full row once that was archived too."""
+    rt = tmp_path / "runtime"
+    src = rt / "books" / "paper" / "trades.csv"
+    src.parent.mkdir(parents=True)
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    monkeypatch.setattr(config, "RUNTIME_DIR", rt)
+    monkeypatch.setattr(compact, "LOGS", logs)
+    full = OLD_COLS + "\r\n" + OLD_ROWS.replace("\n", "\r\n")  # as csv writes it
+    last = full.rstrip("\r\n").rsplit("\r\n", 1)[1]
+    src.write_text(full[: -len(last) - 2] + last[:20], newline="")  # torn mid-row
+    assert compact.archive()["trades_added"] == 1
+    src.write_text(full, newline="")  # the runner finished the line
+    assert compact.archive()["trades_added"] == 1
+    assert compact.archive()["trades_added"] == 0
+    rows = list(csv.reader((logs / "trades.csv").open(newline="")))
+    assert rows == [r.split(",") for r in [OLD_COLS] + OLD_ROWS.splitlines()]
+    src.write_text(OLD_COLS[:10], newline="")  # even the header unfinished: nothing, no crash
+    assert compact._merge_csv(src, tmp_path / "other.csv") == 0

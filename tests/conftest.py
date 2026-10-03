@@ -125,7 +125,7 @@ def pytest_sessionfinish(session, exitstatus):
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
-    if _created_real_alerts():  # here, after the "N passed" line, where a failure is looked for
+    if _created_real_alerts():  # here, just before the "N passed" line, where a failure is looked for
         terminalreporter.write_line(f"FAIL: the suite created the strategist root's alerts log {REAL_STRATEGIST_ALERTS}", red=True)
 
 
