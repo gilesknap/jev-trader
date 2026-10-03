@@ -133,7 +133,7 @@ def test_recent_returns_are_one_minute_apart():
     got = lib.recent_returns_bps(sparse, now)
     assert len(got) == 10 and got[-6] == 0.0  # 10:25 carried 10:24's close
     assert got[-5] == round((bars.close.loc[at(10, 26)] / bars.close.loc[at(10, 24)] - 1) * 1e4, 1)
-    # Early in the session only the minutes since the first bar, as before.
+    # Early in the session only the returns since the first bar (the old list also led with a filler 0).
     assert len(lib.recent_returns_bps(bars.loc[:at(9, 32)], at(9, 33).to_pydatetime())) == 2
     # The live stream indexes in microseconds.
     us = sparse.copy()
@@ -164,3 +164,28 @@ def test_minutes_since_open_is_the_same_in_the_gate_as_live(tmp_path, monkeypatc
     both = sorted(set(gate) & set(live))  # the gate from bar 31, the probe from 09:32 to its 15:30 window end
     assert len(both) > 300 and {n: live[n] for n in both} == {n: gate[n] for n in both}
     assert rows[0]["t"] == "09:32" and [r["m"] for r in rows][:3] == [2, 3, 4]
+
+
+def test_odd_clock_values():
+    """numpy numbers count as the clock; bools and non-numbers fall back to the latest bar."""
+    import numpy as np
+
+    bars = make_session(day=DAY, seed=11).loc[:at(9, 59)]
+    stale = F.FeatureContext(bars, bars, np.int64(46), 344)  # 10:15: latest price 16 minutes old
+    assert math.isnan(F.compute(["ret_1m_pct"], bars, stale)["ret_1m_pct"])
+    for m in (True, None, "46"):
+        got = F.compute(["ret_1m_pct"], bars, F.FeatureContext(bars, bars, m, 0))["ret_1m_pct"]
+        assert got == pytest.approx((bars.close.iloc[-1] / bars.close.iloc[-2] - 1) * 100)
+
+
+def test_dense_parity_with_a_microsecond_index():
+    """The live stream indexes in microseconds: dense values match the row-count definitions there too."""
+    bars = make_session(day=DAY, seed=12).assign(volume=lambda d: 1000.0 + d.index.minute * 10.0)
+    us = bars.copy()
+    us.index = us.index.as_unit("us")
+    for n in sorted(set(range(1, 391, 13)) | {2, 6, 14, 15, 16, 29, 30, 31, 32, 389, 390}):
+        a, b = F.compute(MINUTE_NAMES, bars.iloc[:n], ctx(bars.iloc[:n])), F.compute(MINUTE_NAMES, us.iloc[:n], ctx(us.iloc[:n]))
+        assert same(a, b), n
+        c = bars.close.iloc[:n]
+        if n > 5:
+            assert a["ret_5m_pct"] == pytest.approx((c.iloc[-1] / c.iloc[-6] - 1) * 100), n

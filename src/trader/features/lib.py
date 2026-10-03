@@ -13,6 +13,7 @@ in bars (`rsi_14`, `atr_14_pct`, `ema_9_21_diff_pct`, `realized_vol_30m_pct`,
 from __future__ import annotations
 
 import math
+import numbers
 
 import numpy as np
 import pandas as pd
@@ -34,7 +35,7 @@ def _now(bars: pd.DataFrame, ctx) -> pd.Timestamp:
     so a symbol whose latest bar is old is seen as stale; the latest bar's label if later."""
     last = bars.index[-1]
     m = getattr(ctx, "minutes_since_open", None)
-    if isinstance(m, (int, float)) and math.isfinite(m):
+    if isinstance(m, numbers.Real) and not isinstance(m, bool) and math.isfinite(m):
         return max(last, _open(bars) + (m - 1) * MINUTE)
     return last
 
