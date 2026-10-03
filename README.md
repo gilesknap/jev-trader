@@ -1,3 +1,6 @@
+[![CI](https://github.com/gilesknap/jev-trader/actions/workflows/ci.yml/badge.svg)](https://github.com/gilesknap/jev-trader/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
+
 # jev-trader
 
 An autonomous day-trading experiment. A strategist (headless Claude Code) designs intraday
@@ -5,6 +8,12 @@ classifiers in plain YAML. A runner daemon executes them on an Alpaca account, a
 **Jev** decision model (via OpenRouter) for each go/no-go, with hard guardrails enforced in code
 and by OS user separation. A permanent control strategy and a scoreboard measure whether any of
 it beats doing nothing.
+
+What            | Where
+:---:           | :---:
+Source          | <https://github.com/gilesknap/jev-trader>
+Documentation   | <https://gilesknap.github.io/jev-trader>
+Releases        | <https://github.com/gilesknap/jev-trader/releases>
 
 > **Warning: this is an experiment, not a product, and it can lose real money.** It trades a
 > real brokerage account by itself once its go-live gate passes and a
