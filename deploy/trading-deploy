@@ -33,6 +33,12 @@ STRATEGIST_DIR=/srv/trading/strategist
 RUNTIME_DIR=/srv/trading/runtime
 TRADER_UNITS=/home/trader/.config/systemd/user  # trader's installed strategist units (compared if readable)
 PLAN_TRADER="$CODE_DIR/.venv/bin/trader"  # the DEPLOYED code and key judge which commits are merged PRs
+# Everything that runs the deployed or candidate code (the plan step, the candidate tests, the
+# switch's venv sync) runs in this fixed environment, never the caller's (sudo -E or env_keep can
+# carry it in): an inherited TRADER_* variable (from a shell with services.env loaded, say) would
+# point it at other data, and PYTHONPATH, VIRTUAL_ENV, UV_*, PYTEST_ADDOPTS or API keys could
+# change what runs, where the venv is built, or what it can reach.
+FIXED_ENV=(HOME="$HOME" USER="$(id -un)" LOGNAME="$(id -un)" PATH="$PATH" LANG=C.UTF-8 XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR")
 cd "$CODE_DIR"
 # --- session lock (tests/test_deploy_session_lock.py runs these functions) ---
 # trader-runner.service holds LOCK shared (flock -s) for its whole session. A deploy never waits
@@ -159,9 +165,11 @@ inspect_repo() {  # DIR BASE TARGET PLAINFILE LABEL FULL: show, refuse or plan o
         exit 1
     fi
     # Which commits came through a merged PR? Asked of the deployed code and key, never the candidate's.
-    # `trader` loads config.yaml at import: in the two-repo layout it lives only in the deployed data.
-    planout=$(if (( ${SPLIT:-0} )); then export TRADER_DATA_ROOT="$CONFIG_DIR"; fi
-              "$PLAN_TRADER" deploy-plan --repo "$dir" --base "$base" --target "$target" 2>&1) && rc=0 || rc=$?
+    # `trader` loads config.yaml at import: in the two-repo layout it lives only in the deployed data,
+    # and an inherited TRADER_CONFIG (or any other TRADER_*) must not point it elsewhere.
+    local penv=("${FIXED_ENV[@]}")
+    if (( ${SPLIT:-0} )); then penv+=(TRADER_DATA_ROOT="$CONFIG_DIR"); fi
+    planout=$(env -i "${penv[@]}" "$PLAN_TRADER" deploy-plan --repo "$dir" --base "$base" --target "$target" 2>&1) && rc=0 || rc=$?
     case $rc in
         0) echo "=== ${label}merged pull requests (GitHub-signed merge commits; review happened in each PR) ==="
            echo "$planout" | sed 's/^PR /  /' ;;
@@ -348,11 +356,9 @@ fi
 # Test the candidate in a throwaway worktree with its own venv BEFORE touching the live copy:
 # if the tests fail, /srv/trading/main is unchanged and the runner keeps its current code.
 # In the two-repo layout the candidate data is a second throwaway worktree, and the tests and
-# checks read it through TRADER_DATA_ROOT. The tests run in a fixed environment (env -i and the
-# allowlist below), never the caller's: an inherited TRADER_* variable (from a shell with
-# services.env loaded, say) would point them at live data, since tests/conftest.py respects what is
-# already set, and others (PYTHONPATH, VIRTUAL_ENV, UV_*, PYTEST_ADDOPTS, API keys) could change
-# what runs or what it can reach.
+# checks read it through TRADER_DATA_ROOT. The tests run in FIXED_ENV (env -i), never the
+# caller's: an inherited TRADER_* variable would point them at live data, since tests/conftest.py
+# respects what is already set.
 cand=$(mktemp -d -p /var/tmp)  # not /tmp: may be a small tmpfs, and the venv is large
 dcand=""
 switching=0  # 1 from taking the switch lock until the units are reloaded
@@ -388,7 +394,7 @@ partial_switch_help() {  # RC: a step of the switch failed, so the checkouts may
         echo "  systemctl --user daemon-reload"
     } >&2
 }
-TEST_ENV=(HOME="$HOME" USER="$(id -un)" LOGNAME="$(id -un)" PATH="$PATH" LANG=C.UTF-8 XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR")
+TEST_ENV=("${FIXED_ENV[@]}")
 if (( SPLIT )); then TEST_ENV+=(TRADER_DATA_ROOT="$dcand"); fi
 echo "testing $what in a temporary checkout..."
 if ! (cd "$cand" && env -i "${TEST_ENV[@]}" bash -c 'uv sync -q --frozen --extra dev && uv run --frozen pytest -q tests'); then
@@ -420,7 +426,9 @@ if (( SPLIT )); then
     git -C "$CONFIG_DIR" clean -qfd
     chmod -R g-w,o-rwx "$CONFIG_DIR"
 fi
-uv sync -q --frozen --extra dev
+# Fixed environment again: an inherited UV_PROJECT_ENVIRONMENT or VIRTUAL_ENV would build the venv
+# elsewhere and leave .venv (what the units run) on the old code's dependencies.
+env -i "${FIXED_ENV[@]}" uv sync -q --frozen --extra dev
 if (( SPLIT )); then
     unit_sources "$CODE_DIR" "$CONFIG_DIR"
     cp -- "${UNIT_SRC[@]}" ~/.config/systemd/user/   # services.env is left alone

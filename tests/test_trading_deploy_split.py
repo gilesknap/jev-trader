@@ -162,6 +162,7 @@ mode=""; [[ -n "${TRADER_DATA_ROOT:-}" ]] && mode=$(cat "$TRADER_DATA_ROOT/confi
 echo "uv $* | cwd=$PWD | TRADER_DATA_ROOT=${TRADER_DATA_ROOT:-} | mode=$mode" >> "$FAKE_LOG"
 [[ "$1" == run ]] && env | grep '^TRADER_' | sort > "$FAKE_LOG.testenv"  # everything TRADER_* the tests see
 [[ "$1" == run ]] && env | cut -d= -f1 | grep -v '^FAKE_' | sort > "$FAKE_LOG.testvars"  # and every other name
+[[ "$1" == sync && "$PWD" == "${FAKE_CODE_DIR:-}" ]] && env | cut -d= -f1 | grep -v '^FAKE_' | sort > "$FAKE_LOG.switchvars"
 case "$1" in
     sync) [[ "$PWD" == "${FAKE_CODE_DIR:-}" ]] && exit "${FAKE_SWITCH_SYNC_RC:-0}"  # the switch's sync
           mkdir -p .venv/bin && cp "$FAKE_TRADER" .venv/bin/trader ;;
@@ -268,8 +269,8 @@ class Rig:
             ("/home/trader/.config/systemd/user", str(self.trader_units)),
             ("-p /var/tmp", f"-p {self.scratch}"),
             ("OWNER=runner ", f"OWNER={getpass.getuser()} "),
-            # The candidate tests' env -i allowlist also passes the fakes' own settings.
-            ("TEST_ENV=(HOME=", "mapfile -d '' -t TEST_ENV < <(env -0 | grep -z '^FAKE_'); TEST_ENV+=(HOME="),
+            # The fixed env -i allowlist (plan step, candidate tests, switch sync) also passes the fakes' own settings.
+            ("FIXED_ENV=(HOME=", "mapfile -d '' -t FIXED_ENV < <(env -0 | grep -z '^FAKE_'); FIXED_ENV+=(HOME="),
         ]
         for old, new in subs:
             assert old in text, f"the script no longer contains {old!r}: update the test rig"
@@ -392,6 +393,14 @@ def test_candidate_tests_run_with_a_clean_trader_environment(tmp_path, two_repo,
     names = set((tmp_path / "log.testvars").read_text().split())
     assert names.isdisjoint(OTHER_ENV) and names >= TEST_ENV_NAMES - {"TRADER_DATA_ROOT"}
     assert names - TEST_ENV_NAMES <= {"PWD", "SHLVL", "OLDPWD", "_"}, names - TEST_ENV_NAMES
+    # The plan step (the deployed `trader`, which reads config.yaml at import) sees no TRADER_* but the
+    # deployed data root, so an inherited TRADER_CONFIG can't make it judge against another tree.
+    plan_env = dict(ln.split("=", 1) for ln in (tmp_path / "log.env-deploy-plan").read_text().splitlines())
+    assert plan_env == ({"TRADER_DATA_ROOT": str(rig.config)} if two_repo else {})
+    # The switch's venv sync too: an inherited UV_PROJECT_ENVIRONMENT or VIRTUAL_ENV would build it elsewhere.
+    switch = set((tmp_path / "log.switchvars").read_text().split())
+    assert switch.isdisjoint(OTHER_ENV) and switch.isdisjoint(LIVE_ENV)
+    assert switch - (TEST_ENV_NAMES - {"TRADER_DATA_ROOT"}) <= {"PWD", "SHLVL", "OLDPWD", "_"}, switch
     if two_repo:  # the candidate data checks see only the TRADER_* they set, none of the caller's
         checks = {"config": {"TRADER_CODE_ROOT", "TRADER_DATA_ROOT"},
                   "validate": {"TRADER_CODE_ROOT", "TRADER_DATA_ROOT", "TRADER_STRATEGIST_ROOT", "TRADER_RUNTIME", "TRADER_SECRETS"}}
