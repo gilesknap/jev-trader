@@ -87,6 +87,55 @@ def test_existing_record_without_family_keeps_its_since(tmp_path):
     assert json.loads(state.read_text())["idea"] == {**json.loads(state.read_text())["idea"], "since": "2026-10-06", "family": "novel"}
 
 
+def test_a_spec_that_cant_be_hashed_fails_closed_alone(tmp_path, monkeypatch):
+    """One rule's broken promotion check never aborts the session: that rule runs in shadow (if it
+    asked for live) with an alert, the others are checked and recorded as usual."""
+    state = tmp_path / "promotion.json"
+    state.write_text(json.dumps({"bad": {"hash": "h0", "since": "2026-10-01", "family": "novel"}}))
+    real = golive.spec_hash
+
+    def flaky(s, digest=""):
+        if s.id == "bad":
+            raise TypeError("boom")
+        return real(s, digest)
+
+    monkeypatch.setattr(golive, "spec_hash", flaky)
+    notes = []
+    specs = [spec(id="bad", mode="live"), spec(id="good", mode="live"), spec(id="meh", mode="shadow")]
+    out = golive.enforce_promotion(specs, lambda level, msg: notes.append((level, msg)), account_live=True,
+                                   today=dt.date(2026, 10, 6), book_dir=tmp_path, state_file=state, custom_dir=tmp_path)
+    modes = {s.id: s.mode for s in out}
+    assert modes["bad"] == "shadow" and modes["good"] == "shadow"  # good: no paper record yet, the usual gate
+    assert next(level for level, msg in notes if msg.startswith("bad:")) == "urgent"
+    rec = json.loads(state.read_text())
+    assert rec["bad"] == {"hash": "h0", "since": "2026-10-01", "family": "novel"}  # untouched
+    assert rec["good"]["since"] == "2026-10-06" and rec["meh"]["since"] == "2026-10-06"
+
+
+def test_corrupt_promotion_record_fails_closed_without_aborting(tmp_path):
+    """An unreadable promotion.json never stops the session: it's set aside, every record restarts
+    today (so nothing can go live on it) and the human is told."""
+    state = tmp_path / "promotion.json"
+    state.write_text("{not json")
+    notes = []
+    s = spec(id="idea", mode="live")
+    out = golive.enforce_promotion([s], lambda level, msg: notes.append((level, msg)), account_live=True,
+                                   today=dt.date(2026, 10, 6), book_dir=tmp_path, state_file=state, custom_dir=tmp_path)
+    assert out[0].mode == "shadow"
+    assert notes[0][0] == "urgent" and "unreadable" in notes[0][1] and "restarts today" in notes[0][1]
+    assert json.loads(state.read_text())["idea"]["since"] == "2026-10-06"
+    assert len(list(tmp_path.glob("promotion.json.corrupt-*"))) == 1
+
+
+def test_unsaveable_promotion_record_does_not_abort(tmp_path):
+    notes = []
+    state = tmp_path / "nodir" / "promotion.json"
+    (tmp_path / "nodir").write_text("a file, not a directory")
+    out = golive.enforce_promotion([spec(id="idea")], lambda level, msg: notes.append((level, msg)), account_live=False,
+                                   today=dt.date(2026, 10, 6), book_dir=tmp_path, state_file=state, custom_dir=tmp_path)
+    assert [s.id for s in out] == ["idea"] and notes and "couldn't be saved" in notes[0][1]
+
+
 # ---- the numbers -----------------------------------------------------------------
 
 
