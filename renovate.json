@@ -3,10 +3,11 @@
   "extends": [
     "config:recommended"
   ],
+  "automerge": false,
   "lockFileMaintenance": {
-    "description": "Keep uv.lock up to date, merging if tests pass",
+    "description": "Keep uv.lock up to date. Never automerge: a GitHub-signed merge counts as reviewed for trading-deploy, so every dependency change needs a human-reviewed PR",
     "enabled": true,
-    "automerge": true
+    "automerge": false
   },
   "packageRules": [
     {
