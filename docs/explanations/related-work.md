@@ -28,4 +28,4 @@ What's unusual here:
 - **Novel vs conventional:** the `family: novel` scoreboard asks directly whether the agent's own ideas beat textbook ones and the `control_orb` baseline.
 - **Testing the decision model itself:** probes, and the "does Jev beat a linear model on its own inputs?" check, test Jev rather than a strategy.
 
-The weakness the sceptics name also applies here: the count of variants tried is self-reported in the journal's replay log. A runner-kept, append-only trial ledger would make that count structural; it has been proposed but not built.
+The weakness the sceptics name also applies here: the strategist searches, so its trial count grows. The tools record every replay, probe report and new spec's first session in the append-only [trial ledger](../reference/files.md#the-trial-ledger), which the strategist can't edit; research outside those tools, such as an ad-hoc study in Python, still relies on the journal's replay log.

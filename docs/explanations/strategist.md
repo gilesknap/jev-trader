@@ -135,3 +135,6 @@ honesty requirement (each week: what it believed that turned out wrong, how pape
 diverged, and whether any edge is distinguishable from luck). It also sets research hygiene for
 backtests. Read `CLAUDE.md` in the code for the full text: it is the strategist's operating manual, and the
 [classifier schema](../reference/classifier-schema.md) here is checked against the same code.
+
+See also: [Related work](related-work.md) compares this loop with other LLM-driven strategy
+searches, including AQuA's hypothesis records and the sceptics' trial-count discounting.

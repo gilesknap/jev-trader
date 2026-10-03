@@ -295,6 +295,7 @@ def test_a_trimmed_limit_entry_keeps_the_allocator_note(tmp_path, session):
     bars.loc[bars.index[20] :, ["low", "close"]] = 99.9  # fills the 99.95 limit: the allocator's note stays
     ticks_all(eng, bars, ["SPY", "TLT"], 25)
     assert st.status == "holding" and st.note.startswith("allocator: aggregate stop risk; allowed $")
+    assert st.note == st.alloc_note  # kept apart, not parsed back out of the resting note (#143)
 
 
 def test_a_trim_below_a_quarter_of_the_request_is_skipped_not_placed(tmp_path, session):

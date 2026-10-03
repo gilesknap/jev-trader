@@ -10,6 +10,10 @@ This page explains the template and gives two worked examples. **Both examples a
 are their numbers. They show the shape of a record and aren't strategy advice: neither idea has
 been tested by this project.
 
+See also: compare [AQuA](related-work.md#three-camps), which also writes a mechanism and
+falsification criteria before testing and keeps a persistent belief memory, but stops at
+backtests.
+
 ## The template
 
 ```text
@@ -28,7 +32,8 @@ been tested by this project.
 An idea has two stages:
 
 - **Exploring.** Replays, probes and sim accounts, tuned freely, with every variant counted in the
-  journal's replay log. Nothing at this stage is evidence.
+  journal's replay log (the tools also count each replay in the
+  [trial ledger](../reference/files.md#the-trial-ledger)). Nothing at this stage is evidence.
 - **Confirming.** The spec is frozen, and the checkpoint and its decision rule are fixed before
   the first confirming session. Sessions the strategist has already looked at don't count. The
   spec is edited only for a bug or a steering entry, and any edit, even one of those, ends the
