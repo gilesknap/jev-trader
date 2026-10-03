@@ -26,7 +26,7 @@ root it looked in. The comments in the file itself describe each key too; the te
 |---|---|---|
 | `owner.name` | string | The human operator's name. Validated, but nothing in the code reads it yet |
 | `owner.github_repo` | `owner/repo` | Your private **data** repository on GitHub. The setup scripts clone it, housekeeping names it in the token-expiry alert, and the dashboard links to its issues, journal and strategy. (The dashboard's links to the code take that repository from the deployed code checkout's git remote) |
-| `dashboard.users` | list | Tailscale logins allowed into the dashboard. Empty means nobody. `TRADER_DASHBOARD_USERS` overrides it |
+| `dashboard.users` | list | Tailscale logins allowed into the dashboard. Empty means nobody |
 | `dashboard.tailscale_port` | int | The port `tailscale serve --https` exposes the dashboard on |
 | `experiment.start_date` | date | Observe-phase day 1. The go-live gate and the scoreboard count from here, and `test_*` classifiers stop running from this date |
 | `schedule.local_tz` | IANA zone | The operator's clock, used by the runner timer and the strategist timers |
@@ -77,12 +77,12 @@ a step of their own:
 |---|---|
 | `schedule.runner_start`, `schedule.local_tz` (runner timer) | nothing: the deploy installs the re-rendered runner timer |
 | `schedule.strategist.*`, `schedule.local_tz` (strategist timers) | re-run `bash /srv/trading/main/deploy/setup/2-strategist.sh` as `trader`. Only that script installs the strategist's timers (from the deployed config checkout); the deploy prints a reminder, and `check.sh` fails until you do |
-| `dashboard.users` | update `TRADER_DASHBOARD_USERS` in `runner`'s `~/.config/trading/services.env` to match, then restart the dashboard. That file is written only at install, when absent, and never by a deploy, and its value wins over `config.yaml` |
+| `dashboard.users` | nothing: the deploy restarts the dashboard, which reads it at start. `services.env` must not set `TRADER_DASHBOARD_USERS` (an install from before it was dropped from the template may still have the line: delete it), or that wins |
 | `dashboard.tailscale_port` | re-run `sudo bash /srv/trading/main/deploy/setup/3-runner.sh install`, which points `tailscale serve` at the new port |
 | `experiment.start_date`, `models.*`, `alerts.ntfy_server`, `capital.*`, `schedule.postclose_cutoff` | nothing |
 
-A change to `deploy/templates/trader.env` itself reaches an installed `services.env` only by hand,
-for the same reason.
+A change to `deploy/templates/trader.env` itself reaches an installed `services.env` only by hand:
+setup writes that file only at install, when absent, and a deploy never does.
 
 ## `config/mode.yaml`
 
@@ -141,7 +141,7 @@ host both processes set `TRADER_SECRETS`: the strategist's `trader` command poin
 | `TRADER_CONFIG` | An alternative `config.yaml`. Default: `config.yaml` in the data root |
 | `TRADER_STRATEGIST_STAMP` | Where the watchdog and the dashboard look for the strategist's last-run stamp (and, beside it, `.last_postclose`). The wrapper always writes `.last_run` in its own checkout, so this only moves where they look; it must point there |
 | `TRADER_STRATEGIST_ALERTS` | Where alerts go from a process that can't write the runtime directory. Default: `strategist-alerts.log` in the strategist checkout |
-| `TRADER_DASHBOARD_USERS` | Comma-separated Tailscale logins, overriding `dashboard.users` |
+| `TRADER_DASHBOARD_USERS` | Comma-separated Tailscale logins, overriding `dashboard.users`. For local development only: never set it in `services.env`, where it would silently outlive a `config.yaml` change |
 | `TRADER_DASHBOARD_ALLOW_LOCAL` | `1` lets requests without a Tailscale identity in. Only for local development and the SSH-tunnel dashboard; never on the Tailscale-served one |
 
 Give the `TRADER_*` directories as **absolute paths**. A relative `TRADER_DATA_ROOT` is resolved

@@ -84,6 +84,19 @@ def read_text(path: Path) -> str:
         os.close(d)
 
 
+def listdir(directory: Path) -> list[str]:
+    """The names in `directory`, which is opened as read_text() opens a file's parent. A missing
+    directory has none; a symlinked one raises UnsafePath."""
+    try:
+        d = _open_dir(directory)
+    except FileNotFoundError:
+        return []
+    try:
+        return os.listdir(d)
+    finally:
+        os.close(d)
+
+
 def read_sources(directory: Path) -> tuple[dict[str, bytes], dict[str, str]]:
     """The *.py files in `directory`: ({name: source}, {name: why it was refused}), both sorted by
     name. A missing directory has none; a symlinked directory raises UnsafePath."""
