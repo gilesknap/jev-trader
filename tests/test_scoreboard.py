@@ -11,15 +11,28 @@ from trader.classifier import ClassifierSpec
 
 
 def trade(time, cid, sym, side, notional, pnl="", pnl_pct="", spec_hash=""):
-    return {"time": time, "book": "paper", "classifier": cid, "symbol": sym, "side": side, "qty": "1",
-            "price": "1", "notional": str(notional), "reason": "", "pnl": str(pnl), "pnl_pct": str(pnl_pct),
-            "spec_hash": spec_hash}
+    return {
+        "time": time,
+        "book": "paper",
+        "classifier": cid,
+        "symbol": sym,
+        "side": side,
+        "qty": "1",
+        "price": "1",
+        "notional": str(notional),
+        "reason": "",
+        "pnl": str(pnl),
+        "pnl_pct": str(pnl_pct),
+        "spec_hash": spec_hash,
+    }
 
 
 def round_trip(day, cid, pnl_pct, notional=50.0, sym="SPY", spec_hash=""):
     pnl = notional * pnl_pct / 100
-    return [trade(f"{day}T10:00-04:00", cid, sym, "buy", notional, spec_hash=spec_hash),
-            trade(f"{day}T11:00-04:00", cid, sym, "sell", notional + pnl, f"{pnl:.2f}", f"{pnl_pct:.3f}", spec_hash)]
+    return [
+        trade(f"{day}T10:00-04:00", cid, sym, "buy", notional, spec_hash=spec_hash),
+        trade(f"{day}T11:00-04:00", cid, sym, "sell", notional + pnl, f"{pnl:.2f}", f"{pnl_pct:.3f}", spec_hash),
+    ]
 
 
 # ---- the family label ------------------------------------------------------------
@@ -53,9 +66,13 @@ classifiers:
 
 def test_spec_hash_unchanged_by_this_change():
     """Pinned to the hash computed on main before `family` existed: deploying must not restart records."""
-    s = ClassifierSpec(id="t", symbols=["SPY"], features=["ret_1m_pct"],
-                       entry={"instructions": "?", "criteria": {"ENTER": "a", "WAIT": "b"}},
-                       exit={"instructions": "?", "criteria": {"HOLD": "a", "EXIT": "b"}})
+    s = ClassifierSpec(
+        id="t",
+        symbols=["SPY"],
+        features=["ret_1m_pct"],
+        entry={"instructions": "?", "criteria": {"ENTER": "a", "WAIT": "b"}},
+        exit={"instructions": "?", "criteria": {"HOLD": "a", "EXIT": "b"}},
+    )
     assert golive.spec_hash(s) == "0ae294b57e0b26b4"
     assert golive.spec_hash(s.model_copy(update={"family": "novel"})) == "0ae294b57e0b26b4"
 
@@ -67,13 +84,27 @@ def test_relabelling_does_not_restart_the_promotion_record():
 
 def test_promotion_record_remembers_family(tmp_path):
     state = tmp_path / "promotion.json"
-    golive.enforce_promotion([spec(id="idea", family="novel")], lambda *a: None, account_live=False,
-                             today=dt.date(2026, 10, 6), book_dir=tmp_path, state_file=state, custom_dir=tmp_path)
+    golive.enforce_promotion(
+        [spec(id="idea", family="novel")],
+        lambda *a: None,
+        account_live=False,
+        today=dt.date(2026, 10, 6),
+        book_dir=tmp_path,
+        state_file=state,
+        custom_dir=tmp_path,
+    )
     rec = json.loads(state.read_text())["idea"]
     since = rec["since"]
     assert rec["family"] == "novel"
-    golive.enforce_promotion([spec(id="idea", family="conventional")], lambda *a: None, account_live=False,
-                             today=dt.date(2026, 10, 9), book_dir=tmp_path, state_file=state, custom_dir=tmp_path)
+    golive.enforce_promotion(
+        [spec(id="idea", family="conventional")],
+        lambda *a: None,
+        account_live=False,
+        today=dt.date(2026, 10, 9),
+        book_dir=tmp_path,
+        state_file=state,
+        custom_dir=tmp_path,
+    )
     rec = json.loads(state.read_text())["idea"]
     assert rec == {**rec, "family": "conventional", "since": since}
 
@@ -81,10 +112,25 @@ def test_promotion_record_remembers_family(tmp_path):
 def test_existing_record_without_family_keeps_its_since(tmp_path):
     state = tmp_path / "promotion.json"
     s = spec(id="idea", family="novel")
-    state.write_text(json.dumps({"idea": {"hash": golive.spec_hash(s, golive.custom_features_digest(tmp_path)), "since": "2026-10-06"}}))
-    golive.enforce_promotion([s], lambda *a: None, account_live=False, today=dt.date(2026, 10, 20),
-                             book_dir=tmp_path, state_file=state, custom_dir=tmp_path)
-    assert json.loads(state.read_text())["idea"] == {**json.loads(state.read_text())["idea"], "since": "2026-10-06", "family": "novel"}
+    state.write_text(
+        json.dumps(
+            {"idea": {"hash": golive.spec_hash(s, golive.custom_features_digest(tmp_path)), "since": "2026-10-06"}}
+        )
+    )
+    golive.enforce_promotion(
+        [s],
+        lambda *a: None,
+        account_live=False,
+        today=dt.date(2026, 10, 20),
+        book_dir=tmp_path,
+        state_file=state,
+        custom_dir=tmp_path,
+    )
+    assert json.loads(state.read_text())["idea"] == {
+        **json.loads(state.read_text())["idea"],
+        "since": "2026-10-06",
+        "family": "novel",
+    }
 
 
 def test_a_spec_that_cant_be_hashed_fails_closed_alone(tmp_path, monkeypatch):
@@ -102,8 +148,15 @@ def test_a_spec_that_cant_be_hashed_fails_closed_alone(tmp_path, monkeypatch):
     monkeypatch.setattr(golive, "spec_hash", flaky)
     notes = []
     specs = [spec(id="bad", mode="live"), spec(id="good", mode="live"), spec(id="meh", mode="shadow")]
-    out = golive.enforce_promotion(specs, lambda level, msg: notes.append((level, msg)), account_live=True,
-                                   today=dt.date(2026, 10, 6), book_dir=tmp_path, state_file=state, custom_dir=tmp_path)
+    out = golive.enforce_promotion(
+        specs,
+        lambda level, msg: notes.append((level, msg)),
+        account_live=True,
+        today=dt.date(2026, 10, 6),
+        book_dir=tmp_path,
+        state_file=state,
+        custom_dir=tmp_path,
+    )
     modes = {s.id: s.mode for s in out}
     assert modes["bad"] == "shadow" and modes["good"] == "shadow"  # good: no paper record yet, the usual gate
     assert next(level for level, msg in notes if msg.startswith("bad:")) == "urgent"
@@ -119,8 +172,15 @@ def test_corrupt_promotion_record_fails_closed_without_aborting(tmp_path):
     state.write_text("{not json")
     notes = []
     s = spec(id="idea", mode="live")
-    out = golive.enforce_promotion([s], lambda level, msg: notes.append((level, msg)), account_live=True,
-                                   today=dt.date(2026, 10, 6), book_dir=tmp_path, state_file=state, custom_dir=tmp_path)
+    out = golive.enforce_promotion(
+        [s],
+        lambda level, msg: notes.append((level, msg)),
+        account_live=True,
+        today=dt.date(2026, 10, 6),
+        book_dir=tmp_path,
+        state_file=state,
+        custom_dir=tmp_path,
+    )
     assert out[0].mode == "shadow"
     assert notes[0][0] == "urgent" and "unreadable" in notes[0][1] and "restarts today" in notes[0][1]
     assert json.loads(state.read_text())["idea"]["since"] == "2026-10-06"
@@ -131,8 +191,15 @@ def test_unsaveable_promotion_record_does_not_abort(tmp_path):
     notes = []
     state = tmp_path / "nodir" / "promotion.json"
     (tmp_path / "nodir").write_text("a file, not a directory")
-    out = golive.enforce_promotion([spec(id="idea")], lambda level, msg: notes.append((level, msg)), account_live=False,
-                                   today=dt.date(2026, 10, 6), book_dir=tmp_path, state_file=state, custom_dir=tmp_path)
+    out = golive.enforce_promotion(
+        [spec(id="idea")],
+        lambda level, msg: notes.append((level, msg)),
+        account_live=False,
+        today=dt.date(2026, 10, 6),
+        book_dir=tmp_path,
+        state_file=state,
+        custom_dir=tmp_path,
+    )
     assert [s.id for s in out] == ["idea"] and notes and "couldn't be saved" in notes[0][1]
 
 
@@ -164,9 +231,11 @@ def test_closed_trades_ignore_trades_before_the_start():
 
 
 def test_scale_out_legs_are_part_of_one_trade():
-    rows = [trade("2026-10-06T10:00-04:00", "a", "SPY", "buy", 100),
-            trade("2026-10-06T10:30-04:00", "a", "SPY", "sell_part", 50.5, "0.50", "1.000"),
-            trade("2026-10-06T11:00-04:00", "a", "SPY", "sell", 51, "1.50", "1.500")]
+    rows = [
+        trade("2026-10-06T10:00-04:00", "a", "SPY", "buy", 100),
+        trade("2026-10-06T10:30-04:00", "a", "SPY", "sell_part", 50.5, "0.50", "1.000"),
+        trade("2026-10-06T11:00-04:00", "a", "SPY", "sell", 51, "1.50", "1.500"),
+    ]
     (t,) = SB.closed_trades(rows)
     assert t["net_usd"] == pytest.approx(1.5 - 0.1)
 
@@ -199,8 +268,9 @@ def test_build_groups_by_family_and_keeps_retired():
         rows += round_trip(d, "old_idea", -0.5, sym="QQQ")
         rows += round_trip(d, "control_orb", 0.1, sym="IWM")
     families = {"idea_a": "novel", "old_idea": "conventional"}
-    b = SB.build(rows, families, current={"idea_a", "control_orb", "fresh"}, start_equity=250.0,
-                 since={"idea_a": "2026-10-07"})
+    b = SB.build(
+        rows, families, current={"idea_a", "control_orb", "fresh"}, start_equity=250.0, since={"idea_a": "2026-10-07"}
+    )
     by = {r["id"]: r for r in b["classifiers"]}
     assert b["days"] == ["2026-10-06", "2026-10-07", "2026-10-08"]
     assert by["old_idea"]["active"] is False and by["old_idea"]["family"] == "conventional"
@@ -225,11 +295,13 @@ def test_promotion_count_skips_closes_from_an_earlier_spec(tmp_path):
     unstamped closes (before provenance) go by date alone."""
     import csv
 
-    rows = (round_trip("2026-10-06", "idea", 0.5, spec_hash="old")  # before the record: never counted
-            + round_trip("2026-10-07", "idea", 0.5, spec_hash="old")  # opened under the old spec
-            + round_trip("2026-10-07", "idea", 0.5, sym="QQQ")  # unstamped: date rule
-            + round_trip("2026-10-08", "idea", 0.5, spec_hash="new")
-            + round_trip("2026-10-08", "idea", 0.5, sym="QQQ", spec_hash="new"))
+    rows = (
+        round_trip("2026-10-06", "idea", 0.5, spec_hash="old")  # before the record: never counted
+        + round_trip("2026-10-07", "idea", 0.5, spec_hash="old")  # opened under the old spec
+        + round_trip("2026-10-07", "idea", 0.5, sym="QQQ")  # unstamped: date rule
+        + round_trip("2026-10-08", "idea", 0.5, spec_hash="new")
+        + round_trip("2026-10-08", "idea", 0.5, sym="QQQ", spec_hash="new")
+    )
     since, hashes = {"idea": "2026-10-07"}, {"idea": "new"}
     b = SB.build(rows, {"idea": "novel"}, {"idea"}, 250.0, since=since, spec_hashes=hashes)
     assert b["classifiers"][0]["promotion"]["n"] == 3
@@ -285,8 +357,14 @@ def test_benchmark_write_failure_does_not_break_end_day(tmp_path, session):
 
     bars = session(n=30)
     book = Book("sim", SimBroker(250), tmp_path / "sim")
-    eng = Engine([spec()], {"live": book, "shadow": book}, Always("WAIT"), {"SPY"}, tmp_path,
-                 alert=lambda level, msg: alerts.append(msg))
+    eng = Engine(
+        [spec()],
+        {"live": book, "shadow": book},
+        Always("WAIT"),
+        {"SPY"},
+        tmp_path,
+        alert=lambda level, msg: alerts.append(msg),
+    )
     eng.start_day(bars.index[0].date(), {})
     for ts in bars.index:
         eng.tick((ts + dt.timedelta(minutes=1)).to_pydatetime(), {"SPY": bars.loc[:ts]}, 300)
@@ -306,12 +384,21 @@ def test_scoreboard_endpoint_for_live(tmp_path, monkeypatch):
     book.mkdir(parents=True)
     rows = round_trip("2026-10-06", "gone", 0.5) + round_trip("2026-10-06", "idea", 0.3, sym="QQQ")
     cols = list(rows[0])
-    (book / "trades.csv").write_text(",".join(cols) + "\n" + "\n".join(",".join(r[c] for c in cols) for r in rows) + "\n")
+    (book / "trades.csv").write_text(
+        ",".join(cols) + "\n" + "\n".join(",".join(r[c] for c in cols) for r in rows) + "\n"
+    )
     (book / "equity.csv").write_text("time,equity,nav,hwm\n2026-10-06T09:35-04:00,250.00,1.00000,1.00000\n")
-    (runtime / "status.json").write_text(json.dumps({"classifiers": [{"id": "idea", "family": "novel", "symbols": {}}]}))
-    (runtime / "promotion.json").write_text(json.dumps({
-        "gone": {"hash": "x", "since": "2026-10-05", "family": "conventional"},
-        "idea": {"hash": "y", "since": "2026-10-06", "family": "conventional"}}))  # today's status wins
+    (runtime / "status.json").write_text(
+        json.dumps({"classifiers": [{"id": "idea", "family": "novel", "symbols": {}}]})
+    )
+    (runtime / "promotion.json").write_text(
+        json.dumps(
+            {
+                "gone": {"hash": "x", "since": "2026-10-05", "family": "conventional"},
+                "idea": {"hash": "y", "since": "2026-10-06", "family": "conventional"},
+            }
+        )
+    )  # today's status wins
     c = _client(monkeypatch, runtime)
     b = c.get("/api/scoreboard?source=live").json()["books"]["paper"]
     by = {r["id"]: r for r in b["classifiers"]}
@@ -340,7 +427,9 @@ def test_scoreboard_endpoint_for_a_replay(tmp_path, monkeypatch):
     sim = replays / "r1" / "sim"
     sim.mkdir(parents=True)
     _write_trades(sim / "trades.csv", round_trip("2026-09-21", "idea", 1.0, notional=100.0))
-    (replays / "r1" / "status.json").write_text(json.dumps({"classifiers": [{"id": "idea", "family": "novel", "symbols": {}}]}))
+    (replays / "r1" / "status.json").write_text(
+        json.dumps({"classifiers": [{"id": "idea", "family": "novel", "symbols": {}}]})
+    )
     c = _client(monkeypatch, tmp_path / "runtime", replays)
     b = c.get("/api/scoreboard?source=r1").json()["books"]["sim"]
     (row,) = b["classifiers"]
@@ -365,8 +454,11 @@ def test_scoreboard_before_the_open_uses_the_classifiers_file(tmp_path, monkeypa
     (runtime / "books" / "paper").mkdir(parents=True)
     (runtime / "status.json").write_text(json.dumps({"phase": "waiting for open", "classifiers": []}))
     cf = tmp_path / "classifiers.yaml"
-    cf.write_text("classifiers:\n  - {id: idea, family: novel}\n  - {id: control_orb, control: true}\n  - {id: off, family: novel, enabled: false}\n"
-                  "  - {id: probe_x, family: novel, mode: probe}\n")
+    cf.write_text(
+        "classifiers:\n  - {id: idea, family: novel}\n  - {id: control_orb, control: true}\n"
+        "  - {id: off, family: novel, enabled: false}\n"
+        "  - {id: probe_x, family: novel, mode: probe}\n"
+    )
     monkeypatch.setattr(dashboard.config, "CLASSIFIERS_FILE", cf)
     c = _client(monkeypatch, runtime)
     by = {r["id"]: r for r in c.get("/api/scoreboard?source=live").json()["books"]["paper"]["classifiers"]}
@@ -391,14 +483,28 @@ def test_classifier_spec_schema_example_in_charter_validates():
 def test_probes_get_no_promotion_record_and_no_scoreboard_row(tmp_path, monkeypatch):
     state = tmp_path / "promotion.json"
     p = spec(id="probe_x", family="novel", mode="probe", exit=None)
-    golive.enforce_promotion([p, spec(id="idea", family="novel")], lambda *a: None, account_live=False,
-                             today=dt.date(2026, 10, 6), book_dir=tmp_path, state_file=state, custom_dir=tmp_path)
+    golive.enforce_promotion(
+        [p, spec(id="idea", family="novel")],
+        lambda *a: None,
+        account_live=False,
+        today=dt.date(2026, 10, 6),
+        book_dir=tmp_path,
+        state_file=state,
+        custom_dir=tmp_path,
+    )
     assert set(json.loads(state.read_text())) == {"idea"}
     runtime = tmp_path / "runtime"
     (runtime / "books" / "paper").mkdir(parents=True)
-    (runtime / "status.json").write_text(json.dumps({"classifiers": [
-        {"id": "idea", "family": "novel", "mode": "shadow", "symbols": {}},
-        {"id": "probe_x", "family": "novel", "mode": "probe", "symbols": {}}]}))
+    (runtime / "status.json").write_text(
+        json.dumps(
+            {
+                "classifiers": [
+                    {"id": "idea", "family": "novel", "mode": "shadow", "symbols": {}},
+                    {"id": "probe_x", "family": "novel", "mode": "probe", "symbols": {}},
+                ]
+            }
+        )
+    )
     c = _client(monkeypatch, runtime)
     ids = {r["id"] for r in c.get("/api/scoreboard?source=live").json()["books"]["paper"]["classifiers"]}
     assert "probe_x" not in ids
@@ -409,7 +515,9 @@ def test_live_board_can_include_the_pre_start_test_sessions(tmp_path, monkeypatc
     book = runtime / "books" / "paper"
     book.mkdir(parents=True)
     _write_trades(book / "trades.csv", round_trip("2026-09-29", "test_x", 0.5) + round_trip("2026-10-06", "idea", 0.3))
-    (runtime / "status.json").write_text(json.dumps({"classifiers": [{"id": "idea", "family": "novel", "symbols": {}}]}))
+    (runtime / "status.json").write_text(
+        json.dumps({"classifiers": [{"id": "idea", "family": "novel", "symbols": {}}]})
+    )
     c = _client(monkeypatch, runtime)
     monkeypatch.setattr(SB, "EXPERIMENT_START", dt.date(2026, 10, 5))
     r = c.get("/api/scoreboard?source=live&all_days=0").json()

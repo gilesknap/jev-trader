@@ -1,18 +1,15 @@
 """Alert noise (#23) and small robustness items (#24)."""
 
 import datetime as dt
-import json
 from types import SimpleNamespace as NS
 
 import pandas as pd
 
+from test_engine import Always, spec
 from trader import runner
 from trader.broker import SimBroker
 from trader.data import ET
 from trader.engine import Book, Engine
-from trader.nav import NavBook
-
-from test_engine import Always, spec
 
 
 def et(y, m, d, h, mi=0):
@@ -34,8 +31,14 @@ def test_stale_feed_blocks_new_entries(tmp_path, session):
     day = bars.index[0].date()
     book = Book("sim", SimBroker(250.0), tmp_path / "sim")
     alerts = []
-    eng = Engine([spec(window=("09:50", "15:30"))], {"live": book, "shadow": book}, Always(), {"SPY"}, tmp_path,
-                 alert=lambda l, m: alerts.append(m))
+    eng = Engine(
+        [spec(window=("09:50", "15:30"))],
+        {"live": book, "shadow": book},
+        Always(),
+        {"SPY"},
+        tmp_path,
+        alert=lambda level, m: alerts.append(m),
+    )
     eng.start_day(day, {})
     close = dt.datetime.combine(day, dt.time(16), ET)
     frozen = bars.iloc[:10]  # the feed stops delivering bars after 09:39
@@ -52,7 +55,13 @@ def test_cashflows_use_type_for_sign_and_skip_unexecuted(tmp_path, monkeypatch):
     (tmp_path / "live" / "cashflows.csv").write_text("id,date,type,amount,nav_at_flow\n")  # not the first run
     acts = [
         {"id": "a", "date": "2026-10-20", "activity_type": "CSD", "net_amount": "100", "status": "executed"},
-        {"id": "b", "date": "2026-10-21", "activity_type": "CSW", "net_amount": "50", "status": "executed"},  # positive-signed withdrawal
+        {
+            "id": "b",
+            "date": "2026-10-21",
+            "activity_type": "CSW",
+            "net_amount": "50",
+            "status": "executed",
+        },  # positive-signed withdrawal
         {"id": "c", "date": "2026-10-22", "activity_type": "CSD", "net_amount": "999", "status": "pending"},
     ]
     broker = NS(client=NS(get=lambda path, params=None: acts))
@@ -137,8 +146,14 @@ def test_stale_feed_when_stream_never_delivers(tmp_path, session):
     day = bars.index[0].date()
     book = Book("sim", SimBroker(250.0), tmp_path / "sim")
     alerts = []
-    eng = Engine([spec(window=("09:30", "15:30"))], {"live": book, "shadow": book}, Always(), {"SPY"}, tmp_path,
-                 alert=lambda l, m: alerts.append(m))
+    eng = Engine(
+        [spec(window=("09:30", "15:30"))],
+        {"live": book, "shadow": book},
+        Always(),
+        {"SPY"},
+        tmp_path,
+        alert=lambda level, m: alerts.append(m),
+    )
     eng.start_day(day, {})
     close = dt.datetime.combine(day, dt.time(16), ET)
     open_ = dt.datetime.combine(day, dt.time(9, 30), ET)

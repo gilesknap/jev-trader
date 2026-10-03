@@ -24,8 +24,12 @@ def code_sha(root: Path | None = None) -> str:
     """The commit the code runs from (12 hex), or "". Any user may read it: the strategist's
     replays run against the deployed checkout it doesn't own."""
     try:
-        r = subprocess.run(["git", "-c", "safe.directory=*", "-C", str(root or config.CODE_ROOT),
-                            "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5)
+        r = subprocess.run(
+            ["git", "-c", "safe.directory=*", "-C", str(root or config.CODE_ROOT), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
     except (OSError, subprocess.SubprocessError):
         return ""
     sha = r.stdout.strip()

@@ -70,18 +70,31 @@ def load_rows(paths: list[Path], only: set[str] | None = None) -> pd.DataFrame:
                     continue
                 rets = list(r.get("r") or [])
                 rets = [np.nan] * (N_RETURNS - len(rets)) + rets[-N_RETURNS:]  # oldest first, like the engine
-                out.append({"day": day, "t": r["t"], "c": r["c"], "s": r["s"],
-                            "p_enter": r["p"].get("ENTER", float("nan")), "px": r.get("px"),
-                            **{f"f:{k}": (np.nan if v is None else v) for k, v in r.get("f", {}).items()},
-                            "x:minutes_since_open": r.get("m", np.nan),
-                            **{f"x:ret_1m_lag{N_RETURNS - i}": v for i, v in enumerate(rets)}})
+                out.append(
+                    {
+                        "day": day,
+                        "t": r["t"],
+                        "c": r["c"],
+                        "s": r["s"],
+                        "p_enter": r["p"].get("ENTER", float("nan")),
+                        "px": r.get("px"),
+                        **{f"f:{k}": (np.nan if v is None else v) for k, v in r.get("f", {}).items()},
+                        "x:minutes_since_open": r.get("m", np.nan),
+                        **{f"x:ret_1m_lag{N_RETURNS - i}": v for i, v in enumerate(rets)},
+                    }
+                )
     df = pd.DataFrame(out)
     df.attrs["skipped"] = skipped
     return df
 
 
-def forward_returns(rows: pd.DataFrame, sessions: dict, horizons: list[int],
-                    calendar: Calendar | None = None, data_end: dt.datetime | None = None) -> pd.DataFrame:
+def forward_returns(
+    rows: pd.DataFrame,
+    sessions: dict,
+    horizons: list[int],
+    calendar: Calendar | None = None,
+    data_end: dt.datetime | None = None,
+) -> pd.DataFrame:
     """Add, per horizon h: fwd_<h> (% return), cut_<h> (the flatten shortened the horizon),
     len_<h> (the minutes actually scored) and why_<h> (why fwd_<h> is missing, else "").
     `sessions`: {symbol: {date: bars}} (SIP, from replay.load_sessions). `calendar`: the
@@ -114,7 +127,7 @@ def forward_returns(rows: pd.DataFrame, sessions: dict, horizons: list[int],
         else:
             idx, close = np.empty(0, dtype="int64"), np.empty(0)
 
-        def price(t):
+        def price(t, idx=idx, close=close):  # bound now: called only in this iteration
             """The close as of each instant in `t` (ns), NaN past the carry limit or before any bar."""
             j = np.searchsorted(idx, t, side="right")
             ok = j > 0
@@ -124,8 +137,9 @@ def forward_returns(rows: pd.DataFrame, sessions: dict, horizons: list[int],
                 ok &= idx[k] >= t - carry
             return np.where(ok, close[k] if len(idx) else np.nan, np.nan)
 
-        asked = pd.DatetimeIndex(pd.to_datetime(day + " " + g["t"].astype(str))).tz_localize(ET) \
-            .as_unit("ns").asi8 - minute  # the bar the question saw
+        asked = (
+            pd.DatetimeIndex(pd.to_datetime(day + " " + g["t"].astype(str))).tz_localize(ET).as_unit("ns").asi8 - minute
+        )  # the bar the question saw
         after = asked >= last - minute
         px = pd.to_numeric(g["px"], errors="coerce").to_numpy(dtype=float) if "px" in g else np.full(len(g), np.nan)
         p0 = np.where(np.isfinite(px) & (px > 0), px, price(asked))
@@ -177,10 +191,13 @@ def _ridge_ic(train: pd.DataFrame, test: pd.DataFrame, cols: list[str], y: str) 
     dsd = [(train.s == s).to_numpy(float).std(ddof=1) or 1.0 for s in syms]
 
     def design(df):
-        return np.c_[np.ones(len(df)), ((df[cols] - mu) / sd).to_numpy(),
-                     *[(df.s == s).to_numpy(float) / k for s, k in zip(syms, dsd, strict=True)]]
+        return np.c_[
+            np.ones(len(df)),
+            ((df[cols] - mu) / sd).to_numpy(),
+            *[(df.s == s).to_numpy(float) / k for s, k in zip(syms, dsd, strict=True)],
+        ]
 
-    X = design(train)
+    X = design(train)  # noqa: N806 (the design matrix, in the usual notation)
     pen = RIDGE * len(train) * np.eye(X.shape[1])
     pen[0, 0] = 0.0  # never shrink the intercept
     beta = np.linalg.solve(X.T @ X + pen, X.T @ train[y].to_numpy())
@@ -206,8 +223,11 @@ def _walk_forward(g: pd.DataFrame, cols: list[str], y: str) -> dict:
         if math.isfinite(b) and math.isfinite(p):
             base.append(b)
             plus.append(p)
-    return {"wf_inputs_only": _day_stat(base), "wf_inputs_plus_jev": _day_stat(plus),
-            "jev_increment": _increment([p - b for b, p in zip(base, plus, strict=True)])}
+    return {
+        "wf_inputs_only": _day_stat(base),
+        "wf_inputs_plus_jev": _day_stat(plus),
+        "jev_increment": _increment([p - b for b, p in zip(base, plus, strict=True)]),
+    }
 
 
 def _increment(deltas: list[float]) -> dict:
@@ -216,7 +236,9 @@ def _increment(deltas: list[float]) -> dict:
     n = len(deltas)
     m = float(np.mean(deltas)) if n else None
     sd = float(np.std(deltas, ddof=1)) if n > 1 else 0.0
-    half = float(t95(n - 1) * sd / math.sqrt(n)) if n >= MIN_DAYS_FOR_T and sd > 1e-9 else None  # identical deltas: fp dust
+    half = (
+        float(t95(n - 1) * sd / math.sqrt(n)) if n >= MIN_DAYS_FOR_T and sd > 1e-9 else None
+    )  # identical deltas: fp dust
     if n < MIN_DAYS_FOR_T:
         verdict = f"inconclusive: too few days ({n})"
     elif half is None:
@@ -227,8 +249,12 @@ def _increment(deltas: list[float]) -> dict:
         verdict = "Jev does worse than its inputs alone: 95% interval below zero"
     else:
         verdict = "inconclusive: no detectable incremental value"
-    return {"mean": None if m is None else round(m, 4), "ci95": None if half is None else round(half, 4),
-            "days": n, "verdict": verdict}
+    return {
+        "mean": None if m is None else round(m, 4),
+        "ci95": None if half is None else round(half, 4),
+        "days": n,
+        "verdict": verdict,
+    }
 
 
 def _bins(p: pd.Series, y: pd.Series, n: int = 5) -> list[dict] | None:
@@ -238,9 +264,15 @@ def _bins(p: pd.Series, y: pd.Series, n: int = 5) -> list[dict] | None:
     if len(p) < 5 * n or p.nunique() < 2:
         return None
     b = p if p.nunique() <= n else pd.qcut(p, n, duplicates="drop")
-    return [{"p_enter_min": round(float(p[m].min()), 3), "p_enter_max": round(float(p[m].max()), 3),
-             "n": int(m.sum()), "mean_gross_bps": round(float(y[m].mean()) * 100, 1)}
-            for m in (b == k for k in sorted(b.unique()))]
+    return [
+        {
+            "p_enter_min": round(float(p[m].min()), 3),
+            "p_enter_max": round(float(p[m].max()), 3),
+            "n": int(m.sum()),
+            "mean_gross_bps": round(float(y[m].mean()) * 100, 1),
+        }
+        for m in (b == k for k in sorted(b.unique()))
+    ]
 
 
 def score(rows: pd.DataFrame, horizons: list[int], thresholds: dict[str, float] | None = None) -> dict:
@@ -250,16 +282,25 @@ def score(rows: pd.DataFrame, horizons: list[int], thresholds: dict[str, float] 
         feats = [k for k in g.columns if k.startswith("f:") and g[k].notna().any()]
         inputs = feats + [k for k in g.columns if k.startswith("x:") and g[k].notna().any()]
         thr = (thresholds or {}).get(c, DEFAULT_THRESHOLD)
-        out = {"rows": len(g), "days": int(g.day.nunique()), "symbols": int(g.s.nunique()), "threshold": thr,
-               "p_enter_spread": round(float(g.p_enter.std()), 4) if g.p_enter.notna().sum() > 1 else None, "horizons": {}}
+        out = {
+            "rows": len(g),
+            "days": int(g.day.nunique()),
+            "symbols": int(g.s.nunique()),
+            "threshold": thr,
+            "p_enter_spread": round(float(g.p_enter.std()), 4) if g.p_enter.notna().sum() > 1 else None,
+            "horizons": {},
+        }
         for h in horizons:
             y = f"fwd_{h}"
             gg = g[g[y].notna() & g.p_enter.notna()]  # an answer without ENTER can't be scored
             # Every row is accounted for: n scored + no_p_enter + unlabelled (by reason) == rows.
             counts = {
                 "no_p_enter": int((g[y].notna() & g.p_enter.isna()).sum()),
-                "unlabelled": ({str(k): int(v) for k, v in g[f"why_{h}"][g[f"why_{h}"] != ""].value_counts().items()}
-                               if f"why_{h}" in g else {}),  # rows left out, by reason
+                "unlabelled": (
+                    {str(k): int(v) for k, v in g[f"why_{h}"][g[f"why_{h}"] != ""].value_counts().items()}
+                    if f"why_{h}" in g
+                    else {}
+                ),  # rows left out, by reason
             }
             if gg.empty:  # nothing to score yet (e.g. all immature): say why rather than drop the horizon
                 out["horizons"][h] = {"n": 0, "cut_n": 0, "mean_len_min": None, **counts}

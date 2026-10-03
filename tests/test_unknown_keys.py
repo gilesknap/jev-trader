@@ -1,4 +1,5 @@
 """#150: a misspelt key drops that rule (loudly), never silently changes what it does."""
+
 import pytest
 import yaml
 
@@ -10,9 +11,14 @@ UNIVERSE = {"SPY", "QQQ"}
 
 
 def rule(cid, **extra):
-    r = {"id": cid, "family": "conventional", "symbols": ["SPY"], "features": ["ret_5m_pct"],
-         "entry": {"instructions": "x", "criteria": {"ENTER": "a", "WAIT": "b"}},
-         "exit": {"instructions": "x", "criteria": {"HOLD": "a", "EXIT": "b"}}}
+    r = {
+        "id": cid,
+        "family": "conventional",
+        "symbols": ["SPY"],
+        "features": ["ret_5m_pct"],
+        "entry": {"instructions": "x", "criteria": {"ENTER": "a", "WAIT": "b"}},
+        "exit": {"instructions": "x", "criteria": {"HOLD": "a", "EXIT": "b"}},
+    }
     r.update(extra)
     return r
 
@@ -30,11 +36,18 @@ def test_a_misspelt_top_level_key_drops_only_that_rule(tmp_path):
     assert dropped == {"typo": "unknown key trail_pc (did you mean trail_pct?)"}
 
 
-@pytest.mark.parametrize("extra, where, hint", [
-    ({"entry_order": {"type": "limit", "offest_pct": 0.1}}, "entry_order.offest_pct", "offset_pct"),
-    ({"trigger": [{"feature": "ret_5m_pct", "op": ">", "val": 0.1}]}, "trigger.0.val", "value"),
-    ({"scale_out": {"at_pct": 0.2, "fraction": 0.5, "stop_to_breakeven": True, "fractoin": 1}}, "scale_out.fractoin", "fraction"),
-])
+@pytest.mark.parametrize(
+    "extra, where, hint",
+    [
+        ({"entry_order": {"type": "limit", "offest_pct": 0.1}}, "entry_order.offest_pct", "offset_pct"),
+        ({"trigger": [{"feature": "ret_5m_pct", "op": ">", "val": 0.1}]}, "trigger.0.val", "value"),
+        (
+            {"scale_out": {"at_pct": 0.2, "fraction": 0.5, "stop_to_breakeven": True, "fractoin": 1}},
+            "scale_out.fractoin",
+            "fraction",
+        ),
+    ],
+)
 def test_a_misspelt_nested_key_drops_the_rule_with_a_hint(tmp_path, extra, where, hint):
     p = write(tmp_path, rule("good"), rule("typo", **extra))
     specs, dropped = load_specs_report(p, FEATS, UNIVERSE)
@@ -58,7 +71,7 @@ def test_strict_load_for_validate_and_replays_refuses_it(tmp_path):
 def test_other_problems_still_refuse_the_whole_file(tmp_path):
     # An unknown key plus a bad value isn't "only a typo": the file fails as before.
     p = write(tmp_path, rule("good"), rule("bad", trail_pc=0.4, stop_pct=50))
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         load_specs_report(p, FEATS, UNIVERSE)
 
 
@@ -70,9 +83,13 @@ def test_a_valid_file_is_unchanged(tmp_path):
 
 def test_the_runner_alerts_urgently_and_names_the_benchmark():
     sent = []
-    runner._alert_dropped({"typo": "unknown key trail_pc (did you mean trail_pct?)",
-                           "control_orb": "unknown key targt_pct (did you mean target_pct?)"},
-                          alert=lambda lvl, msg: sent.append((lvl, msg)))
+    runner._alert_dropped(
+        {
+            "typo": "unknown key trail_pc (did you mean trail_pct?)",
+            "control_orb": "unknown key targt_pct (did you mean target_pct?)",
+        },
+        alert=lambda lvl, msg: sent.append((lvl, msg)),
+    )
     assert all(lvl == "urgent" for lvl, _ in sent)
     assert "classifier typo not trading today" in sent[0][1] and "did you mean trail_pct?" in sent[0][1]
     assert "control benchmark" in sent[1][1] and "control benchmark" not in sent[0][1]

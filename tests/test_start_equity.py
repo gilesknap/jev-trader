@@ -7,13 +7,12 @@ import json
 import pandas as pd
 import pytest
 
+from test_engine import Always, spec
 from trader import config, golive, runner
 from trader import engine as E
 from trader.broker import SimBroker
 from trader.data import ET
 from trader.engine import Book, Engine
-
-from test_engine import Always, spec
 
 
 @pytest.fixture(autouse=True)
@@ -46,8 +45,14 @@ def make(tmp_path, cash=250.0, last_equity=None, down=True):
         (d / "nav.json").write_text(json.dumps({"units": 200.0, "hwm": 1.3, "last_equity": last_equity}))
     book = Book("sim", Flaky(cash, down), d)
     alerts = []
-    eng = Engine([spec(after_exit="rearm", max_trades=5)], {"live": book, "shadow": book}, Always(), {"SPY"},
-                 tmp_path, alert=lambda level, msg: alerts.append(msg))
+    eng = Engine(
+        [spec(after_exit="rearm", max_trades=5)],
+        {"live": book, "shadow": book},
+        Always(),
+        {"SPY"},
+        tmp_path,
+        alert=lambda level, msg: alerts.append(msg),
+    )
     return book, eng, alerts
 
 
@@ -129,7 +134,9 @@ def test_recovery_with_a_position_held_only_raises_the_baseline_and_stays_blocke
     assert book.start_unverified == "blocked" and book.entries  # the held position is still managed
     # a restart keeps the day blocked (and the raised baseline)
     book2 = Book("sim", book.broker, tmp_path / "sim")
-    eng2 = Engine([spec(after_exit="rearm", max_trades=5)], {"live": book2, "shadow": book2}, Always(), {"SPY"}, tmp_path)
+    eng2 = Engine(
+        [spec(after_exit="rearm", max_trades=5)], {"live": book2, "shadow": book2}, Always(), {"SPY"}, tmp_path
+    )
     eng2.start_day(day, {})
     assert book2.start_unverified == "blocked" and book2.day_start_equity == pytest.approx(250.0, abs=0.1)
     ticks(eng2, bars, 30, 390)
@@ -195,7 +202,9 @@ def test_run_session_survives_an_unreadable_account_and_history(tmp_path, monkey
     monkeypatch.setattr(runner, "BOOKS_DIR", tmp_path / "books")
     monkeypatch.setattr(runner, "notify", lambda level, msg, **k: alerts.append(msg))
     monkeypatch.setattr(runner, "AlpacaBroker", broker)
-    monkeypatch.setattr(runner, "_session_today", lambda client: (now - dt.timedelta(hours=1), now + dt.timedelta(hours=1)))
+    monkeypatch.setattr(
+        runner, "_session_today", lambda client: (now - dt.timedelta(hours=1), now + dt.timedelta(hours=1))
+    )
     monkeypatch.setattr(runner, "_load_specs", lambda *a, **k: [])
     monkeypatch.setattr(runner, "fetch_alpaca", no_data)
     monkeypatch.setattr(runner, "reconcile_sim_accounts", lambda *a, **k: None)

@@ -2,6 +2,7 @@
 
 The logic is plain JavaScript in index.html; these tests run that block under node (skipped without it).
 """
+
 import json
 import re
 import shutil
@@ -18,12 +19,13 @@ pytestmark = pytest.mark.skipif(NODE is None, reason="node not installed")
 def _block() -> str:
     page = (config.CODE_ROOT / "dashboard" / "static" / "index.html").read_text()
     start = page.index("// ---- trades by New York trading day ----")
-    return page[start:page.index("\n\n", start)]
+    return page[start : page.index("\n\n", start)]
 
 
 def _run(expr: str):
-    r = subprocess.run([NODE, "-e", _block() + f"\nconsole.log(JSON.stringify({expr}));"],
-                       capture_output=True, text=True, timeout=30)
+    r = subprocess.run(
+        [NODE, "-e", _block() + f"\nconsole.log(JSON.stringify({expr}));"], capture_output=True, text=True, timeout=30
+    )
     assert r.returncode == 0, r.stderr
     return json.loads(r.stdout)
 
@@ -39,7 +41,10 @@ def test_no_trades_today_says_so_and_names_the_day():
     # ICU writes "Sep" or "Sept" depending on its version.
     assert re.fullmatch(r"No trades today yet\. Showing the most recent, from Tue 29 Sept?\.", out["note"])
     assert [(r["day"], r["first"]) for r in out["rows"]] == [
-        ("2026-09-29", True), ("2026-09-29", False), ("2026-09-28", True)]
+        ("2026-09-29", True),
+        ("2026-09-29", False),
+        ("2026-09-28", True),
+    ]
 
 
 def test_trades_today_are_labelled_today_and_counted():

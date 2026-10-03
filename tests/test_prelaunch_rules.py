@@ -4,13 +4,13 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from conftest import TEST_START_DATE as START_DATE  # what the autouse fixture pins golive.START_DATE to
+from test_engine import run, spec
 from trader import cli, config
 from trader import features as F
 from trader.classifier import load_specs
-from conftest import TEST_START_DATE as START_DATE  # what the autouse fixture pins golive.START_DATE to
 from trader.jev import Decision
 from trader.runner import _exclude_prelaunch_specs
-from test_engine import run, spec
 
 
 def test_plumbing_rules_are_disabled_on_start_date_even_if_left_configured():
@@ -43,7 +43,9 @@ def test_validate_rejects_the_reserved_prefix_from_start_date(tmp_path, monkeypa
     f = tmp_path / "c.yaml"
     f.write_text("classifiers: []\n")
     monkeypatch.setattr(cli, "_specs", lambda *a, **k: [spec(id="test_gap_fill"), spec(id="idea")])
-    monkeypatch.setattr("trader.features.harness.run_gate", lambda *a, **k: type("R", (), {"ok": True, "features": [], "errors": {}})())
+    monkeypatch.setattr(
+        "trader.features.harness.run_gate", lambda *a, **k: type("R", (), {"ok": True, "features": [], "errors": {}})()
+    )
     monkeypatch.setattr(cli, "_gate_samples", lambda *a, **k: [])
 
     day = [START_DATE - dt.timedelta(days=1)]
@@ -64,19 +66,29 @@ class PlumbingDecision:
     def decide(self, state, instructions, criteria):
         self.calls += 1
         if "ENTER" in criteria:
-            return Decision("ENTER", {"ENTER": .55, "WAIT": .45})
+            return Decision("ENTER", {"ENTER": 0.55, "WAIT": 0.45})
         exit_now = state["position"]["minutes_held"] >= 6
-        return Decision("EXIT" if exit_now else "HOLD", {"EXIT": .55 if exit_now else .45, "HOLD": .45 if exit_now else .55})
+        return Decision(
+            "EXIT" if exit_now else "HOLD", {"EXIT": 0.55 if exit_now else 0.45, "HOLD": 0.45 if exit_now else 0.55}
+        )
 
 
 def test_exit_threshold_of_half_takes_a_classifier_exit_at_jevs_observed_scores(tmp_path, session):
     """Jev scores 'always' criteria at ~45-57%, so a 0.5 exit threshold is needed for test_jev_exit
     to exercise the classifier-EXIT path rather than its time stop."""
-    rule = spec(id="test_jev_exit", max_trades=2, after_exit="rearm", max_hold_min=30,
-                entry={"instructions": "?", "criteria": {"ENTER": "a", "WAIT": "b"}, "threshold": 0.5},
-                exit={"instructions": "?", "criteria": {"HOLD": "a", "EXIT": "b"}, "threshold": 0.5})
+    rule = spec(
+        id="test_jev_exit",
+        max_trades=2,
+        after_exit="rearm",
+        max_hold_min=30,
+        entry={"instructions": "?", "criteria": {"ENTER": "a", "WAIT": "b"}, "threshold": 0.5},
+        exit={"instructions": "?", "criteria": {"HOLD": "a", "EXIT": "b"}, "threshold": 0.5},
+    )
     _, trades = run(tmp_path, session(path=[100.0] * 390), [rule], PlumbingDecision())
     exits = trades[trades.side == "sell"].reset_index(drop=True)
     buys = trades[trades.side == "buy"].reset_index(drop=True)
     assert len(exits) == 2 and set(exits.reason) == {"classifier EXIT"}
-    assert all((pd.Timestamp(s) - pd.Timestamp(b)).total_seconds() < 30 * 60 for b, s in zip(buys.time, exits.time))
+    assert all(
+        (pd.Timestamp(s) - pd.Timestamp(b)).total_seconds() < 30 * 60
+        for b, s in zip(buys.time, exits.time, strict=False)
+    )

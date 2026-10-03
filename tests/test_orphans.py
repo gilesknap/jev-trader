@@ -5,13 +5,12 @@ from types import SimpleNamespace as NS
 
 import pandas as pd
 
+from test_engine import Always, spec
+from test_orders import FakeClient, broker
 from trader.broker import OrderState, Position, SimBroker
 from trader.data import ET
 from trader.engine import Book, Engine, Entry, Pending
 from trader.runner import STREAM_SYMBOL_LIMIT, session_symbols
-
-from test_engine import Always, spec
-from test_orders import FakeClient, broker
 
 DAY = dt.date(2026, 9, 21)
 
@@ -39,8 +38,14 @@ def _engine(tmp_path, specs=(), broker_name="sim"):
     br = Broker()
     br.name = broker_name
     book = Book("paper", br, tmp_path / "paper")
-    eng = Engine(list(specs), {"live": book, "shadow": book}, Always(), {"SPY", "QQQ", "XLV"}, tmp_path,
-                 alert=lambda lvl, msg: alerts.append(msg))
+    eng = Engine(
+        list(specs),
+        {"live": book, "shadow": book},
+        Always(),
+        {"SPY", "QQQ", "XLV"},
+        tmp_path,
+        alert=lambda lvl, msg: alerts.append(msg),
+    )
     eng.start_day(DAY, {})
     return eng, book, alerts
 
@@ -138,9 +143,11 @@ def test_session_symbols_stay_within_the_stream_limit(tmp_path):
 
 def test_non_equity_holdings_are_neither_streamed_nor_fetched(tmp_path):
     c = FakeClient()
-    c.get_all_positions = lambda: [NS(symbol="BTCUSD", qty=0.001, avg_entry_price=60000.0, asset_class=NS(value="crypto")),
-                                   NS(symbol="BTC/USD", qty=0.001, avg_entry_price=60000.0),
-                                   NS(symbol="AMD", qty=1.0, avg_entry_price=150.0, asset_class=NS(value="us_equity"))]
+    c.get_all_positions = lambda: [
+        NS(symbol="BTCUSD", qty=0.001, avg_entry_price=60000.0, asset_class=NS(value="crypto")),
+        NS(symbol="BTC/USD", qty=0.001, avg_entry_price=60000.0),
+        NS(symbol="AMD", qty=1.0, avg_entry_price=150.0, asset_class=NS(value="us_equity")),
+    ]
     book = Book("paper", broker(c), tmp_path / "paper")
     alerts = []
     assert session_symbols([], [book], alert=lambda lvl, msg: alerts.append(msg)) == (["SPY"], ["AMD"])

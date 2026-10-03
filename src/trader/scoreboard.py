@@ -31,6 +31,7 @@ MIN_DAYS = 3  # ...or this many distinct trading days
 FAMILIES = ("novel", "conventional", "control", "unlabelled")
 EXPERIMENT_START = START_DATE  # the live board, like the go-live gate, ignores earlier test sessions
 
+
 def _num(v, default=0.0):
     try:
         return float(v)
@@ -38,8 +39,9 @@ def _num(v, default=0.0):
         return default
 
 
-def closed_trades(rows: list[dict], slippage_per_side_pct: float = SLIPPAGE_PER_SIDE_PCT,
-                  since: str | None = None) -> list[dict]:
+def closed_trades(
+    rows: list[dict], slippage_per_side_pct: float = SLIPPAGE_PER_SIDE_PCT, since: str | None = None
+) -> list[dict]:
     """Closed round trips from a trades.csv, oldest first, each with its net return.
     Slippage is charged on the entry's notional, matched to the latest earlier buy of the same
     classifier and symbol (scale-out legs, `sell_part`, are part of the final sell's P&L).
@@ -62,11 +64,17 @@ def closed_trades(rows: list[dict], slippage_per_side_pct: float = SLIPPAGE_PER_
                 cost = _num(r.get("notional")) / (1 + pnl_pct / 100)
             if since and r["time"][:10] < since:
                 continue
-            out.append({
-                "time": r["time"], "day": r["time"][:10], "classifier": key[0], "symbol": key[1],
-                "net_pct": pnl_pct - slip, "net_usd": _num(r.get("pnl")) - cost * slip / 100,
-                "spec_hash": r.get("spec_hash") or "",  # the spec the position opened under ("" before provenance)
-            })
+            out.append(
+                {
+                    "time": r["time"],
+                    "day": r["time"][:10],
+                    "classifier": key[0],
+                    "symbol": key[1],
+                    "net_pct": pnl_pct - slip,
+                    "net_usd": _num(r.get("pnl")) - cost * slip / 100,
+                    "spec_hash": r.get("spec_hash") or "",  # the spec the position opened under ("" before provenance)
+                }
+            )
     return out
 
 
@@ -91,8 +99,14 @@ def summarise(trades: list[dict]) -> dict:
     mean, var, g = _clustered(trades)
     half = t95(g - 1) * math.sqrt(var) if var is not None else None
     wins = sum(t["net_pct"] > 0 for t in trades)
-    return {"n": n, "days": g, "mean_pct": mean, "ci_pct": half, "win_rate": wins / n if n else None,
-            "verdict": verdict(n, g, mean, half)}
+    return {
+        "n": n,
+        "days": g,
+        "mean_pct": mean,
+        "ci_pct": half,
+        "win_rate": wins / n if n else None,
+        "verdict": verdict(n, g, mean, half),
+    }
 
 
 def verdict(n: int, days: int, mean: float | None, half: float | None, behind: str = "losing") -> str:
@@ -116,8 +130,11 @@ def compare(a: list[dict], b: list[dict]) -> dict | None:
         return None
     diff = ma - mb
     half = t95(min(ga, gb) - 1) * math.sqrt(va + vb)
-    return {"diff_pct": diff, "ci_pct": half,
-            "verdict": verdict(min(len(a), len(b)), min(ga, gb), diff, half, behind="behind")}
+    return {
+        "diff_pct": diff,
+        "ci_pct": half,
+        "verdict": verdict(min(len(a), len(b)), min(ga, gb), diff, half, behind="behind"),
+    }
 
 
 # ---- the objective: daily returns of the whole book vs SPY (descriptive per-trade stats above) ----
@@ -159,10 +176,13 @@ def _max_drawdown(rets: list[float]) -> float:
 def _series(rets: dict[str, float]) -> dict:
     v = [rets[d] for d in sorted(rets)]
     total = math.prod(1 + r / 100 for r in v) - 1 if v else None
-    return {"days": len(v), "total_pct": None if total is None else total * 100,
-            "mean_pct": statistics.fmean(v) if v else None,
-            "sd_pct": statistics.stdev(v) if len(v) > 1 else None,
-            "max_drawdown_pct": _max_drawdown(v) if v else None}
+    return {
+        "days": len(v),
+        "total_pct": None if total is None else total * 100,
+        "mean_pct": statistics.fmean(v) if v else None,
+        "sd_pct": statistics.stdev(v) if len(v) > 1 else None,
+        "max_drawdown_pct": _max_drawdown(v) if v else None,
+    }
 
 
 def _exposure(trades: list[dict], day_equity: dict[str, float]) -> dict[str, float]:
@@ -190,8 +210,12 @@ def _exposure(trades: list[dict], day_equity: dict[str, float]) -> dict[str, flo
     return {d: min(100.0, held.get(d, 0.0) / (SESSION_MIN * eq) * 100) for d, eq in day_equity.items() if eq > 0}
 
 
-def daily(equity: list[dict], benchmark: list[dict] | None = None, trades: list[dict] | None = None,
-          from_date: str | None = None) -> dict | None:
+def daily(
+    equity: list[dict],
+    benchmark: list[dict] | None = None,
+    trades: list[dict] | None = None,
+    from_date: str | None = None,
+) -> dict | None:
     """The book's daily return series from its equity.csv (unit NAV, so deposits aren't gains),
     one row per session it marked (open to close), zero-trade days included, against buy-and-hold
     SPY on the same days. This is the primary measure of the objective: two books with the same daily returns
@@ -209,12 +233,22 @@ def daily(equity: list[dict], benchmark: list[dict] | None = None, trades: list[
 
     def book(days: list[str]) -> dict:
         return _series({d: rets[d] for d in days}) | {
-            "exposure_pct": statistics.fmean(exp.get(d, 0.0) for d in days), "days_traded": sum(d in traded for d in days)}
+            "exposure_pct": statistics.fmean(exp.get(d, 0.0) for d in days),
+            "days_traded": sum(d in traded for d in days),
+        }
 
-    out = {"book": book(sorted(rets)),
-           "rows": [{"day": d, "return_pct": round(rets[d], 4), "exposure_pct": round(exp.get(d, 0.0), 2)} for d in sorted(rets)],
-           "spy": None, "book_on_spy_days": None, "vs_spy": None}
-    bench = {str(r.get("date"))[:10]: (_num(r.get("spy_open"), 0), _num(r.get("spy_close"), 0)) for r in benchmark or []}
+    out = {
+        "book": book(sorted(rets)),
+        "rows": [
+            {"day": d, "return_pct": round(rets[d], 4), "exposure_pct": round(exp.get(d, 0.0), 2)} for d in sorted(rets)
+        ],
+        "spy": None,
+        "book_on_spy_days": None,
+        "vs_spy": None,
+    }
+    bench = {
+        str(r.get("date"))[:10]: (_num(r.get("spy_open"), 0), _num(r.get("spy_close"), 0)) for r in benchmark or []
+    }
     bench = {d: oc for d, oc in bench.items() if oc[0] > 0 and oc[1] > 0}
     both = sorted(set(rets) & set(bench))
     if both:
@@ -243,10 +277,18 @@ def daily(equity: list[dict], benchmark: list[dict] | None = None, trades: list[
     return out
 
 
-def build(rows: list[dict], families: dict[str, str], current: set[str], start_equity: float | None,
-          since: dict[str, str] | None = None, slippage_per_side_pct: float = SLIPPAGE_PER_SIDE_PCT,
-          from_date: str | None = None, equity: list[dict] | None = None,
-          benchmark: list[dict] | None = None, spec_hashes: dict[str, str] | None = None) -> dict:
+def build(
+    rows: list[dict],
+    families: dict[str, str],
+    current: set[str],
+    start_equity: float | None,
+    since: dict[str, str] | None = None,
+    slippage_per_side_pct: float = SLIPPAGE_PER_SIDE_PCT,
+    from_date: str | None = None,
+    equity: list[dict] | None = None,
+    benchmark: list[dict] | None = None,
+    spec_hashes: dict[str, str] | None = None,
+) -> dict:
     """Scoreboard for one book.
 
     families: classifier id -> novel | conventional (anything else shows as "unlabelled";
@@ -290,8 +332,14 @@ def build(rows: list[dict], families: dict[str, str], current: set[str], start_e
 
     classifiers = []
     for cid, ts in by_cls.items():
-        row = {"id": cid, "family": fam(cid), "active": cid in current, **summarise(ts),
-               "net_usd": round(sum(t["net_usd"] for t in ts), 2), "curve": curve(ts)}
+        row = {
+            "id": cid,
+            "family": fam(cid),
+            "active": cid in current,
+            **summarise(ts),
+            "net_usd": round(sum(t["net_usd"] for t in ts), 2),
+            "curve": curve(ts),
+        }
         if since and cid in since and fam(cid) != "control":
             # Counted like golive.shadow_record: nothing before the start date, even when all days are
             # shown, and no close stamped with another spec's hash (its position opened under an earlier
@@ -304,13 +352,24 @@ def build(rows: list[dict], families: dict[str, str], current: set[str], start_e
     classifiers.sort(key=lambda r: (FAMILIES.index(r["family"]), not r["active"], -r["net_usd"], r["id"]))
 
     pooled = {f: [t for t in trades if fam(t["classifier"]) == f] for f in FAMILIES}
-    fams = [{"family": f, "classifiers": sum(r["family"] == f for r in classifiers), **summarise(ts),
-             "net_usd": round(sum(t["net_usd"] for t in ts), 2), "curve": curve(ts)}
-            for f, ts in pooled.items() if ts or any(r["family"] == f for r in classifiers)]
+    fams = [
+        {
+            "family": f,
+            "classifiers": sum(r["family"] == f for r in classifiers),
+            **summarise(ts),
+            "net_usd": round(sum(t["net_usd"] for t in ts), 2),
+            "curve": curve(ts),
+        }
+        for f, ts in pooled.items()
+        if ts or any(r["family"] == f for r in classifiers)
+    ]
     return {
-        "days": days, "units": "% of starting equity" if start_equity else "$", "hidden_before_start": hidden,
+        "days": days,
+        "units": "% of starting equity" if start_equity else "$",
+        "hidden_before_start": hidden,
         "slippage_per_side_pct": slippage_per_side_pct,
-        "classifiers": classifiers, "families": fams,
+        "classifiers": classifiers,
+        "families": fams,
         "novel_vs_conventional": compare(pooled["novel"], pooled["conventional"]),
         "novel_vs_control": compare(pooled["novel"], pooled["control"]),
         "daily": daily(equity, benchmark, rows, from_date) if equity else None,

@@ -6,15 +6,14 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-from trader import golive
-from trader.broker import PartialExit
-from trader.engine import Engine
-
 from test_engine import Always, spec
 from test_execution_toolkit import make, ticks
 from test_orders import APIError
 from test_partial_exits import DAY, T0, Venue, clock, held, open_book, trade_rows  # noqa: F401 (clock: fixture)
 from test_partial_fills import LIMIT, Scripted, rows
+from trader import golive
+from trader.broker import PartialExit
+from trader.engine import Engine
 
 
 class Market(Venue):
@@ -163,6 +162,7 @@ def test_a_close_that_sells_more_after_its_cancel_wait_is_re_read_by_its_id(tmp_
             v.orders["c1"]["status"] = "partially_filled"
             v.sticky.add("c1")
         return o
+
     v.close_position = slow
     eng._exit(book, "SPY", book.entries["SPY"], 100.0, T0, "classifier EXIT")
     assert book.entries["SPY"].qty == pytest.approx(0.6)
@@ -171,7 +171,9 @@ def test_a_close_that_sells_more_after_its_cancel_wait_is_re_read_by_its_id(tmp_
     eng._exit(book, "SPY", book.entries["SPY"], 100.0, T0 + dt.timedelta(minutes=1), "classifier EXIT")
     t = trade_rows(tmp_path)
     assert [(r["side"], r["qty"], r["reason"]) for r in t] == [
-        ("sell_part", "0.400000", "classifier EXIT (partial)"), ("sell", "0.600000", "classifier EXIT")]
+        ("sell_part", "0.400000", "classifier EXIT (partial)"),
+        ("sell", "0.600000", "classifier EXIT"),
+    ]
     assert float(t[-1]["pnl"]) == pytest.approx(2.0) and float(t[-1]["pnl_pct"]) == pytest.approx(2.0)
     assert golive.shadow_record("t", "2000-01-01", tmp_path / "paper") == (1, pytest.approx(2.0 - 0.1))
     assert not book.entries and not v.positions

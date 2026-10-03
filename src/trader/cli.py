@@ -73,8 +73,10 @@ def cmd_validate(a):
 
         plumbing = [s.id for s in specs if s.id.startswith("test_")]
         if plumbing and config.ny_today() >= START_DATE:  # the runner drops these: say so before it happens
-            raise ValueError(f"the test_ prefix is reserved for pre-launch plumbing and the runner ignores it "
-                             f"from {START_DATE}: rename or remove {plumbing}")
+            raise ValueError(
+                f"the test_ prefix is reserved for pre-launch plumbing and the runner ignores it "
+                f"from {START_DATE}: rename or remove {plumbing}"
+            )
         print(f"classifiers OK: {[s.id for s in specs]}")
     except Exception as e:
         print(f"classifiers INVALID: {e}")
@@ -83,11 +85,10 @@ def cmd_validate(a):
 
 
 def cmd_replay(a):
-    from trader.replay import replay
-
     import re
 
     from trader.data import ET
+    from trader.replay import replay
 
     run_id = a.name or dt.datetime.now(ET).strftime("%Y%m%d-%H%M%S")  # New York time, like everything else
     if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,79}", run_id) or run_id in (".", ".."):
@@ -100,8 +101,16 @@ def cmd_replay(a):
     end = dt.date.fromisoformat(a.end) if a.end else config.ny_today() - dt.timedelta(days=1)
     start = dt.date.fromisoformat(a.start) if a.start else end - dt.timedelta(days=a.days)
     summary = replay(
-        specs, start, end, _decider(a.decider, secrets), set(config.universe()), run_dir,
-        secrets, a.source, a.cash, a.pace,
+        specs,
+        start,
+        end,
+        _decider(a.decider, secrets),
+        set(config.universe()),
+        run_dir,
+        secrets,
+        a.source,
+        a.cash,
+        a.pace,
     )
     from trader import trials
 
@@ -123,7 +132,11 @@ def cmd_probe_report(a):
     else:
         dirs = [config.RUNTIME_DIR / "decisions", config.STRATEGIST_ROOT / "logs" / "decisions"]
     end = dt.date.fromisoformat(a.end) if a.end else None
-    start = dt.date.fromisoformat(a.start) if a.start else (None if a.replay else (end or config.ny_today()) - dt.timedelta(days=a.days))
+    start = (
+        dt.date.fromisoformat(a.start)
+        if a.start
+        else (None if a.replay else (end or config.ny_today()) - dt.timedelta(days=a.days))
+    )
     only = set(a.only.split(",")) if a.only else None
     rows = probe.load_rows(probe.decision_files(dirs, start, end), only)
     if rows.empty:
@@ -132,12 +145,16 @@ def cmd_probe_report(a):
     days = sorted(dt.date.fromisoformat(d) for d in rows.day.unique())
     t0 = dt.datetime.combine(days[0], dt.time(0), ET)
     # SIP's most recent 15 minutes aren't on the free plan: stop short of them during a session.
-    t1 = min(dt.datetime.combine(days[-1] + dt.timedelta(days=1), dt.time(0), ET),
-             dt.datetime.now(ET) - dt.timedelta(minutes=16))
+    t1 = min(
+        dt.datetime.combine(days[-1] + dt.timedelta(days=1), dt.time(0), ET),
+        dt.datetime.now(ET) - dt.timedelta(minutes=16),
+    )
     secrets = config.load_secrets()
     calendar = load_calendar(secrets, days[0], days[-1])  # early closes cut horizons at their own flatten
     raw = fetch(sorted(rows.s.unique()), t0, t1, secrets, "alpaca")
-    rows = probe.forward_returns(rows, {s: calendar.trim(split_sessions(b)) for s, b in raw.items()}, horizons, calendar, data_end=t1)
+    rows = probe.forward_returns(
+        rows, {s: calendar.trim(split_sessions(b)) for s, b in raw.items()}, horizons, calendar, data_end=t1
+    )
     thresholds = {}
     try:  # each spec on its own, so one bad spec doesn't cost the others their thresholds
         raw = (yaml.safe_load(Path(a.file).read_text()) or {}).get("classifiers") or []
@@ -153,9 +170,14 @@ def cmd_probe_report(a):
     missing = sorted(set(rows.c) - set(thresholds))
     if missing:  # scoring doesn't need the spec: fall back to the default threshold
         print(f"note: no valid spec for {missing}; scored at threshold {probe.DEFAULT_THRESHOLD}", file=sys.stderr)
-    out = {"generated": dt.datetime.now(ET).isoformat(timespec="minutes"), "first_day": str(days[0]),
-           "last_day": str(days[-1]), "horizons": horizons, "skipped_lines": rows.attrs.get("skipped", 0),
-           "probes": probe.score(rows, horizons, thresholds)}
+    out = {
+        "generated": dt.datetime.now(ET).isoformat(timespec="minutes"),
+        "first_day": str(days[0]),
+        "last_day": str(days[-1]),
+        "horizons": horizons,
+        "skipped_lines": rows.attrs.get("skipped", 0),
+        "probes": probe.score(rows, horizons, thresholds),
+    }
     if a.replay:
         from trader import trials
 
@@ -203,8 +225,10 @@ def _require_runtime(stop: bool = False) -> None:
         fix = "No services.env here: export TRADER_RUNTIME=<runtime dir> first."
     else:
         return
-    sys.exit(f"REFUSING: TRADER_RUNTIME is not set and {why}; nothing was changed.\n{fix}"
-             + ("\nIn an emergency, the dashboard's STOP button works without this." if stop else ""))
+    sys.exit(
+        f"REFUSING: TRADER_RUNTIME is not set and {why}; nothing was changed.\n{fix}"
+        + ("\nIn an emergency, the dashboard's STOP button works without this." if stop else "")
+    )
 
 
 def cmd_config_get(a):
@@ -228,8 +252,12 @@ def cmd_config_render_deploy(a):
     stale = [p for p, text in files.items() if not (root / p).exists() or (root / p).read_text() != text]
     if a.check:
         if stale:
-            sys.exit(f"out of date with {root / 'config.yaml'}: " + ", ".join(stale)
-                     + "\nRun: uv run trader config render-deploy" + (f" --data-root {root}" if a.data_root else ""))
+            sys.exit(
+                f"out of date with {root / 'config.yaml'}: "
+                + ", ".join(stale)
+                + "\nRun: uv run trader config render-deploy"
+                + (f" --data-root {root}" if a.data_root else "")
+            )
         print("deploy files match config.yaml")
         return
     for p in stale:
@@ -321,8 +349,18 @@ def cmd_golive_status(a):
         C.require_mode_file()  # split mode: a missing mode.yaml is an error, not a silent "auto"
     except C.SettingsError as e:
         sys.exit(str(e))
-    print(json.dumps({"override": golive.override(), "effective": C.account_mode(), "state": golive.load_state(),
-                      "gate_now": gate}, indent=1, default=str))
+    print(
+        json.dumps(
+            {
+                "override": golive.override(),
+                "effective": C.account_mode(),
+                "state": golive.load_state(),
+                "gate_now": gate,
+            },
+            indent=1,
+            default=str,
+        )
+    )
 
 
 def cmd_daily_returns(a):
@@ -424,7 +462,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--out", help="write the report here (JSON) instead of printing it")
     s.set_defaults(fn=cmd_probe_report)
 
-    s = sub.add_parser("trials", help="the trial ledger: distinct specs tried per classifier and family, and on how many days")
+    s = sub.add_parser(
+        "trials", help="the trial ledger: distinct specs tried per classifier and family, and on how many days"
+    )
     g = s.add_mutually_exclusive_group()
     g.add_argument("--id", help="one classifier id: each spec tried under it")
     g.add_argument("--hash", help="one spec hash (or a prefix of it): where it was tried")
@@ -459,8 +499,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(fn=cmd_golive_status)
 
     s = sub.add_parser("daily-returns", help="each book's daily returns, drawdown and exposure vs SPY (read-only)")
-    s.add_argument("--since", type=lambda v: dt.date.fromisoformat(v).isoformat(),
-                   help="first day to include, YYYY-MM-DD (default: the experiment's start date)")
+    s.add_argument(
+        "--since",
+        type=lambda v: dt.date.fromisoformat(v).isoformat(),
+        help="first day to include, YYYY-MM-DD (default: the experiment's start date)",
+    )
     s.set_defaults(fn=cmd_daily_returns)
     s = sub.add_parser("housekeeping", help="daily checks: API credit, token expiry, undeployed merges, disk")
     s.set_defaults(fn=cmd_housekeeping)
@@ -481,8 +524,10 @@ def build_parser() -> argparse.ArgumentParser:
     c.set_defaults(fn=cmd_config_get)
     c = cs.add_parser("render-deploy", help="regenerate deploy/ files from deploy/templates/ and config.yaml")
     c.add_argument("--check", action="store_true", help="only report whether they match (exit 1 if not)")
-    c.add_argument("--data-root", help="data checkout holding config.yaml and the rendered files "
-                                       "(default: TRADER_DATA_ROOT, else the code root)")
+    c.add_argument(
+        "--data-root",
+        help="data checkout holding config.yaml and the rendered files (default: TRADER_DATA_ROOT, else the code root)",
+    )
     c.set_defaults(fn=cmd_config_render_deploy)
 
     s = sub.add_parser("dashboard", help="serve the dashboard")
@@ -508,8 +553,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None):
     a = build_parser().parse_args(argv)
     # Commands that write runtime state (the runner's own units always have TRADER_RUNTIME set).
-    if a.fn in (cmd_run, cmd_stop, cmd_clear_halt, cmd_watchdog, cmd_hold_live, cmd_release_live,
-                cmd_rebase_paper) or (a.fn is cmd_compact and a.scope == "runtime"):
+    if a.fn in (cmd_run, cmd_stop, cmd_clear_halt, cmd_watchdog, cmd_hold_live, cmd_release_live, cmd_rebase_paper) or (
+        a.fn is cmd_compact and a.scope == "runtime"
+    ):
         _require_runtime(stop=a.fn is cmd_stop)
     a.fn(a)
 

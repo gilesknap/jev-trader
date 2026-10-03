@@ -5,13 +5,12 @@ import datetime as dt
 
 import pandas as pd
 
+from test_engine import Always, spec
 from trader import golive
 from trader.broker import SimBroker
 from trader.classifier import ClassifierSpec
 from trader.data import ET
 from trader.engine import Book, Engine
-
-from test_engine import Always, spec
 
 
 def run(tmp_path, bars, specs, cash=250.0):
@@ -56,11 +55,26 @@ def test_ledger_survives_restart(tmp_path, session):
 
 def _trades(path, cid, n, pnl_pct, day="2026-10-20"):
     with path.open("w", newline="") as f:
-        w = csv.DictWriter(f, ["time", "book", "classifier", "symbol", "side", "qty", "price", "notional", "reason", "pnl", "pnl_pct"])
+        w = csv.DictWriter(
+            f, ["time", "book", "classifier", "symbol", "side", "qty", "price", "notional", "reason", "pnl", "pnl_pct"]
+        )
         w.writeheader()
         for _ in range(n):
-            w.writerow({"time": f"{day}T11:00-04:00", "book": "paper", "classifier": cid, "symbol": "SPY", "side": "sell",
-                        "qty": 1, "price": 1, "notional": 1, "reason": "x", "pnl": 0.1, "pnl_pct": pnl_pct})
+            w.writerow(
+                {
+                    "time": f"{day}T11:00-04:00",
+                    "book": "paper",
+                    "classifier": cid,
+                    "symbol": "SPY",
+                    "side": "sell",
+                    "qty": 1,
+                    "price": 1,
+                    "notional": 1,
+                    "reason": "x",
+                    "pnl": 0.1,
+                    "pnl_pct": pnl_pct,
+                }
+            )
 
 
 def test_promotion_requires_record_on_current_spec(tmp_path):
@@ -116,10 +130,14 @@ def test_editing_custom_feature_code_restarts_the_record(tmp_path, monkeypatch):
     golive.enforce_promotion([s], note, True, dt.date(2026, 10, 22), tmp_path, state, custom)
     assert s.mode == "shadow"
     # a lib-only classifier is unaffected by custom edits
-    golive.enforce_promotion([spec(id="plain", mode="shadow")], note, True, dt.date(2026, 10, 19), tmp_path, state, custom)
+    golive.enforce_promotion(
+        [spec(id="plain", mode="shadow")], note, True, dt.date(2026, 10, 19), tmp_path, state, custom
+    )
     before = __import__("json").loads(state.read_text())["plain"]["hash"]
     (custom / "mine.py").write_text("v3")
-    golive.enforce_promotion([spec(id="plain", mode="shadow")], note, True, dt.date(2026, 10, 23), tmp_path, state, custom)
+    golive.enforce_promotion(
+        [spec(id="plain", mode="shadow")], note, True, dt.date(2026, 10, 23), tmp_path, state, custom
+    )
     assert __import__("json").loads(state.read_text())["plain"]["hash"] == before
 
 
@@ -169,8 +187,22 @@ def test_promotion_ignores_closes_of_positions_opened_under_an_earlier_spec(tmp_
     h_old, h_new = golive.spec_hash(old, digest), golive.spec_hash(new, digest)
     assert h_old != h_new
     golive.enforce_promotion([new], note, True, dt.date(2026, 10, 22), tmp_path, state)  # record starts 10-22
-    cols = ["time", "book", "classifier", "symbol", "side", "qty", "price", "notional", "reason", "pnl", "pnl_pct",
-            "model", "code_sha", "spec_hash"]
+    cols = [
+        "time",
+        "book",
+        "classifier",
+        "symbol",
+        "side",
+        "qty",
+        "price",
+        "notional",
+        "reason",
+        "pnl",
+        "pnl_pct",
+        "model",
+        "code_sha",
+        "spec_hash",
+    ]
 
     def write(rows):
         with (tmp_path / "trades.csv").open("w", newline="") as f:
@@ -178,9 +210,22 @@ def test_promotion_ignores_closes_of_positions_opened_under_an_earlier_spec(tmp_
             w.writeheader()
             for day, h, n in rows:
                 for _ in range(n):
-                    w.writerow({"time": f"{day}T11:00-04:00", "book": "paper", "classifier": "idea", "symbol": "SPY",
-                                "side": "sell", "qty": 1, "price": 1, "notional": 1, "reason": "x", "pnl": 0.1,
-                                "pnl_pct": 0.3, "spec_hash": h})
+                    w.writerow(
+                        {
+                            "time": f"{day}T11:00-04:00",
+                            "book": "paper",
+                            "classifier": "idea",
+                            "symbol": "SPY",
+                            "side": "sell",
+                            "qty": 1,
+                            "price": 1,
+                            "notional": 1,
+                            "reason": "x",
+                            "pnl": 0.1,
+                            "pnl_pct": 0.3,
+                            "spec_hash": h,
+                        }
+                    )
 
     # 25 profitable closes after the edit, all of positions opened under the old spec: not counted
     write([("2026-10-22", h_old, 25)])

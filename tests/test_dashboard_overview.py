@@ -12,13 +12,16 @@ def monorepo(monkeypatch):
     monkeypatch.delenv("TRADER_DATA_ROOT", raising=False)
 
 
-@pytest.mark.parametrize("remote", [
-    "github-trading:gilesknap/trading",
-    "git@github-trading:gilesknap/trading",
-    "git@github.com:gilesknap/trading.git",
-    "https://github.com/gilesknap/trading.git",
-    "https://github.com/gilesknap/trading/",
-])
+@pytest.mark.parametrize(
+    "remote",
+    [
+        "github-trading:gilesknap/trading",
+        "git@github-trading:gilesknap/trading",
+        "git@github.com:gilesknap/trading.git",
+        "https://github.com/gilesknap/trading.git",
+        "https://github.com/gilesknap/trading/",
+    ],
+)
 def test_github_repo_from_remote(remote):
     assert dashboard.github_repo(remote) == "gilesknap/trading"
 
@@ -68,9 +71,14 @@ def test_split_links_send_code_and_data_to_their_own_repos():
     assert "https://github.com/pub/code/compare/c0de...main" in code
     assert any(u.endswith("/docs/how-to/daily-operations.md") for u in code)
     assert all(u.startswith("https://github.com/me/data") for u in data)
-    for path in ("/tree/strategist/journal/weekly", "/blob/strategist/state/strategy.md", "/pulls",
-                 "/issues?q=is%3Aissue+is%3Aopen+label%3Aneeds-human", "/issues?q=is%3Aissue+label%3Aweekly",
-                 "/compare/da7a...main"):
+    for path in (
+        "/tree/strategist/journal/weekly",
+        "/blob/strategist/state/strategy.md",
+        "/pulls",
+        "/issues?q=is%3Aissue+is%3Aopen+label%3Aneeds-human",
+        "/issues?q=is%3Aissue+label%3Aweekly",
+        "/compare/da7a...main",
+    ):
         assert f"https://github.com/me/data{path}" in data
     (hint,) = [g["hint"] for g in groups if g["title"].startswith("GitHub: your data")]
     assert "read the weekly issue" in hint and "merge" not in hint
@@ -124,7 +132,9 @@ def test_overview_split_uses_the_data_repo_and_shows_the_config_commit(tmp_path,
     _repo(tmp_path / "config", "git@github-trading:me/data", "Config")
     monkeypatch.setattr(dashboard.config, "CODE_ROOT", tmp_path / "main")
     monkeypatch.setenv("TRADER_DATA_ROOT", str(tmp_path / "config"))
-    settings = config.SETTINGS.model_copy(update={"owner": config.SETTINGS.owner.model_copy(update={"github_repo": "me/data"})})
+    settings = config.SETTINGS.model_copy(
+        update={"owner": config.SETTINGS.owner.model_copy(update={"github_repo": "me/data"})}
+    )
     monkeypatch.setattr(dashboard.config, "SETTINGS", settings)
     r = client.get("/api/overview").json()
     assert r["split"] is True and r["repo"] == "pub/code" and r["data_repo"] == "me/data"
@@ -151,7 +161,12 @@ def test_overview_without_git(tmp_path, monkeypatch, client):
 
 
 def test_overview_requires_identity(client):
-    assert TestClient(dashboard.app, headers={"Tailscale-User-Login": "stranger@example.com"}).get("/api/overview").status_code == 403
+    assert (
+        TestClient(dashboard.app, headers={"Tailscale-User-Login": "stranger@example.com"})
+        .get("/api/overview")
+        .status_code
+        == 403
+    )
 
 
 def test_rules_fill_defaults_and_keep_invalid_specs(tmp_path, monkeypatch, client):
@@ -220,8 +235,11 @@ def test_rules_broken_universe_is_a_problem(tmp_path, monkeypatch, client):
 def test_equity_points_keep_a_week_of_detail_and_daily_closes_before_it():
     from trader.dashboard import _equity_points
 
-    rows = [{"time": f"2026-09-{d:02d}T{h}-04:00", "equity": "250", "nav": "1.0"}
-            for d in range(1, 30) for h in ("09:35", "12:00", "15:55")]
+    rows = [
+        {"time": f"2026-09-{d:02d}T{h}-04:00", "equity": "250", "nav": "1.0"}
+        for d in range(1, 30)
+        for h in ("09:35", "12:00", "15:55")
+    ]
     rows.append({"time": "junk", "equity": "x", "nav": "1"})  # malformed: skipped
     rows.append({"time": "junk", "equity": "250", "nav": "1.0"})  # an undatable mark: skipped too
     pts = _equity_points(rows)

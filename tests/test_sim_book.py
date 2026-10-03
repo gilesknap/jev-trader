@@ -1,15 +1,15 @@
+import argparse
 import datetime as dt
 import json
 
 import pandas as pd
 import pytest
 
+from test_engine import Always, spec
 from trader import runner
 from trader.broker import SIM_START_CASH, PersistentSimBroker, SimBroker
 from trader.data import ET
 from trader.engine import Book, Engine
-
-from test_engine import Always, spec
 
 
 def _run(tmp_path, bars, specs, books):
@@ -76,8 +76,20 @@ def test_persistent_sim_broker_keeps_todays_orders_only(tmp_path):
     b.buy_limit("SPY", 0.5, 99.0, t0 - dt.timedelta(days=1), "old")
     oid = b.buy_limit("SPY", 0.5, 99.0, t0, "new")
     idx = pd.date_range(t0, periods=2, freq="1min")
-    b.update_bars({"SPY": pd.DataFrame({"open": [99.5, 98.5], "high": [99.6, 98.6], "low": [99.4, 98.0],
-                                        "close": [99.5, 98.5], "volume": [1, 1]}, index=idx)})
+    b.update_bars(
+        {
+            "SPY": pd.DataFrame(
+                {
+                    "open": [99.5, 98.5],
+                    "high": [99.6, 98.6],
+                    "low": [99.4, 98.0],
+                    "close": [99.5, 98.5],
+                    "volume": [1, 1],
+                },
+                index=idx,
+            )
+        }
+    )
     again = PersistentSimBroker(p)
     assert set(again.orders) == {oid}
     st = again.order_state(oid)
@@ -99,7 +111,7 @@ def test_clear_halt_names():
 
     assert cli._book_name("sim/my_idea") == "sim/my_idea"
     for bad in ("sim/../paper", "sim", "other", "sim/A"):
-        with pytest.raises(Exception):
+        with pytest.raises(argparse.ArgumentTypeError):
             cli._book_name(bad)
 
 
@@ -129,15 +141,27 @@ def test_dashboard_shows_sim_as_one_book(tmp_path, monkeypatch):
     rows = {"paper": [("paper", "idea")], "sim/a": [("sim:a", "a")], "sim/b": [("sim:b", "b")]}
     for d, rs in rows.items():
         (rt / "books" / d).mkdir(parents=True)
-        lines = [cols] + [x for bk, c in rs for x in (
-            f"2026-10-06T10:00:00-04:00,{bk},{c},SPY,buy,1,100,100,entry,,",
-            f"2026-10-06T10:30:00-04:00,{bk},{c},SPY,sell,1,101,101,target,1.0,1.0")]
+        lines = [cols] + [
+            x
+            for bk, c in rs
+            for x in (
+                f"2026-10-06T10:00:00-04:00,{bk},{c},SPY,buy,1,100,100,entry,,",
+                f"2026-10-06T10:30:00-04:00,{bk},{c},SPY,sell,1,101,101,target,1.0,1.0",
+            )
+        ]
         (rt / "books" / d / "trades.csv").write_text("\n".join(lines) + "\n")
     (rt / "books" / "paper" / "equity.csv").write_text("time,equity,nav,hwm\n2026-10-06T09:35-04:00,250,1,1\n")
-    (rt / "status.json").write_text(json.dumps({"classifiers": [
-        {"id": "idea", "family": "novel", "mode": "shadow", "symbols": {}},
-        {"id": "a", "family": "novel", "mode": "sim", "symbols": {}},
-        {"id": "b", "family": "conventional", "mode": "sim", "symbols": {}}]}))
+    (rt / "status.json").write_text(
+        json.dumps(
+            {
+                "classifiers": [
+                    {"id": "idea", "family": "novel", "mode": "shadow", "symbols": {}},
+                    {"id": "a", "family": "novel", "mode": "sim", "symbols": {}},
+                    {"id": "b", "family": "conventional", "mode": "sim", "symbols": {}},
+                ]
+            }
+        )
+    )
     monkeypatch.setattr(dashboard.config, "RUNTIME_DIR", rt)
     monkeypatch.setattr(dashboard, "USERS", {"me@example.com"})
     monkeypatch.setattr(SB, "EXPERIMENT_START", dt.date(2026, 1, 1))
@@ -158,7 +182,9 @@ def test_unreadable_sim_account_is_quarantined_not_fatal(tmp_path):
     d.mkdir(parents=True)
     (d / "sim_state.json").write_text("{trunc")
     alerts = []
-    books = runner.sim_books([spec(id="sim_a", mode="sim")], tmp_path / "sim", lambda lvl, m: alerts.append(m), tmp_path / "q")
+    books = runner.sim_books(
+        [spec(id="sim_a", mode="sim")], tmp_path / "sim", lambda lvl, m: alerts.append(m), tmp_path / "q"
+    )
     assert books["sim:sim_a"].broker.cash == SIM_START_CASH  # a fresh account
     assert len(list((tmp_path / "q").iterdir())) == 1 and "unreadable" in alerts[0]
 
@@ -167,7 +193,9 @@ def test_stale_sim_positions_are_closed_at_startup_even_without_a_rule(tmp_path,
     specs = [spec(id="gone", mode="sim")]
     bars = session(path=[100.0] * 30)  # 2026-09-21, ends mid-morning: still holding
     paper = Book("paper", SimBroker(250), tmp_path / "paper")
-    eng = Engine(specs, {"live": paper, "shadow": paper} | runner.sim_books(specs, tmp_path / "sim"), Always(), {"SPY"}, tmp_path)
+    eng = Engine(
+        specs, {"live": paper, "shadow": paper} | runner.sim_books(specs, tmp_path / "sim"), Always(), {"SPY"}, tmp_path
+    )
     eng.start_day(bars.index[0].date(), {})
     for ts in bars.index:
         now = (ts + pd.Timedelta(minutes=1)).to_pydatetime()
@@ -175,7 +203,9 @@ def test_stale_sim_positions_are_closed_at_startup_even_without_a_rule(tmp_path,
     assert "SPY" in eng.books["sim:gone"].entries
     alerts = []
     # Next day the rule is no longer in the file at all.
-    runner.reconcile_sim_accounts(tmp_path / "sim", dt.date(2026, 9, 22), lambda lvl, m: alerts.append((lvl, m)), tmp_path / "q")
+    runner.reconcile_sim_accounts(
+        tmp_path / "sim", dt.date(2026, 9, 22), lambda lvl, m: alerts.append((lvl, m)), tmp_path / "q"
+    )
     b = runner.sim_books([spec(id="gone", mode="sim")], tmp_path / "sim")["sim:gone"]
     assert not b.entries and not b.broker.get_positions()
     t = _trades(tmp_path / "sim" / "gone")
@@ -191,7 +221,7 @@ def test_a_sim_account_sells_a_target_at_the_bar_close_never_the_next_open(tmp_p
     market at the close it has seen, never at the target level and never at a future bar."""
     bars = session(path=[100.0] * 390)
     bars.iloc[10, bars.columns.get_loc("high")] = 101.5  # 09:40 spikes through the 1% target
-    bars.iloc[11, bars.columns.get_loc("open")] = 99.0   # a future price the account must not see
+    bars.iloc[11, bars.columns.get_loc("open")] = 99.0  # a future price the account must not see
     book = Book("sim:t", PersistentSimBroker(tmp_path / "acct.json"), tmp_path / "sim")
     _run(tmp_path, bars, [spec()], {"live": book, "shadow": book})
     assert book.broker.next_open == {}

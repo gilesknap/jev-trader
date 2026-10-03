@@ -5,13 +5,12 @@ import json
 
 import pandas as pd
 
+from test_engine import Always, spec
 from trader import runner
 from trader.broker import SimBroker
 from trader.data import ET
 from trader.engine import Book, Engine
 from trader.nav import NavBook
-
-from test_engine import Always, spec
 
 
 def make(tmp_path, specs, cash=250.0):
@@ -108,7 +107,9 @@ def test_halt_through_engine_then_clear_after_close_unblocks_next_day(tmp_path, 
     assert book.blocked == "halt"
     assert "runner is running" in runner.clear_halt("live")  # status.json is fresh: refused
     eng.end_day(dt.datetime.combine(day, dt.time(16), ET))
-    import os, time
+    import os
+    import time
+
     os.utime(tmp_path / "status.json", (time.time() - 3600, time.time() - 3600))  # runner exited
     msg = runner.clear_halt("live")
     assert "rebased" in msg
@@ -151,13 +152,16 @@ def test_replay_rerun_under_same_name_starts_fresh(tmp_path, session):
     sessions = {"SPY": {day: bars}}
     run = tmp_path / "keep-x"
     r1 = replay([spec()], day, day, Always(), {"SPY"}, run, {}, sessions=sessions)
-    (run / "sim" / "risk.json").write_text(json.dumps({"day": day.isoformat(), "day_start_equity": 250, "blocked_today": "kill"}))
+    (run / "sim" / "risk.json").write_text(
+        json.dumps({"day": day.isoformat(), "day_start_equity": 250, "blocked_today": "kill"})
+    )
     r2 = replay([spec()], day, day, Always(), {"SPY"}, run, {}, sessions=sessions)
     assert r2["days"][day.isoformat()]["sim"]["trades"] == r1["days"][day.isoformat()]["sim"]["trades"] > 0
 
 
 def test_replay_refuses_to_delete_outside_its_directory(tmp_path, session):
     import pytest
+
     from trader.replay import replay
 
     bars = session(path=[100.0] * 30)
@@ -178,6 +182,7 @@ def test_replay_refuses_to_delete_outside_its_directory(tmp_path, session):
 
 def test_cli_rejects_bad_replay_names():
     import pytest
+
     from trader.cli import main
 
     for bad in ["..", "../x", "/tmp/x", "a/b", ".hidden"]:
@@ -199,8 +204,14 @@ def test_unreadable_state_file_still_counts_todays_entries_from_the_ledger(tmp_p
     alerts = []
     book2 = Book("sim", book.broker, tmp_path / "sim")
     book2.entries.clear()
-    eng2 = Engine([spec(max_trades=1, after_exit="rearm")], {"live": book2, "shadow": book2}, Always(), {"SPY"}, tmp_path,
-                  alert=lambda level, msg: alerts.append((level, msg)))
+    eng2 = Engine(
+        [spec(max_trades=1, after_exit="rearm")],
+        {"live": book2, "shadow": book2},
+        Always(),
+        {"SPY"},
+        tmp_path,
+        alert=lambda level, msg: alerts.append((level, msg)),
+    )
     eng2.start_day(day, {})
     st = eng2.states[0].symbols["SPY"]
     assert st.trades == 1 and st.status == "retired"
@@ -219,7 +230,9 @@ def test_ledger_floor_rearms_when_the_rule_allows_more_trades(tmp_path, session)
     (tmp_path / "classifier_state.json").unlink()  # crashed before the first save
     book2 = Book("sim", book.broker, tmp_path / "sim")
     book2.entries.clear()
-    eng2 = Engine([spec(max_trades=3, after_exit="rearm")], {"live": book2, "shadow": book2}, Always(), {"SPY"}, tmp_path)
+    eng2 = Engine(
+        [spec(max_trades=3, after_exit="rearm")], {"live": book2, "shadow": book2}, Always(), {"SPY"}, tmp_path
+    )
     eng2.start_day(day, {})
     st = eng2.states[0].symbols["SPY"]
     assert st.trades == 1 and st.status == "armed"
@@ -231,7 +244,7 @@ def test_ledger_floor_counts_only_todays_entries_for_that_rule_and_symbol(tmp_pa
     bars = session(path=[100.0] * 390)
     day = bars.index[0].date()
     book, eng = make(tmp_path, [spec(max_trades=2, after_exit="rearm")])
-    row = ("{t},sim,{c},{s},buy,1.000000,100.0000,100.00,{r},,\n")
+    row = "{t},sim,{c},{s},buy,1.000000,100.0000,100.00,{r},,\n"
     (tmp_path / "sim" / "trades.csv").write_text(
         "time,book,classifier,symbol,side,qty,price,notional,reason,pnl,pnl_pct\n"
         + row.format(t=f"{day - dt.timedelta(days=1)}T10:00-04:00", c="t", s="SPY", r="ENTER")  # yesterday
@@ -239,9 +252,11 @@ def test_ledger_floor_counts_only_todays_entries_for_that_rule_and_symbol(tmp_pa
         + row.format(t=f"{day}T10:03-04:00", c="t", s="SPY", r="ENTER (late fill)")  # same position
         + row.format(t=f"{day}T10:05-04:00", c="other", s="SPY", r="ENTER")  # another rule
         + row.format(t=f"{day}T10:06-04:00", c="t", s="QQQ", r="ENTER")  # a symbol the rule doesn't watch
-        + row.format(t=f"{day}T11:00-04:00", c="t", s="SPY", r="ENTER"))
-    (tmp_path / "classifier_state.json").write_text(json.dumps({"day": day.isoformat(), "states": {"t": {"SPY": {
-        "status": "armed", "trades": 0}}}}))  # saved before any fill
+        + row.format(t=f"{day}T11:00-04:00", c="t", s="SPY", r="ENTER")
+    )
+    (tmp_path / "classifier_state.json").write_text(
+        json.dumps({"day": day.isoformat(), "states": {"t": {"SPY": {"status": "armed", "trades": 0}}}})
+    )  # saved before any fill
     eng.start_day(day, {})
     st = eng.states[0].symbols["SPY"]
     assert st.trades == 2 and st.status == "retired"  # at its max_trades: retired, not re-armed
@@ -256,8 +271,9 @@ def test_a_state_file_from_another_day_still_resumes_what_is_held(tmp_path, sess
     eng.start_day(day, {})
     ticks(eng, bars, 0, 20)
     assert "SPY" in book.entries
-    (tmp_path / "classifier_state.json").write_text(json.dumps({"day": (day - dt.timedelta(days=1)).isoformat(),
-                                                               "states": {}}))
+    (tmp_path / "classifier_state.json").write_text(
+        json.dumps({"day": (day - dt.timedelta(days=1)).isoformat(), "states": {}})
+    )
     book2 = Book("sim", book.broker, tmp_path / "sim")
     eng2 = Engine([spec(max_trades=1)], {"live": book2, "shadow": book2}, Always(), {"SPY"}, tmp_path)
     eng2.start_day(day, {})

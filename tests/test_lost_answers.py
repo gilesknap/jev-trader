@@ -2,17 +2,15 @@
 market entry found through the OrderPending follow-up filled with no price (#130)."""
 
 import datetime as dt
-from types import SimpleNamespace as NS
 
 import pytest
-
-from trader import golive
 
 from test_engine import Always
 from test_execution_toolkit import ticks
 from test_guessed_prices import Market
 from test_orders import APIError
 from test_partial_exits import DAY, T0, Venue, clock, held, open_book, trade_rows  # noqa: F401 (clock: fixture)
+from trader import golive
 
 
 def phantom(v, qty=1.0, oid="p1"):
@@ -63,7 +61,9 @@ def test_if_the_retry_fails_too_the_shares_keep_a_server_stop(tmp_path, clock, s
     assert e.qty == pytest.approx(1.0 - sold) and v.alive() == {e.stop_id: pytest.approx(1.0 - sold)}
     assert e.stop_id not in ("s1", "p1") and v.orders["p1"]["status"] == "canceled"
     booked = trade_rows(tmp_path) if sold else []
-    assert [(r["side"], r["qty"], r["price"]) for r in booked] == ([("sell_part", "0.300000", "98.0000")] if sold else [])
+    assert [(r["side"], r["qty"], r["price"]) for r in booked] == (
+        [("sell_part", "0.300000", "98.0000")] if sold else []
+    )
     v.closes = [(1.0 - sold, 99.0)]
     eng._exit(book, "SPY", e, 99.4, T0 + dt.timedelta(minutes=1), "classifier EXIT")
     r = trade_rows(tmp_path)[-1]

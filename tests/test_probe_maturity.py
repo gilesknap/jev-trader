@@ -9,10 +9,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from conftest import make_session
 from trader import probe
 from trader.data import ET
-
-from conftest import make_session
 
 DAY = dt.date(2026, 9, 21)
 
@@ -27,8 +26,10 @@ def row(t, px=None, sym="SPY"):
 
 def test_an_immature_horizon_is_unlabelled_until_its_endpoint_arrives():
     """The fixture from the report: closes 100 then 101, asked at 10:01; 60 minutes are not 1."""
-    two = pd.DataFrame({"open": [100.0, 101.0], "high": [100.0, 101.0], "low": [100.0, 101.0],
-                        "close": [100.0, 101.0], "volume": 1.0}, index=pd.DatetimeIndex([at("10:00"), at("10:01")]))
+    two = pd.DataFrame(
+        {"open": [100.0, 101.0], "high": [100.0, 101.0], "low": [100.0, 101.0], "close": [100.0, 101.0], "volume": 1.0},
+        index=pd.DatetimeIndex([at("10:00"), at("10:01")]),
+    )
     rows = pd.DataFrame([row("10:01")])
     out = probe.forward_returns(rows, {"SPY": {DAY: two}}, [1, 60], data_end=at("10:02"))
     assert math.isnan(out.fwd_60[0]) and out.why_60[0] == "immature"
@@ -52,7 +53,7 @@ def test_the_endpoint_bar_must_have_completed_by_data_end():
 
 def test_stale_symbol_data_is_missing_not_carried():
     full = make_session(day=DAY, path=list(np.linspace(100, 139, 390)))
-    halted = full.drop(full.loc[at("10:05"):at("10:40")].index)
+    halted = full.drop(full.loc[at("10:05") : at("10:40")].index)
     out = probe.forward_returns(pd.DataFrame([row("10:01"), row("10:01")]), {"SPY": {DAY: halted}}, [15, 42])
     assert out.why_15[0] == "missing endpoint" and math.isnan(out.fwd_15[0])  # 10:15: last print 10:04
     c = full.close
@@ -65,8 +66,9 @@ def test_stale_symbol_data_is_missing_not_carried():
 
 def test_close_truncation_is_marked_and_not_called_missing():
     full = make_session(day=DAY, path=list(np.linspace(100, 139, 390)))
-    out = probe.forward_returns(pd.DataFrame([row("15:30"), row("15:50")]), {"SPY": {DAY: full}}, [60],
-                                data_end=at("17:00"))
+    out = probe.forward_returns(
+        pd.DataFrame([row("15:30"), row("15:50")]), {"SPY": {DAY: full}}, [60], data_end=at("17:00")
+    )
     c = full.close
     assert out.fwd_60[0] == pytest.approx((c[at("15:44")] / c[at("15:29")] - 1) * 100)
     assert out.cut_60[0] and out.len_60[0] == 15 and out.why_60[0] == ""
@@ -101,9 +103,10 @@ def _reference(rows, sessions, horizons, data_end=None, last_bar="15:44"):
         bars = sessions.get(r["s"], {}).get(d)
         close = bars.close if bars is not None else pd.Series(dtype=float)
 
-        def price(t):
+        def price(t, close=close):  # bound now: called only in this iteration
             j = close.index.searchsorted(t, side="right")
             return float(close.iloc[j - 1]) if j and close.index[j - 1] >= t - carry else None
+
         asked = dt.datetime.combine(d, dt.time.fromisoformat(r["t"]), ET) - dt.timedelta(minutes=1)
         for h in horizons:
             if asked >= last:
@@ -126,6 +129,7 @@ def _reference(rows, sessions, horizons, data_end=None, last_bar="15:44"):
 
 def lib_stale():
     from trader.features.lib import STALE_MIN
+
     return STALE_MIN
 
 
@@ -133,11 +137,16 @@ def test_vectorised_matches_the_per_row_definition():
     rng = np.random.default_rng(3)
     full = make_session(day=DAY, seed=4)
     sparse = full.drop(full.index[rng.choice(len(full), 120, replace=False)])  # gaps, some longer than the carry
-    halted = full.drop(full.loc[at("11:00"):at("12:30")].index)
+    halted = full.drop(full.loc[at("11:00") : at("12:30")].index)
     sessions = {"SPY": {DAY: sparse}, "QQQ": {DAY: halted}}  # "IWM" has no bars at all
     times = [f"{h:02d}:{m:02d}" for h in range(9, 16) for m in range(0, 60, 7) if (9, 31) <= (h, m) < (16, 0)]
-    rows = pd.DataFrame([row(t, px=(float(rng.uniform(90, 110)) if rng.random() < 0.3 else None), sym=s)
-                         for t in times for s in ("SPY", "QQQ", "IWM")])
+    rows = pd.DataFrame(
+        [
+            row(t, px=(float(rng.uniform(90, 110)) if rng.random() < 0.3 else None), sym=s)
+            for t in times
+            for s in ("SPY", "QQQ", "IWM")
+        ]
+    )
     for data_end in (None, at("13:17")):
         out = probe.forward_returns(rows, sessions, [1, 15, 60], data_end=data_end)
         ref = _reference(rows, sessions, [1, 15, 60], data_end)

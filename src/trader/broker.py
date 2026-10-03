@@ -157,7 +157,9 @@ class SimBroker:
             o["state"] = OrderState("canceled")
         return o["state"]
 
-    def sell_qty(self, symbol: str, qty: float, ref_price: float, now, client_id: str, stop_id: str | None = None) -> Fill | None:
+    def sell_qty(
+        self, symbol: str, qty: float, ref_price: float, now, client_id: str, stop_id: str | None = None
+    ) -> Fill | None:
         pos = self.positions.get(symbol)
         if pos is None:
             return None
@@ -193,7 +195,9 @@ class SimBroker:
         pass
 
 
-SIM_START_CASH = float(config.SETTINGS.capital.sim_cash)  # config.yaml: each `mode: sim` classifier's own simulated account starts here
+SIM_START_CASH = float(
+    config.SETTINGS.capital.sim_cash
+)  # config.yaml: each `mode: sim` classifier's own simulated account starts here
 
 
 class PersistentSimBroker(SimBroker):
@@ -215,10 +219,17 @@ class PersistentSimBroker(SimBroker):
             for oid, o in d.get("orders", {}).items():
                 st = o["state"]
                 self.orders[oid] = {
-                    "symbol": o["symbol"], "qty": float(o["qty"]), "limit": float(o["limit"]),
+                    "symbol": o["symbol"],
+                    "qty": float(o["qty"]),
+                    "limit": float(o["limit"]),
                     "placed": dt.datetime.fromisoformat(o["placed"]),
-                    "state": OrderState(st["status"], float(st["filled_qty"]), float(st["price"]),
-                                        dt.datetime.fromisoformat(st["filled_at"]) if st.get("filled_at") else None)}
+                    "state": OrderState(
+                        st["status"],
+                        float(st["filled_qty"]),
+                        float(st["price"]),
+                        dt.datetime.fromisoformat(st["filled_at"]) if st.get("filled_at") else None,
+                    ),
+                }
 
     def _save(self) -> None:
         import json
@@ -229,10 +240,22 @@ class PersistentSimBroker(SimBroker):
         data = {
             "cash": self.cash,
             "positions": {s: [p.qty, p.avg_price] for s, p in self.positions.items()},
-            "orders": {oid: {"symbol": o["symbol"], "qty": o["qty"], "limit": o["limit"], "placed": o["placed"].isoformat(),
-                             "state": {"status": o["state"].status, "filled_qty": o["state"].filled_qty, "price": o["state"].price,
-                                       "filled_at": o["state"].filled_at.isoformat() if o["state"].filled_at else None}}
-                       for oid, o in self.orders.items() if o["placed"].date() == today},
+            "orders": {
+                oid: {
+                    "symbol": o["symbol"],
+                    "qty": o["qty"],
+                    "limit": o["limit"],
+                    "placed": o["placed"].isoformat(),
+                    "state": {
+                        "status": o["state"].status,
+                        "filled_qty": o["state"].filled_qty,
+                        "price": o["state"].price,
+                        "filled_at": o["state"].filled_at.isoformat() if o["state"].filled_at else None,
+                    },
+                }
+                for oid, o in self.orders.items()
+                if o["placed"].date() == today
+            },
         }
         tmp = self.path.with_name(self.path.name + ".tmp")
         tmp.write_text(json.dumps(data))
@@ -384,8 +407,11 @@ class AlpacaBroker:
 
         o = self.client.submit_order(
             MarketOrderRequest(
-                symbol=symbol, notional=round(notional, 2), side=OrderSide.BUY,
-                time_in_force=TimeInForce.DAY, client_order_id=client_id,
+                symbol=symbol,
+                notional=round(notional, 2),
+                side=OrderSide.BUY,
+                time_in_force=TimeInForce.DAY,
+                client_order_id=client_id,
             )
         )
         try:
@@ -420,8 +446,12 @@ class AlpacaBroker:
         try:
             o = self.client.submit_order(
                 StopOrderRequest(
-                    symbol=symbol, qty=qty, side=OrderSide.SELL, stop_price=round(stop_price, 2),
-                    time_in_force=TimeInForce.DAY, client_order_id=client_id,
+                    symbol=symbol,
+                    qty=qty,
+                    side=OrderSide.SELL,
+                    stop_price=round(stop_price, 2),
+                    time_in_force=TimeInForce.DAY,
+                    client_order_id=client_id,
                 )
             )
             return str(o.id)
@@ -451,9 +481,16 @@ class AlpacaBroker:
         from alpaca.trading.enums import OrderSide, TimeInForce
         from alpaca.trading.requests import LimitOrderRequest
 
-        o = self.client.submit_order(LimitOrderRequest(
-            symbol=symbol, qty=qty, side=OrderSide.BUY, time_in_force=TimeInForce.DAY,
-            limit_price=round(limit, 2), client_order_id=client_id))
+        o = self.client.submit_order(
+            LimitOrderRequest(
+                symbol=symbol,
+                qty=qty,
+                side=OrderSide.BUY,
+                time_in_force=TimeInForce.DAY,
+                limit_price=round(limit, 2),
+                client_order_id=client_id,
+            )
+        )
         return str(o.id)
 
     def order_state(self, order_id: str) -> OrderState:
@@ -466,8 +503,12 @@ class AlpacaBroker:
             time.sleep(0.5)
             o = self.client.get_order_by_id(order_id)
         at = getattr(o, "filled_at", None)
-        return OrderState(self._status(o), float(o.filled_qty or 0), float(o.filled_avg_price or 0),
-                          at if isinstance(at, dt.datetime) else None)
+        return OrderState(
+            self._status(o),
+            float(o.filled_qty or 0),
+            float(o.filled_avg_price or 0),
+            at if isinstance(at, dt.datetime) else None,
+        )
 
     def cancel_order(self, order_id: str) -> OrderState:
         """Cancel and wait for the final state (it may have filled, fully or partly, meanwhile)."""
@@ -492,8 +533,11 @@ class AlpacaBroker:
                 pass
             if float(self._wait_terminal(stop_id, 3.0).filled_qty or 0) > 0:
                 return None
-        o = self.client.submit_order(MarketOrderRequest(
-            symbol=symbol, qty=qty, side=OrderSide.SELL, time_in_force=TimeInForce.DAY, client_order_id=client_id))
+        o = self.client.submit_order(
+            MarketOrderRequest(
+                symbol=symbol, qty=qty, side=OrderSide.SELL, time_in_force=TimeInForce.DAY, client_order_id=client_id
+            )
+        )
         q, px = self._settle(str(o.id))
         return self._leg(symbol, str(o.id), q, px, ref_price, now)
 
@@ -524,8 +568,11 @@ class AlpacaBroker:
         from alpaca.trading.requests import GetOrdersRequest
 
         try:
-            orders = self.client.get_orders(GetOrdersRequest(
-                status=QueryOrderStatus.CLOSED, symbols=[symbol], side=OrderSide.SELL, after=since, limit=50))
+            orders = self.client.get_orders(
+                GetOrdersRequest(
+                    status=QueryOrderStatus.CLOSED, symbols=[symbol], side=OrderSide.SELL, after=since, limit=50
+                )
+            )
         except Exception:
             if strict:
                 raise
@@ -547,8 +594,15 @@ class AlpacaBroker:
     @staticmethod
     def _blend(symbol, legs: list[Fill], now) -> Fill:
         qty = sum(f.qty for f in legs)
-        return Fill(symbol, "sell", qty, sum(f.qty * f.price for f in legs) / qty, now,
-                    estimated=any(f.estimated for f in legs), legs=legs)
+        return Fill(
+            symbol,
+            "sell",
+            qty,
+            sum(f.qty * f.price for f in legs) / qty,
+            now,
+            estimated=any(f.estimated for f in legs),
+            legs=legs,
+        )
 
     def _held(self, symbol) -> bool:
         if symbol in self.get_positions():
@@ -612,8 +666,9 @@ class AlpacaBroker:
         from alpaca.trading.requests import GetOrdersRequest
 
         try:
-            orders = self.client.get_orders(GetOrdersRequest(
-                status=QueryOrderStatus.OPEN, symbols=[symbol], side=OrderSide.SELL, limit=500))
+            orders = self.client.get_orders(
+                GetOrdersRequest(status=QueryOrderStatus.OPEN, symbols=[symbol], side=OrderSide.SELL, limit=500)
+            )
         except Exception:
             return False
         final = True
@@ -659,7 +714,9 @@ class AlpacaBroker:
 
         if not symbols:
             return
-        for o in self.client.get_orders(GetOrdersRequest(status=QueryOrderStatus.OPEN, symbols=sorted(symbols), limit=500)):
+        for o in self.client.get_orders(
+            GetOrdersRequest(status=QueryOrderStatus.OPEN, symbols=sorted(symbols), limit=500)
+        ):
             try:
                 self.client.cancel_order_by_id(str(o.id))
             except Exception:

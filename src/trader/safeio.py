@@ -35,8 +35,9 @@ def _open_at(dir_fd: int | None, name: str, flags: int, shown: Path) -> int:
         except OSError:
             link = False
         if link:
-            raise UnsafePath(f"{shown} is a symlink, which the runner won't follow: "
-                             "use a real file or directory") from None
+            raise UnsafePath(
+                f"{shown} is a symlink, which the runner won't follow: use a real file or directory"
+            ) from None
         raise UnsafePath(f"{shown} can't be opened: {e.strerror}") from None
 
 

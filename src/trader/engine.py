@@ -52,8 +52,20 @@ EXIT_LOOKUP_TRIES = 10
 # everything it holds is closed at the first tick.
 WIND_DOWN = "wind-down"
 
-TRADE_COLS = ["time", "book", "classifier", "symbol", "side", "qty", "price", "notional", "reason", "pnl", "pnl_pct",
-              *PROVENANCE_COLS]  # provenance last: a file written before it is upgraded in place (Book)
+TRADE_COLS = [
+    "time",
+    "book",
+    "classifier",
+    "symbol",
+    "side",
+    "qty",
+    "price",
+    "notional",
+    "reason",
+    "pnl",
+    "pnl_pct",
+    *PROVENANCE_COLS,
+]  # provenance last: a file written before it is upgraded in place (Book)
 Alert = Callable[[str, str], None]  # (level: "urgent"|"info", message)
 
 
@@ -65,8 +77,9 @@ def stale_feed(spy: pd.DataFrame | None, now: dt.datetime) -> tuple[bool, str]:
     if spy is None or spy.empty:
         mso = (now - now.replace(hour=9, minute=30, second=0, microsecond=0)).total_seconds() / 60 + 1
         return mso > 4, "no SPY bars this session"
-    return (now - (spy.index[-1] + pd.Timedelta(minutes=1))) > dt.timedelta(minutes=3), f"last SPY bar {spy.index[-1]:%H:%M}"
-
+    return (now - (spy.index[-1] + pd.Timedelta(minutes=1))) > dt.timedelta(
+        minutes=3
+    ), f"last SPY bar {spy.index[-1]:%H:%M}"
 
 
 def _broker_time(at, now: dt.datetime) -> dt.datetime | None:
@@ -75,6 +88,7 @@ def _broker_time(at, now: dt.datetime) -> dt.datetime | None:
         return pd.Timestamp(at).tz_convert(now.tzinfo).to_pydatetime() if at is not None else None
     except Exception:
         return None
+
 
 @dataclass
 class Entry:
@@ -240,15 +254,19 @@ class Book:
         p = self.dir / "pending.json"
         if p.exists():
             for sym, o in json.loads(p.read_text()).items():
-                self.pending[sym] = Pending(**_known(Pending, o | {k: dt.datetime.fromisoformat(o[k]) for k in ("placed", "expires")}))
+                self.pending[sym] = Pending(
+                    **_known(Pending, o | {k: dt.datetime.fromisoformat(o[k]) for k in ("placed", "expires")})
+                )
 
     def save_entries(self) -> None:
         data = {s: e.__dict__ | {"time": e.time.isoformat()} for s, e in self.entries.items()}
         _atomic_write(self.dir / "entries.json", json.dumps(data))  # rewritten every bar while holding
 
     def save_pending(self) -> None:
-        data = {s: o.__dict__ | {"placed": o.placed.isoformat(), "expires": o.expires.isoformat()}
-                for s, o in self.pending.items()}
+        data = {
+            s: o.__dict__ | {"placed": o.placed.isoformat(), "expires": o.expires.isoformat()}
+            for s, o in self.pending.items()
+        }
         _atomic_write(self.dir / "pending.json", json.dumps(data))
 
     def _read_risk(self) -> dict:
@@ -283,7 +301,7 @@ class Book:
         file's old header without those columns (see append_trade)."""
         try:
             cols = self._trades_header()
-            if not cols or cols == TRADE_COLS or cols != TRADE_COLS[:len(cols)]:
+            if not cols or cols == TRADE_COLS or cols != TRADE_COLS[: len(cols)]:
                 return
             p = self.dir / "trades.csv"
             with p.open(newline="") as f:
@@ -329,13 +347,22 @@ class Book:
         self.realised_today += leg  # the banked part was counted when it was sold
         self.trades_today += 1
         self.wins_today += pnl > 0
-        self.append_trade({
-            "time": fill.time.isoformat(timespec="minutes"), "book": self.name, "classifier": e.classifier,
-            "symbol": sym, "side": "sell", "qty": f"{e.qty:.6f}", "price": f"{px:.4f}",
-            "notional": f"{e.qty * px:.2f}", "reason": reason + (" (price estimated)" if estimated else ""),
-            "pnl": f"{pnl:.2f}", "pnl_pct": "" if estimated else f"{pnl / e.cost * 100:.3f}",
-            "spec_hash": e.spec_hash,
-        })
+        self.append_trade(
+            {
+                "time": fill.time.isoformat(timespec="minutes"),
+                "book": self.name,
+                "classifier": e.classifier,
+                "symbol": sym,
+                "side": "sell",
+                "qty": f"{e.qty:.6f}",
+                "price": f"{px:.4f}",
+                "notional": f"{e.qty * px:.2f}",
+                "reason": reason + (" (price estimated)" if estimated else ""),
+                "pnl": f"{pnl:.2f}",
+                "pnl_pct": "" if estimated else f"{pnl / e.cost * 100:.3f}",
+                "spec_hash": e.spec_hash,
+            }
+        )
         return pnl
 
     def record_partial(self, sym: str, e: Entry, fill: Fill, reason: str) -> None:
@@ -354,13 +381,22 @@ class Book:
         e.last_sell = dt.datetime.now(fill.time.tzinfo).isoformat() if fill.time else ""
         self.realised_today += leg
         self.save_entries()
-        self.append_trade({
-            "time": fill.time.isoformat(timespec="minutes"), "book": self.name, "classifier": e.classifier,
-            "symbol": sym, "side": "sell_part", "qty": f"{q:.6f}", "price": f"{px:.4f}",
-            "notional": f"{q * px:.2f}", "reason": reason + (" (price estimated)" if est else ""),
-            "pnl": f"{leg:.2f}", "pnl_pct": "" if est else f"{(px / e.price - 1) * 100:.3f}",
-            "spec_hash": e.spec_hash,
-        })
+        self.append_trade(
+            {
+                "time": fill.time.isoformat(timespec="minutes"),
+                "book": self.name,
+                "classifier": e.classifier,
+                "symbol": sym,
+                "side": "sell_part",
+                "qty": f"{q:.6f}",
+                "price": f"{px:.4f}",
+                "notional": f"{q * px:.2f}",
+                "reason": reason + (" (price estimated)" if est else ""),
+                "pnl": f"{leg:.2f}",
+                "pnl_pct": "" if est else f"{(px / e.price - 1) * 100:.3f}",
+                "spec_hash": e.spec_hash,
+            }
+        )
 
     def restore_realised(self, day: dt.date) -> float:
         """Today's realised P&L after a restart, so the allocator's budget doesn't forget losses.
@@ -370,8 +406,11 @@ class Book:
         p = self.dir / "trades.csv"
         if p.exists():
             with p.open(newline="") as f:
-                total += sum(float(r["pnl"] or 0) for r in csv.DictReader(f)
-                             if r["side"] == "sell" and r["time"].startswith(day.isoformat()))
+                total += sum(
+                    float(r["pnl"] or 0)
+                    for r in csv.DictReader(f)
+                    if r["side"] == "sell" and r["time"].startswith(day.isoformat())
+                )
         return total
 
     def append_equity(self, now: dt.datetime, equity: float, nav: float | None = None) -> None:
@@ -461,8 +500,13 @@ class Engine:
                 out.append(b)
         return out
 
-    def start_day(self, day: dt.date, prev_day: dict[str, pd.DataFrame],
-                  settled_at_open: dict[str, float] | None = None, opened_at: dt.datetime | None = None) -> None:
+    def start_day(
+        self,
+        day: dt.date,
+        prev_day: dict[str, pd.DataFrame],
+        settled_at_open: dict[str, float] | None = None,
+        opened_at: dt.datetime | None = None,
+    ) -> None:
         """`settled_at_open`: per-book settled cash measured at startup, before anything sells
         (today's sale proceeds, orphan closes included, are unsettled until T+1). `opened_at`:
         the time stamped on the day's opening equity row (default 09:30 ET)."""
@@ -481,7 +525,7 @@ class Engine:
         for b in self.unique_books():
             if b.blocked in ("kill", "stop"):
                 b.blocked = None
-            risk = b._read_risk()
+            risk = b._read_risk()  # noqa: SLF001 (Engine reads its own books' risk state)
             restarted = risk.get("day") == today
             eq = self._read_equity(b)
             b.start_unverified = risk.get("start_unverified") if restarted else None
@@ -504,9 +548,15 @@ class Engine:
                     snap = getattr(b.broker, "settlement_snapshot", lambda: {})()
                 except Exception:
                     snap = {}
-                b.write_risk(day=today, day_start_equity=b.day_start_equity, blocked_today=None,
-                             cash_at_open=b.cash_at_open, buys_today=0.0, account_at_open=snap,
-                             start_unverified=b.start_unverified)
+                b.write_risk(
+                    day=today,
+                    day_start_equity=b.day_start_equity,
+                    blocked_today=None,
+                    cash_at_open=b.cash_at_open,
+                    buys_today=0.0,
+                    account_at_open=snap,
+                    start_unverified=b.start_unverified,
+                )
             if eq is not None:
                 self._mark_nav(b, eq)  # never marked with a stand-in: the HWM halt uses only real reads
             if b.start_unverified is None:  # a stand-in never goes in the log; see _start_equity_readable
@@ -522,9 +572,13 @@ class Engine:
                 ok = math.isfinite(drop)
                 b.realised_today = min(0.0, drop) if ok else 0.0
                 how = "today's equity change" if ok else "0 (equity unreadable)"
-                self._alert_every(f"realised:{b.name}", "urgent", f"[{b.name}] couldn't re-read today's P&L from "
-                                  f"trades.csv ({ex!r}): the stop-risk budget uses {how} "
-                                  f"({b.realised_today:.2f}) as today's realised loss")
+                self._alert_every(
+                    f"realised:{b.name}",
+                    "urgent",
+                    f"[{b.name}] couldn't re-read today's P&L from "
+                    f"trades.csv ({ex!r}): the stop-risk budget uses {how} "
+                    f"({b.realised_today:.2f}) as today's realised loss",
+                )
             b.trades_today, b.wins_today = 0, 0
         self._restore_classifier_state(today)
         self._floor_trades_from_ledger(today)
@@ -546,8 +600,12 @@ class Engine:
                 err = ex
             if i + 1 < START_EQUITY_TRIES:
                 time.sleep(START_EQUITY_RETRY_S)
-        self._alert_every(f"start-equity:{b.name}", "urgent", f"[{b.name}] couldn't read equity at session "
-                          f"start ({err!r}): no new entries until it can be read; exits, stops and the flatten run")
+        self._alert_every(
+            f"start-equity:{b.name}",
+            "urgent",
+            f"[{b.name}] couldn't read equity at session "
+            f"start ({err!r}): no new entries until it can be read; exits, stops and the flatten run",
+        )
         return None
 
     def _mark_nav(self, b: Book, eq: float) -> float:
@@ -580,8 +638,11 @@ class Engine:
         try:
             return b.broker.settled_cash()
         except Exception as ex:
-            self._alert_every(f"start-cash:{b.name}", "urgent", f"[{b.name}] couldn't read settled cash at "
-                              f"session start ({ex!r}): no buys today")
+            self._alert_every(
+                f"start-cash:{b.name}",
+                "urgent",
+                f"[{b.name}] couldn't read settled cash at session start ({ex!r}): no buys today",
+            )
             return 0.0
 
     def _fallback_start(self, b: Book, risk: dict) -> float:
@@ -611,13 +672,18 @@ class Engine:
             b.day_start_equity, b.cash_at_open, b.start_unverified = eq, cash, None
             b.write_risk(day_start_equity=eq, cash_at_open=cash, start_unverified=None)
             self._opening_mark(b, now, eq)  # now the real day-start equity: the day's first row
-            self.alert("info", f"[{b.name}] equity readable again: today's starting equity is ${eq:.2f}; entries resume")
+            self.alert(
+                "info", f"[{b.name}] equity readable again: today's starting equity is ${eq:.2f}; entries resume"
+            )
         elif b.start_unverified == "floor":
             b.day_start_equity = max(b.day_start_equity, eq)
             b.start_unverified = "blocked"
             b.write_risk(day_start_equity=b.day_start_equity, start_unverified="blocked")
-            self.alert("info", f"[{b.name}] equity readable again (${eq:.2f}), but today's starting equity is "
-                               f"unknown: kill-switch baseline ${b.day_start_equity:.2f}; no new entries today")
+            self.alert(
+                "info",
+                f"[{b.name}] equity readable again (${eq:.2f}), but today's starting equity is "
+                f"unknown: kill-switch baseline ${b.day_start_equity:.2f}; no new entries today",
+            )
 
     # ---- per-day classifier state (survives restarts) ------------------------------
 
@@ -627,10 +693,16 @@ class Engine:
     def _save_classifier_state(self) -> None:
         if not self.day:
             return
-        data = {"day": self.day.isoformat(), "states": {
-            cs.spec.id: {s: {"status": st.status, "trades": st.trades, "counts": st.counts,
-                             "last_trigger": st.last_trigger} for s, st in cs.symbols.items()}
-            for cs in self.states}}
+        data = {
+            "day": self.day.isoformat(),
+            "states": {
+                cs.spec.id: {
+                    s: {"status": st.status, "trades": st.trades, "counts": st.counts, "last_trigger": st.last_trigger}
+                    for s, st in cs.symbols.items()
+                }
+                for cs in self.states
+            },
+        }
         tmp = self._classifier_state_file().with_suffix(".tmp")
         tmp.write_text(json.dumps(data))
         tmp.replace(self._classifier_state_file())
@@ -651,16 +723,24 @@ class Engine:
             states = data.get("states", {})
             if not isinstance(states, dict) or not all(isinstance(v, dict) for v in states.values()):
                 raise ValueError("`states` isn't a mapping of rules to stocks")
-        except (OSError, ValueError, RecursionError) as ex:  # ValueError: bad JSON or UTF-8; RecursionError: absurd nesting
+        except (
+            OSError,
+            ValueError,
+            RecursionError,
+        ) as ex:  # ValueError: bad JSON or UTF-8; RecursionError: absurd nesting
             try:
                 f.replace(f.with_name(f.name + ".unreadable"))  # kept for a look; rewritten each tick
             except OSError:
                 pass
             self._resume_fresh()
-            self._alert_every("classifier-state", "urgent", f"{f.name} is unreadable ({ex}), so the rules start fresh: if the runner "
-                                 "restarted mid-session, today's trade counts (max_trades) and stand-downs are "
-                                 "lost and a rule may trade again today. Open positions are still managed. "
-                                 "Press STOP if that's not acceptable.")
+            self._alert_every(
+                "classifier-state",
+                "urgent",
+                f"{f.name} is unreadable ({ex}), so the rules start fresh: if the runner "
+                "restarted mid-session, today's trade counts (max_trades) and stand-downs are "
+                "lost and a rule may trade again today. Open positions are still managed. "
+                "Press STOP if that's not acceptable.",
+            )
             return
         damaged = []
         for cs in self.states:
@@ -688,9 +768,13 @@ class Engine:
                     trades, status = 0, "armed"
                 self._resume_symbol(cs, sym, st, status, trades)
         if damaged:
-            self._alert_every("classifier-state", "urgent", f"{self._classifier_state_file().name} had damaged entries for "
-                                 f"{', '.join(damaged)}: they start fresh, so today's trade count and any "
-                                 "stand-down for them are lost. Open positions are still managed.")
+            self._alert_every(
+                "classifier-state",
+                "urgent",
+                f"{self._classifier_state_file().name} had damaged entries for "
+                f"{', '.join(damaged)}: they start fresh, so today's trade count and any "
+                "stand-down for them are lost. Open positions are still managed.",
+            )
 
     def _resume_fresh(self) -> None:
         """Every rule starts armed with no trades today, matched to the positions and resting
@@ -715,9 +799,12 @@ class Engine:
             try:
                 with p.open(newline="") as f:
                     for r in csv.DictReader(f):
-                        if (r.get("side") == "buy" and str(r.get("reason") or "").startswith("ENTER")
-                                and not str(r.get("reason")).startswith("ENTER (late fill)")
-                                and str(r.get("time") or "").startswith(today)):
+                        if (
+                            r.get("side") == "buy"
+                            and str(r.get("reason") or "").startswith("ENTER")
+                            and not str(r.get("reason")).startswith("ENTER (late fill)")
+                            and str(r.get("time") or "").startswith(today)
+                        ):
                             key = (r.get("classifier") or "", r.get("symbol") or "")
                             counts[key] = counts.get(key, 0) + 1
             except (OSError, ValueError, csv.Error):
@@ -755,8 +842,11 @@ class Engine:
             try:
                 eq = b.broker.equity()
             except Exception as ex:  # one account's API failure mustn't stop the session's end (gate, summary)
-                self._alert_every(f"end-equity:{b.name}", "urgent",
-                                  f"[{b.name}] equity unreadable at the close ({ex!r}): no closing mark today")
+                self._alert_every(
+                    f"end-equity:{b.name}",
+                    "urgent",
+                    f"[{b.name}] equity unreadable at the close ({ex!r}): no closing mark today",
+                )
                 continue
             b.nav.mark(eq)
             b.nav.save(b.dir / "nav.json")
@@ -788,8 +878,11 @@ class Engine:
             return
         try:
             p = self.run_dir / "benchmark.csv"
-            rows = [line for line in (p.read_text().splitlines()[1:] if p.exists() else [])
-                    if not line.startswith(self.day.isoformat())]
+            rows = [
+                line
+                for line in (p.read_text().splitlines()[1:] if p.exists() else [])
+                if not line.startswith(self.day.isoformat())
+            ]
             o, c = self._spy_day
             rows.append(f"{self.day.isoformat()},{o:.4f},{c:.4f}")
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -801,8 +894,13 @@ class Engine:
 
     # ---- per-minute tick --------------------------------------------------------
 
-    def tick(self, now: dt.datetime, bars: dict[str, pd.DataFrame], minutes_to_close: float,
-             feed_spy: pd.DataFrame | None = None) -> None:
+    def tick(
+        self,
+        now: dt.datetime,
+        bars: dict[str, pd.DataFrame],
+        minutes_to_close: float,
+        feed_spy: pd.DataFrame | None = None,
+    ) -> None:
         """`feed_spy`: the live stream's SPY bars, if `bars` also holds bars from elsewhere (an
         empty frame when the stream has delivered none, which is stale, never None)."""
         self.last_tick = now
@@ -820,8 +918,9 @@ class Engine:
                 self._book_checks(b, now, bars, prices)
             except Exception as ex:
                 failed.append(ex)
-                self._alert_every(f"book-checks:{b.name}", "urgent",
-                                  f"[{b.name}] per-minute checks failed at {now:%H:%M}: {ex!r}")
+                self._alert_every(
+                    f"book-checks:{b.name}", "urgent", f"[{b.name}] per-minute checks failed at {now:%H:%M}: {ex!r}"
+                )
 
         if G.flatten_due(minutes_to_close):
             self.flatten_for_close(now, prices)
@@ -846,7 +945,9 @@ class Engine:
         self._enforce_exits(b, now, bars)
         self._risk(b, now)
         if b.blocked and (b.entries or b.pending):  # a kill/halt/STOP flatten failed earlier: keep retrying
-            self._flatten(b, now, prices, "wind-down (paper today)" if b.blocked == WIND_DOWN else f"{b.blocked} (retry)")
+            self._flatten(
+                b, now, prices, "wind-down (paper today)" if b.blocked == WIND_DOWN else f"{b.blocked} (retry)"
+            )
         if b.blocked == "stop" or (self.day and b.stop_requested(self.day)):
             if b.blocked != "stop":
                 b.blocked = "stop"
@@ -872,13 +973,19 @@ class Engine:
                     left, why = b.broker.flatten_all(now), None
                 except Exception as ex2:
                     left, why = None, ex2
-                self._alert_every(f"eod-flatten:{b.name}", "urgent",
-                                  f"[{b.name}] eod flatten failed ({ex!r}); closed everything at the broker")
+                self._alert_every(
+                    f"eod-flatten:{b.name}",
+                    "urgent",
+                    f"[{b.name}] eod flatten failed ({ex!r}); closed everything at the broker",
+                )
                 if why is not None:
                     self._alert_every(f"flatten:{b.name}", "urgent", f"[{b.name}] flatten_all failed: {why!r}")
                 elif left:
-                    self._alert_every(f"holding:{b.name}", "urgent",
-                                      f"[{b.name}] STILL HOLDING after flatten (eod flatten): {sorted(left)}. Check Alpaca now.")
+                    self._alert_every(
+                        f"holding:{b.name}",
+                        "urgent",
+                        f"[{b.name}] STILL HOLDING after flatten (eod flatten): {sorted(left)}. Check Alpaca now.",
+                    )
         for cs in self.states:
             for st in cs.symbols.values():
                 st.status = "retired"
@@ -905,8 +1012,11 @@ class Engine:
                 # out of the stream): the time stop still applies, at the last price seen. A sim
                 # book fills at that price, so with none it waits for one rather than invent it.
                 px = b.broker.last.get(sym)
-                if e.max_hold_min and now - e.time >= dt.timedelta(minutes=e.max_hold_min) \
-                        and (px is not None or b.broker.name != "sim"):
+                if (
+                    e.max_hold_min
+                    and now - e.time >= dt.timedelta(minutes=e.max_hold_min)
+                    and (px is not None or b.broker.name != "sim")
+                ):
                     self._exit(b, sym, e, px or e.price, now, "time stop")
                 continue
             self._scan_bars(b, sym, e, bar, now)
@@ -927,9 +1037,12 @@ class Engine:
         except Exception as ex:
             if tries + 1 < EXIT_LOOKUP_TRIES and not final:
                 b.unresolved[sym] = (tries + 1, down)
-                self._alert_every(f"exit-lookup:{b.name}:{sym}", "info",
-                                  f"[{b.name}] {sym} is gone at the broker but its exit fill couldn't be read ({ex}); "
-                                  "looking again each minute")
+                self._alert_every(
+                    f"exit-lookup:{b.name}:{sym}",
+                    "info",
+                    f"[{b.name}] {sym} is gone at the broker but its exit fill couldn't be read ({ex}); "
+                    "looking again each minute",
+                )
                 return
             fill = None
         b.unresolved.pop(sym, None)
@@ -938,13 +1051,24 @@ class Engine:
             if how == "closed outside engine" and not down:
                 self.alert("urgent", f"[{b.name}] {sym} was closed outside the engine at {fill.price:.2f}")
         elif down:  # as reconcile_at_startup: a guess, at the stop, so today's loss budget sees a loss (#117)
-            self._record_exit(b, sym, e, Fill(sym, "sell", e.qty, e.stop, now),
-                              "closed while runner down (recorded at stop)", estimated=True)
-            self.alert("urgent", f"[{b.name}] {sym} closed while the runner was down and its exit price is unknown; "
-                                 f"recorded at the stop ({e.stop:.2f})")
+            self._record_exit(
+                b,
+                sym,
+                e,
+                Fill(sym, "sell", e.qty, e.stop, now),
+                "closed while runner down (recorded at stop)",
+                estimated=True,
+            )
+            self.alert(
+                "urgent",
+                f"[{b.name}] {sym} closed while the runner was down and its exit price is unknown; "
+                f"recorded at the stop ({e.stop:.2f})",
+            )
         else:
             self._record_exit(b, sym, e, Fill(sym, "sell", e.qty, px, now), "closed outside engine", estimated=True)
-            self.alert("urgent", f"[{b.name}] {sym} position disappeared without a stop fill; P&L estimated at last price")
+            self.alert(
+                "urgent", f"[{b.name}] {sym} position disappeared without a stop fill; P&L estimated at last price"
+            )
 
     def _close_orphan(self, b: Book, sym, pos, now, bars) -> None:
         """A broker position the engine has no record of (a crash before its entry was saved, the
@@ -957,8 +1081,11 @@ class Engine:
             b.broker.cancel_orders({sym})  # a resting sell (e.g. an old stop) would block the close
             fill = b.broker.sell_all(sym, ref, now, f"orphan-{sym}-{now:%m%d%H%M}")
         except Exception as ex:
-            self._alert_every(f"orphan-failed:{b.name}:{sym}", "urgent",
-                              f"[{b.name}] could not close untracked position {sym} ({ex}); retrying each minute")
+            self._alert_every(
+                f"orphan-failed:{b.name}:{sym}",
+                "urgent",
+                f"[{b.name}] could not close untracked position {sym} ({ex}); retrying each minute",
+            )
             return
         at = f" at {fill.price:.2f}" if fill else ""
         self.alert("urgent", f"[{b.name}] closed untracked position {sym} ({pos.qty:g} shares){at}; no trade recorded")
@@ -1026,12 +1153,16 @@ class Engine:
             b.nav.save(b.dir / "nav.json")  # so a human clear-halt after the close rebases from here
             b.write_risk(halted=True, reason=f"equity {eq:.2f}, nav {nav:.4f}, hwm {b.nav.hwm:.4f}", at=now.isoformat())
             self._flatten(b, now, b.broker.last, "HALT")
-            self.alert("urgent", f"[{b.name}] HALT: equity ${eq:.2f}, NAV {nav:.3f} vs HWM {b.nav.hwm:.3f}. Human must clear.")
+            self.alert(
+                "urgent", f"[{b.name}] HALT: equity ${eq:.2f}, NAV {nav:.3f} vs HWM {b.nav.hwm:.3f}. Human must clear."
+            )
         elif verdict == "kill" and b.blocked is None:
             b.blocked = "kill"
             b.write_risk(blocked_today="kill")
             self._flatten(b, now, b.broker.last, "daily kill switch")
-            self.alert("urgent", f"[{b.name}] Kill switch: day loss {eq - b.day_start_equity:.2f}. Flat until next session.")
+            self.alert(
+                "urgent", f"[{b.name}] Kill switch: day loss {eq - b.day_start_equity:.2f}. Flat until next session."
+            )
 
     def _run_classifiers(self, now, bars, minutes_to_close, feed_spy=None) -> None:
         # Minutes since the open counting the bar just completed: 1 at 09:31, when the 09:30 bar is in.
@@ -1045,8 +1176,10 @@ class Engine:
         if feed_stale:
             self._alert_every("stale-feed", "urgent", f"Market data stale: {seen}; entries blocked", 1800)
         # Trading classifiers before probes, so probes only ever use what's left of the tick.
-        order = sorted(((cs, sym) for cs in self.states for sym in cs.spec.symbols),
-                       key=lambda p: (p[0].spec.probe, p[0].symbols[p[1]].last_eval or oldest))
+        order = sorted(
+            ((cs, sym) for cs in self.states for sym in cs.spec.symbols),
+            key=lambda p: (p[0].spec.probe, p[0].symbols[p[1]].last_eval or oldest),
+        )
         # Each outcome is counted on the symbol's state (SymbolState.count) for the dashboard: a
         # check, why there was no check when one was due, and what the check led to. In memory only.
         for cs, sym in order:
@@ -1150,8 +1283,12 @@ class Engine:
             return round(float(v), 4) if isinstance(v, (int, float)) and math.isfinite(v) else None
 
         # [feature, op, needed value, value now (None if it couldn't be computed), held?]
-        st.last_trigger = {"at": now.strftime("%H:%M"), "conditions": [
-            [t.feature, t.op, t.value, shown(trig_feats.get(t.feature)), t.holds(trig_feats)] for t in spec.trigger]}
+        st.last_trigger = {
+            "at": now.strftime("%H:%M"),
+            "conditions": [
+                [t.feature, t.op, t.value, shown(trig_feats.get(t.feature)), t.holds(trig_feats)] for t in spec.trigger
+            ],
+        }
         return False
 
     def _ask(self, spec, sym, now, sb, feats, pos, kind):
@@ -1177,17 +1314,23 @@ class Engine:
                 self.probe_errors += 1
                 self.probes_paused_until = now + DECISION_COOLDOWN
                 if self.probe_errors == 1:
-                    self.alert("info", f"Probe {spec.id} failed ({e}); probes pause for "
-                                       f"{DECISION_COOLDOWN.seconds // 60} min at a time. Trading is unaffected.")
+                    self.alert(
+                        "info",
+                        f"Probe {spec.id} failed ({e}); probes pause for "
+                        f"{DECISION_COOLDOWN.seconds // 60} min at a time. Trading is unaffected.",
+                    )
                 return None, {}
             self.decision_errors += 1
             self._outage_errors += 1
             first = self.decisions_paused_until is None
             self.decisions_paused_until = now + DECISION_COOLDOWN
             if first:
-                self.alert("urgent", f"Decision model failing: {e}. Pausing all decisions until "
-                                     f"{self.decisions_paused_until:%H:%M} ET: no new entries and no "
-                                     f"model-driven exits; stops, targets and risk checks still enforced.")
+                self.alert(
+                    "urgent",
+                    f"Decision model failing: {e}. Pausing all decisions until "
+                    f"{self.decisions_paused_until:%H:%M} ET: no new entries and no "
+                    f"model-driven exits; stops, targets and risk checks still enforced.",
+                )
             return None, {}
         if self.decisions_paused_until is not None:
             self.decisions_paused_until = None
@@ -1196,15 +1339,23 @@ class Engine:
         st = next(c for c in self.states if c.spec.id == spec.id).symbols[sym]
         st.last_choice, st.last_probs = d.choice, d.probabilities
         self.calls[spec.id] = self.calls.get(spec.id, 0) + 1
-        self._log_decision({
-            "t": now.strftime("%H:%M"), "c": spec.id, "s": sym, "q": kind,
-            "p": {k: round(v, 3) for k, v in d.probabilities.items()},
-            "f": {k: (round(v, 4) if math.isfinite(v) else None) for k, v in feats.items()},
-            **({"pos": pos} if pos else {}),
-            # Everything else Jev saw, so probe-report's features-only baseline gets the same inputs.
-            **({"px": round(float(sb.close.iloc[-1]), 4), "m": state["minutes_since_open"], "r": rets}
-               if kind == "probe" else {}),
-        })
+        self._log_decision(
+            {
+                "t": now.strftime("%H:%M"),
+                "c": spec.id,
+                "s": sym,
+                "q": kind,
+                "p": {k: round(v, 3) for k, v in d.probabilities.items()},
+                "f": {k: (round(v, 4) if math.isfinite(v) else None) for k, v in feats.items()},
+                **({"pos": pos} if pos else {}),
+                # Everything else Jev saw, so probe-report's features-only baseline gets the same inputs.
+                **(
+                    {"px": round(float(sb.close.iloc[-1]), 4), "m": state["minutes_since_open"], "r": rets}
+                    if kind == "probe"
+                    else {}
+                ),
+            }
+        )
         return d.choice, d.probabilities
 
     def _decisions_available(self, now: dt.datetime) -> bool:
@@ -1237,9 +1388,13 @@ class Engine:
     @staticmethod
     def _entry_params(spec: ClassifierSpec) -> dict:
         so = spec.scale_out
-        return {"trail_pct": spec.trail_pct, "max_hold_min": spec.max_hold_min,
-                "scale_pct": so.at_pct if so else None, "scale_fraction": so.fraction if so else 0.0,
-                "scale_breakeven": bool(so and so.stop_to_breakeven)}
+        return {
+            "trail_pct": spec.trail_pct,
+            "max_hold_min": spec.max_hold_min,
+            "scale_pct": so.at_pct if so else None,
+            "scale_fraction": so.fraction if so else 0.0,
+            "scale_breakeven": bool(so and so.stop_to_breakeven),
+        }
 
     def _enter(self, book: Book, cs: ClassifierState, sym, sb, now, minutes_to_close, ctx=None) -> None:
         spec = cs.spec
@@ -1252,29 +1407,44 @@ class Engine:
         size = spec.size_fraction * eq
         if spec.risk_pct:  # lose about risk_pct of equity at the stop; never more than size_fraction
             size = min(size, eq * spec.risk_pct / stop_pct)
-        if book.name == "live" and book._read_risk().get("live_sessions", 99) <= 5:
+        if book.name == "live" and book._read_risk().get("live_sessions", 99) <= 5:  # noqa: SLF001 (Engine reads its own books' risk state)
             size /= 2  # first live week runs at half size
         size = min(size, cash)
         positions = book.broker.get_positions()
         requested = size
-        size, binding = A.allocate(sym, size, stop_pct / 100, eq, book.day_start_equity,
-                                   book.realised_today, self._exposures(book, positions))
+        size, binding = A.allocate(
+            sym, size, stop_pct / 100, eq, book.day_start_equity, book.realised_today, self._exposures(book, positions)
+        )
         if binding != "requested":
             floor = A.trim_floor(requested)
             st.note = f"allocator: {binding}; allowed ${size:.2f} of ${requested:.2f}"
             if size < floor:
                 st.note += f"; skipped, under the ${floor:.2f} floor for a trimmed entry"
-            self._log_decision({"t": now.strftime("%H:%M"), "c": spec.id, "s": sym, "q": "allocation",
-                                "constraint": binding, "requested": round(requested, 2), "allowed": round(size, 2),
-                                "floor": round(floor, 2)})
+            self._log_decision(
+                {
+                    "t": now.strftime("%H:%M"),
+                    "c": spec.id,
+                    "s": sym,
+                    "q": "allocation",
+                    "constraint": binding,
+                    "requested": round(requested, 2),
+                    "allowed": round(size, 2),
+                    "floor": round(floor, 2),
+                }
+            )
             if size < floor:  # never dust (#118); floor > MIN_NOTIONAL, so check_entry can't overwrite the note
                 return
         limit = None
         if spec.entry_order and spec.entry_order.type == "limit":
             limit = math.floor(px * (1 - spec.entry_order.offset_pct / 100) * 100) / 100  # whole cents, rounded down
         ref = limit or px
-        order = G.EntryOrder(sym, math.floor(size * 100) / 100,  # round down: never over a cap
-                              ref, ref * (1 - stop_pct / 100), ref * (1 + spec.target_pct / 100))
+        order = G.EntryOrder(
+            sym,
+            math.floor(size * 100) / 100,  # round down: never over a cap
+            ref,
+            ref * (1 - stop_pct / 100),
+            ref * (1 + spec.target_pct / 100),
+        )
         held = set(positions) | set(book.entries) | set(book.pending)
         acct = G.AccountView(eq, cash, held, self.universe, minutes_to_close, book.blocked is not None)
         try:
@@ -1288,9 +1458,19 @@ class Engine:
         # the symbol and cash stay taken until then. A market entry expires at once: whatever it
         # hasn't filled by the first look is cancelled.
         qty = math.floor(order.notional / ref * 1e6) / 1e6
-        p = Pending(spec.id, "", limit or 0.0, qty, round(qty * limit, 4) if limit is not None else order.notional,
-                    now, now + dt.timedelta(minutes=spec.entry_order.expire_min if limit is not None else 0),
-                    stop_pct, spec.target_pct, self._entry_params(spec), cid)
+        p = Pending(
+            spec.id,
+            "",
+            limit or 0.0,
+            qty,
+            round(qty * limit, 4) if limit is not None else order.notional,
+            now,
+            now + dt.timedelta(minutes=spec.entry_order.expire_min if limit is not None else 0),
+            stop_pct,
+            spec.target_pct,
+            self._entry_params(spec),
+            cid,
+        )
         book.buys_today += p.reserved
         book.write_risk(buys_today=round(book.buys_today, 4))
         book.pending[sym] = p
@@ -1313,8 +1493,9 @@ class Engine:
 
     def _entry_failed(self, book: Book, st, sym, p: Pending, e: Exception, now) -> None:
         """The entry order raised. Refused outright (a 403 or 404 with no order id), or final with
-        nothing filled: nothing is held, so release the cash and the symbol. Anything else may have been accepted: keep it
-        reserved, and track it by its order id, or find it by its client id (#60)."""
+        nothing filled: nothing is held, so release the cash and the symbol. Anything else may have
+        been accepted: keep it reserved, and track it by its order id, or find it by its client id
+        (#60)."""
         p.order_id = getattr(e, "order_id", None) or ""
         if not p.order_id and (isinstance(e, NotFilled) or getattr(e, "status_code", None) in (403, 404)):
             self._settle_pending(book, sym, p, OrderState("rejected"), now, place_stop=True)
@@ -1323,17 +1504,22 @@ class Engine:
             # Nothing is held and nothing reserved, and the next ask may fail the same way (a
             # persistent broker refusal at a short cadence): once per 10 minutes per book and
             # symbol (#50). Separate keys, so an info "not filled" never hides an urgent refusal.
-            self._alert_every(f"entry-{'unfilled' if unfilled else 'refused'}:{book.name}:{sym}",
-                              "info" if unfilled else "urgent",
-                              f"[{book.name}] entry {sym} for {p.classifier} failed: {e}"
-                              " (repeats for this symbol are silenced for 10 minutes)")
+            self._alert_every(
+                f"entry-{'unfilled' if unfilled else 'refused'}:{book.name}:{sym}",
+                "info" if unfilled else "urgent",
+                f"[{book.name}] entry {sym} for {p.classifier} failed: {e}"
+                " (repeats for this symbol are silenced for 10 minutes)",
+            )
             return
         book.save_pending()
         st.note = f"order outcome unknown: {e}"
         # Always sent: cash and the symbol stay reserved on an order that may be live, and it can't
         # repeat for this symbol until that order is settled (the symbol is pending until then).
-        self.alert("urgent", f"[{book.name}] entry {sym} for {p.classifier} got no clear answer ({e}); its cash and "
-                             "symbol stay reserved until the order is found and settled")
+        self.alert(
+            "urgent",
+            f"[{book.name}] entry {sym} for {p.classifier} got no clear answer ({e}); its cash and "
+            "symbol stay reserved until the order is found and settled",
+        )
         self._poll_pending(book, now, only=sym)  # a fill found now is protected in this same minute
 
     def _find_order(self, b: Book, sym, p: Pending, now) -> bool:
@@ -1348,7 +1534,10 @@ class Engine:
         if now - p.placed >= dt.timedelta(minutes=1):
             self._settle_pending(b, sym, p, OrderState("rejected"), now, place_stop=True)
             # Always sent: it closes the "no clear answer" alert for this order (one each).
-            self.alert("urgent", f"[{b.name}] entry {sym} for {p.classifier} was never placed; its cash and symbol are released")
+            self.alert(
+                "urgent",
+                f"[{b.name}] entry {sym} for {p.classifier} was never placed; its cash and symbol are released",
+            )
         return False
 
     @staticmethod
@@ -1360,33 +1549,65 @@ class Engine:
         # entry order in flight (#60, market ones too) counts here once. An exited one's remainder can't
         # open a position (#60), so it counts nothing; any late shares it left count as untracked below.
         live = {s: p for s, p in book.pending.items() if not p.exited}
-        out += [A.Exposure(s, left, left * p.stop_pct / 100) for s, p in live.items()
-                for left in [max(0.0, p.reserved - p.filled_cost)]]
-        out += [A.Exposure(s, abs(p.qty) * p.avg_price, abs(p.qty) * p.avg_price * G.MAX_STOP_DISTANCE)
-                for s, p in positions.items() if s not in book.entries and s not in live]
+        out += [
+            A.Exposure(s, left, left * p.stop_pct / 100)
+            for s, p in live.items()
+            for left in [max(0.0, p.reserved - p.filled_cost)]
+        ]
+        out += [
+            A.Exposure(s, abs(p.qty) * p.avg_price, abs(p.qty) * p.avg_price * G.MAX_STOP_DISTANCE)
+            for s, p in positions.items()
+            if s not in book.entries and s not in live
+        ]
         return out
 
     def _state(self, classifier: str, sym: str):
         cs = next((c for c in self.states if c.spec.id == classifier), None)
         return cs.symbols.get(sym) if cs else None
 
-    def _open_entry(self, book: Book, classifier, sym, fill: Fill, now, stop_pct, target_pct, params, cid,
-                    place_stop: bool = True, estimated: bool = False, filled_at: dt.datetime | None = None) -> None:
+    def _open_entry(
+        self,
+        book: Book,
+        classifier,
+        sym,
+        fill: Fill,
+        now,
+        stop_pct,
+        target_pct,
+        params,
+        cid,
+        place_stop: bool = True,
+        estimated: bool = False,
+        filled_at: dt.datetime | None = None,
+    ) -> None:
         """`filled_at`: the broker's fill time, when it was well before `now` (filled while the runner
         was down). The ENTER row is stamped then and exits are looked up from then; the engine's own
         clock (time stop, the first tick's checks) still starts at `now`."""
         if not (fill.price > 0 and fill.qty > 0):  # never track a position with no price: no stop would work
-            self.alert("urgent", f"[{book.name}] {sym} filled with no usable price/qty ({fill.qty} @ {fill.price}); "
-                                 "not tracked, so the next minute closes it as an untracked position")
+            self.alert(
+                "urgent",
+                f"[{book.name}] {sym} filled with no usable price/qty ({fill.qty} @ {fill.price}); "
+                "not tracked, so the next minute closes it as an untracked position",
+            )
             return
         stop = fill.price * (1 - stop_pct / 100)
         sp = params.get("scale_pct")
-        entry = Entry(classifier, fill.qty, fill.price, stop, fill.price * (1 + target_pct / 100), now,
-                      trail_pct=params.get("trail_pct"), max_hold_min=params.get("max_hold_min"),
-                      scale_at=fill.price * (1 + sp / 100) if sp else None,
-                      scale_fraction=params.get("scale_fraction", 0.0), scale_breakeven=params.get("scale_breakeven", False),
-                      price_estimated=estimated, spec_hash=book.provenance.specs.get(classifier, ""),
-                      filled_at=filled_at.isoformat() if filled_at else "")
+        entry = Entry(
+            classifier,
+            fill.qty,
+            fill.price,
+            stop,
+            fill.price * (1 + target_pct / 100),
+            now,
+            trail_pct=params.get("trail_pct"),
+            max_hold_min=params.get("max_hold_min"),
+            scale_at=fill.price * (1 + sp / 100) if sp else None,
+            scale_fraction=params.get("scale_fraction", 0.0),
+            scale_breakeven=params.get("scale_breakeven", False),
+            price_estimated=estimated,
+            spec_hash=book.provenance.specs.get(classifier, ""),
+            filled_at=filled_at.isoformat() if filled_at else "",
+        )
         book.entries[sym] = entry
         book.save_entries()
         if place_stop:
@@ -1394,20 +1615,34 @@ class Engine:
             entry.server_stop = stop if entry.stop_id else 0.0
             book.save_entries()
             if entry.stop_id is None and book.broker.name != "sim":
-                self._alert_every(f"nostop:{book.name}:{sym}", "info",
-                                  f"[{book.name}] Alpaca didn't accept a server-side stop for {sym}; the engine enforces it each minute", 3600)
+                self._alert_every(
+                    f"nostop:{book.name}:{sym}",
+                    "info",
+                    f"[{book.name}] Alpaca didn't accept a server-side stop for {sym}; "
+                    "the engine enforces it each minute",
+                    3600,
+                )
         st = self._state(classifier, sym)
         if st is not None:
             st.status = "holding"
             st.trades += 1
             if st.note.startswith("limit ") and " resting" in st.note:  # filled: keep only the allocator's part
                 st.note = st.note.partition(" resting")[2].strip().removeprefix("(").removesuffix(")")
-        book.append_trade({
-            "time": (filled_at or now).isoformat(timespec="minutes"), "book": book.name, "classifier": classifier,
-            "symbol": sym, "side": "buy", "qty": f"{fill.qty:.6f}", "price": f"{fill.price:.4f}",
-            "notional": f"{fill.qty * fill.price:.2f}", "reason": "ENTER" + (" (price estimated)" if estimated else ""),
-            "pnl": "", "pnl_pct": "",
-        })
+        book.append_trade(
+            {
+                "time": (filled_at or now).isoformat(timespec="minutes"),
+                "book": book.name,
+                "classifier": classifier,
+                "symbol": sym,
+                "side": "buy",
+                "qty": f"{fill.qty:.6f}",
+                "price": f"{fill.price:.4f}",
+                "notional": f"{fill.qty * fill.price:.2f}",
+                "reason": "ENTER" + (" (price estimated)" if estimated else ""),
+                "pnl": "",
+                "pnl_pct": "",
+            }
+        )
 
     def _poll_pending(self, b: Book, now, only: str | None = None) -> None:
         """Resting limit entries: open the position when filled; cancel at expiry (keeping
@@ -1428,7 +1663,9 @@ class Engine:
                 elif o.status != "filled":
                     continue  # still resting
             except Exception as ex:
-                self._alert_every(f"pending:{b.name}:{sym}", "urgent", f"[{b.name}] entry order {sym} check failed: {ex}")
+                self._alert_every(
+                    f"pending:{b.name}:{sym}", "urgent", f"[{b.name}] entry order {sym} check failed: {ex}"
+                )
                 if o is not None:
                     self._adopt_fill(b, sym, p, o, now, place_stop=True)  # a partial fill seen before the failure
                 continue
@@ -1437,7 +1674,11 @@ class Engine:
                 # the order and its reserved cash, and look again next tick. What has already
                 # filled is managed as a position meanwhile.
                 self._adopt_fill(b, sym, p, o, now, place_stop=True)
-                self._alert_every(f"pending:{b.name}:{sym}", "urgent", f"[{b.name}] entry order {sym} not settled yet ({o.status}); retrying")
+                self._alert_every(
+                    f"pending:{b.name}:{sym}",
+                    "urgent",
+                    f"[{b.name}] entry order {sym} not settled yet ({o.status}); retrying",
+                )
                 continue
             self._settle_pending(b, sym, p, o, now, place_stop=True)
 
@@ -1492,8 +1733,11 @@ class Engine:
             delta = 0.0
         if p.exited:
             if delta:
-                self.alert("urgent", f"[{b.name}] {sym}: {delta:g} more filled after its position closed; "
-                                     "not a new trade, sold as an untracked position")
+                self.alert(
+                    "urgent",
+                    f"[{b.name}] {sym}: {delta:g} more filled after its position closed; "
+                    "not a new trade, sold as an untracked position",
+                )
             return
         e = b.entries.get(sym)
         if e is None:
@@ -1501,13 +1745,27 @@ class Engine:
                 return
             # The first fill; or shares booked just before a crash that never got their entry
             # (the order is known, so they're adopted, not sold as an orphan).
-            fill = Fill(sym, "buy", delta, px, now) if first else \
-                Fill(sym, "buy", p.filled_qty, p.filled_cost / p.filled_qty, now)
+            fill = (
+                Fill(sym, "buy", delta, px, now)
+                if first
+                else Fill(sym, "buy", p.filled_qty, p.filled_cost / p.filled_qty, now)
+            )
             at = _broker_time(o.filled_at, now)
             offline = at if first and at is not None and now - at > OFFLINE_FILL else None
-            self._open_entry(b, p.classifier, sym, fill, now, p.stop_pct, p.target_pct,
-                             p.params, p.client_id if first else f"{p.client_id}-l{now:%H%M}", place_stop,
-                             estimated=p.price_estimated, filled_at=offline)
+            self._open_entry(
+                b,
+                p.classifier,
+                sym,
+                fill,
+                now,
+                p.stop_pct,
+                p.target_pct,
+                p.params,
+                p.client_id if first else f"{p.client_id}-l{now:%H%M}",
+                place_stop,
+                estimated=p.price_estimated,
+                filled_at=offline,
+            )
             if o.filled_at is not None and sym in b.entries:  # scan the fill's own bar for the stop (conservative)
                 self._set_cursor(b, b.entries[sym], pd.Timestamp(o.filled_at).tz_convert(now.tzinfo).floor("min"))
             return
@@ -1520,11 +1778,22 @@ class Engine:
         e.cost += delta * px
         e.price_estimated = e.price_estimated or p.price_estimated
         b.save_entries()
-        b.append_trade({
-            "time": now.isoformat(timespec="minutes"), "book": b.name, "classifier": e.classifier, "symbol": sym,
-            "side": "buy", "qty": f"{delta:.6f}", "price": f"{px:.4f}", "notional": f"{delta * px:.2f}",
-            "reason": "ENTER (late fill)", "pnl": "", "pnl_pct": "", "spec_hash": e.spec_hash,
-        })
+        b.append_trade(
+            {
+                "time": now.isoformat(timespec="minutes"),
+                "book": b.name,
+                "classifier": e.classifier,
+                "symbol": sym,
+                "side": "buy",
+                "qty": f"{delta:.6f}",
+                "price": f"{px:.4f}",
+                "notional": f"{delta * px:.2f}",
+                "reason": "ENTER (late fill)",
+                "pnl": "",
+                "pnl_pct": "",
+                "spec_hash": e.spec_hash,
+            }
+        )
         if place_stop:
             self._resize_server_stop(b, sym, e, now)
 
@@ -1539,12 +1808,23 @@ class Engine:
                 old = None
             if old is None or old.status not in TERMINAL:
                 how = "is in an unknown state (its cancel failed)" if old is None else "covers only part of it"
-                self._alert_every(f"nostop:{b.name}:{sym}", "info",
-                                  f"[{b.name}] the server-side stop for {sym} {how}; the engine enforces the rest each minute", 3600)
+                self._alert_every(
+                    f"nostop:{b.name}:{sym}",
+                    "info",
+                    f"[{b.name}] the server-side stop for {sym} {how}; the engine enforces the rest each minute",
+                    3600,
+                )
                 return
             if old.filled_qty > 0:
-                fill = Fill(sym, "sell", old.filled_qty, old.price if old.price > 0 else e.stop, now,
-                            order_id=e.stop_id, estimated=old.price <= 0)
+                fill = Fill(
+                    sym,
+                    "sell",
+                    old.filled_qty,
+                    old.price if old.price > 0 else e.stop,
+                    now,
+                    order_id=e.stop_id,
+                    estimated=old.price <= 0,
+                )
                 if _unbooked(e, fill, commit=False)[0] >= e.qty - _tol(e.qty):
                     self._record_exit(b, sym, e, fill, "server stop")
                     return
@@ -1564,8 +1844,11 @@ class Engine:
         if o.filled_qty - p.filled_qty > 1e-9 and not p.exited:
             # Shares filled but still unpriced: keep the order, so they are never sold as an orphan
             # with no trade row, and price them next tick (#134). A flatten marks it exited, then sells.
-            self._alert_every(f"unpriced:{b.name}:{sym}", "urgent",
-                              f"[{b.name}] {sym} filled {o.filled_qty:g} with no price to book; retrying")
+            self._alert_every(
+                f"unpriced:{b.name}:{sym}",
+                "urgent",
+                f"[{b.name}] {sym} filled {o.filled_qty:g} with no price to book; retrying",
+            )
             return
         b.pending.pop(sym, None)
         b.save_pending()
@@ -1610,8 +1893,12 @@ class Engine:
                 self._resize_server_stop(b, sym, e, now)
                 return
         if new_id is None:
-            self._alert_every(f"nostop:{b.name}:{sym}", "info",
-                              f"[{b.name}] couldn't re-place the server-side stop for {sym}; the engine enforces it each minute", 3600)
+            self._alert_every(
+                f"nostop:{b.name}:{sym}",
+                "info",
+                f"[{b.name}] couldn't re-place the server-side stop for {sym}; the engine enforces it each minute",
+                3600,
+            )
         elif new_id != e.stop_id:
             e.server_stop = e.stop
         e.stop_id = new_id if new_id is not None else None
@@ -1626,8 +1913,7 @@ class Engine:
         nxt = getattr(b.broker, "next_open", None)
         return nxt.get(sym, ref) if isinstance(nxt, dict) else ref
 
-    def _exit(self, book: Book, sym, e: Entry, ref, now, reason, protect: bool = True,
-              resting: bool = False) -> None:
+    def _exit(self, book: Book, sym, e: Entry, ref, now, reason, protect: bool = True, resting: bool = False) -> None:
         """`protect` False (the flatten): a remainder isn't given a new server stop, which would only
         hold the shares the close-all that follows is about to sell. `resting`: `ref` is the price
         of a resting stop, which filled where it was hit, not a market order sent now."""
@@ -1639,8 +1925,11 @@ class Engine:
             self._sold_part(book, sym, e, self._resold(book, sym, e, ex.fill, now), reason, now, protect)
             if sym in book.entries:
                 rest = "protected by a new server stop and retried" if protect else "left to the flatten's close-all"
-                self._alert_every(f"exit:{book.name}:{sym}", "urgent",
-                                  f"[{book.name}] exit {sym} only partly filled ({ex}); the rest is still held, {rest}")
+                self._alert_every(
+                    f"exit:{book.name}:{sym}",
+                    "urgent",
+                    f"[{book.name}] exit {sym} only partly filled ({ex}); the rest is still held, {rest}",
+                )
             else:
                 self.alert("info", f"[{book.name}] exit {sym} filled in pieces ({ex}); every leg is recorded")
             return
@@ -1678,8 +1967,15 @@ class Engine:
             return fill
         legs += more
         qty = sum(f.qty for f in legs)
-        return Fill(sym, "sell", qty, sum(f.qty * f.price for f in legs) / qty, now,
-                    estimated=any(f.estimated for f in legs), legs=legs)
+        return Fill(
+            sym,
+            "sell",
+            qty,
+            sum(f.qty * f.price for f in legs) / qty,
+            now,
+            estimated=any(f.estimated for f in legs),
+            legs=legs,
+        )
 
     def _sold_part(self, b: Book, sym, e: Entry, fill: Fill, reason, now, protect: bool = True) -> None:
         """Part of the position sold, and the rest may still be held (#61). Book what sold, once
@@ -1707,7 +2003,9 @@ class Engine:
                     continue
                 o = b.broker.cancel_order(p.order_id)
             except Exception as ex:
-                self._alert_every(f"pending:{b.name}:{sym}", "urgent", f"[{b.name}] cancel of entry order {sym} failed: {ex}")
+                self._alert_every(
+                    f"pending:{b.name}:{sym}", "urgent", f"[{b.name}] cancel of entry order {sym} failed: {ex}"
+                )
                 continue
             if self._unsettled(o):
                 self._adopt_fill(b, sym, p, o, now, place_stop=False)  # so the flatten below sells what has filled
@@ -1731,13 +2029,22 @@ class Engine:
             self._alert_every(f"flatten:{b.name}", "urgent", f"[{b.name}] flatten_all failed: {ex}")
         for sym, e in list(b.entries.items()):
             if left is not None and sym not in left and sym not in b.unresolved:  # closed by flatten_all
-                self._record_exit(b, sym, e, Fill(sym, "sell", e.qty, prices.get(sym, e.price), now), reason + " (close-all)",
-                                  estimated=True)
+                self._record_exit(
+                    b,
+                    sym,
+                    e,
+                    Fill(sym, "sell", e.qty, prices.get(sym, e.price), now),
+                    reason + " (close-all)",
+                    estimated=True,
+                )
         if left:
             why = getattr(b.broker, "last_flatten_error", None)
-            self._alert_every(f"holding:{b.name}", "urgent",
-                              f"[{b.name}] STILL HOLDING after flatten ({reason}): {sorted(left)}"
-                              f"{f' ({why})' if why else ''}. Check Alpaca now.")
+            self._alert_every(
+                f"holding:{b.name}",
+                "urgent",
+                f"[{b.name}] STILL HOLDING after flatten ({reason}): {sorted(left)}"
+                f"{f' ({why})' if why else ''}. Check Alpaca now.",
+            )
 
     # ---- status for the dashboard ----------------------------------------------
 
@@ -1766,15 +2073,22 @@ class Engine:
                     "blocked": b.blocked,
                     "start_unverified": b.start_unverified,
                     "positions": {
-                        s: {"classifier": e.classifier, "qty": round(e.qty, 6), "entry": round(e.price, 4),
+                        s: {
+                            "classifier": e.classifier,
+                            "qty": round(e.qty, 6),
+                            "entry": round(e.price, 4),
                             "server_stop": bool(e.stop_id),
-                            "stop": round(e.stop, 4), "target": round(e.target, 4),
+                            "stop": round(e.stop, 4),
+                            "target": round(e.target, 4),
                             "last": round(b.broker.last.get(s, e.price), 4),
-                            "since": e.time.strftime("%H:%M")}
+                            "since": e.time.strftime("%H:%M"),
+                        }
                         for s, e in b.entries.items()
                     },
-                    "pending": {s: {"classifier": o.classifier, "limit": o.limit, "expires": o.expires.strftime("%H:%M")}
-                                for s, o in b.pending.items()},
+                    "pending": {
+                        s: {"classifier": o.classifier, "limit": o.limit, "expires": o.expires.strftime("%H:%M")}
+                        for s, o in b.pending.items()
+                    },
                     "realised_today": round(b.realised_today, 2),
                     "trades_today": b.trades_today,
                 }
@@ -1782,14 +2096,25 @@ class Engine:
             },
             "classifiers": [
                 {
-                    "id": cs.spec.id, "mode": cs.spec.mode, "control": cs.spec.control, "family": cs.spec.family_label,
-                    "window": list(cs.spec.window), "max_trades": cs.spec.max_trades,
-                    "calls": self.calls.get(cs.spec.id, 0), "threshold": cs.spec.entry.threshold,
+                    "id": cs.spec.id,
+                    "mode": cs.spec.mode,
+                    "control": cs.spec.control,
+                    "family": cs.spec.family_label,
+                    "window": list(cs.spec.window),
+                    "max_trades": cs.spec.max_trades,
+                    "calls": self.calls.get(cs.spec.id, 0),
+                    "threshold": cs.spec.entry.threshold,
                     "symbols": {
-                        s: {"status": st.status, "trades": st.trades, "last_choice": st.last_choice,
+                        s: {
+                            "status": st.status,
+                            "trades": st.trades,
+                            "last_choice": st.last_choice,
                             "probs": {k: round(v, 3) for k, v in st.last_probs.items()},
                             "last_eval": st.last_eval.strftime("%H:%M") if st.last_eval else None,
-                            "note": st.note, "counts": st.counts, "last_trigger": st.last_trigger}
+                            "note": st.note,
+                            "counts": st.counts,
+                            "last_trigger": st.last_trigger,
+                        }
                         for s, st in cs.symbols.items()
                     },
                 }

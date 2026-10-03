@@ -7,14 +7,13 @@ import datetime as dt
 import pandas as pd
 import pytest
 
+from test_engine import Always, spec
+from test_execution_toolkit import make, ticks
+from test_orders import FakeClient, broker
 from trader import runner
 from trader.broker import Fill, Position, SimBroker
 from trader.data import ET
 from trader.engine import EXIT_LOOKUP_TRIES, Entry
-
-from test_engine import Always, spec
-from test_execution_toolkit import make, ticks
-from test_orders import FakeClient, broker
 
 DAY = dt.date(2026, 9, 21)
 AT = lambda h, m: dt.datetime.combine(DAY, dt.time(h, m), ET)

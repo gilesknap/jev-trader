@@ -42,8 +42,9 @@ class Plan:
     def lines(self) -> list[str]:
         if self.error:
             return [f"ERROR {self.error}"]
-        return ([f"PR {sha[:10]} #{n} {title}" for sha, n, title in self.prs]
-                + [f"REVIEW {sha} {why}" for sha, why in self.review])
+        return [f"PR {sha[:10]} #{n} {title}" for sha, n, title in self.prs] + [
+            f"REVIEW {sha} {why}" for sha, why in self.review
+        ]
 
 
 def _git(repo: Path, *args: str, env: dict | None = None) -> subprocess.CompletedProcess:
@@ -84,8 +85,9 @@ def _signer(repo: Path, sha: str, gnupghome: str) -> str | None:
     return valid if (r.returncode == 0 and good) else None
 
 
-def plan(repo: Path, base: str, target: str, key_file: Path = KEY_FILE,
-         fingerprints: frozenset[str] = WEB_FLOW_FINGERPRINTS) -> Plan:
+def plan(
+    repo: Path, base: str, target: str, key_file: Path = KEY_FILE, fingerprints: frozenset[str] = WEB_FLOW_FINGERPRINTS
+) -> Plan:
     p = Plan()
     shas = {}
     for name, ref in (("base", base), ("target", target)):
@@ -106,8 +108,9 @@ def plan(repo: Path, base: str, target: str, key_file: Path = KEY_FILE,
         p.error = f"missing {key_file}"
         return p
     with _gnupg_home() as home:
-        imp = subprocess.run(["gpg", "--homedir", home, "--batch", "--quiet", "--import", str(key_file)],
-                             capture_output=True, text=True)
+        imp = subprocess.run(
+            ["gpg", "--homedir", home, "--batch", "--quiet", "--import", str(key_file)], capture_output=True, text=True
+        )
         if imp.returncode != 0:
             p.error = f"could not import the web-flow key: {imp.stderr.strip()[:200]}"
             return p

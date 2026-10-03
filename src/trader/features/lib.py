@@ -22,7 +22,7 @@ import numbers
 import numpy as np
 import pandas as pd
 
-from trader.features import FeatureContext, feature
+from trader.features import feature
 
 NAN = float("nan")
 MINUTE = pd.Timedelta(minutes=1)

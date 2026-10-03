@@ -36,15 +36,25 @@ class Calendar:
         if self.down:
             raise ConnectionError("calendar 503")
         today = dt.datetime.now(ET).date()
-        return [SimpleNamespace(date=today, open=dt.datetime.combine(today, dt.time(9, 30)),
-                                close=dt.datetime.combine(today, self.close))]
+        return [
+            SimpleNamespace(
+                date=today,
+                open=dt.datetime.combine(today, dt.time(9, 30)),
+                close=dt.datetime.combine(today, self.close),
+            )
+        ]
 
 
 def save(tmp_path, day, open_="09:30", close="16:00"):
-    (tmp_path / "session.json").write_text(json.dumps({
-        "day": day.isoformat(),
-        "open": dt.datetime.combine(day, dt.time.fromisoformat(open_), ET).isoformat(),
-        "close": dt.datetime.combine(day, dt.time.fromisoformat(close), ET).isoformat()}))
+    (tmp_path / "session.json").write_text(
+        json.dumps(
+            {
+                "day": day.isoformat(),
+                "open": dt.datetime.combine(day, dt.time.fromisoformat(open_), ET).isoformat(),
+                "close": dt.datetime.combine(day, dt.time.fromisoformat(close), ET).isoformat(),
+            }
+        )
+    )
 
 
 def test_same_day_restart_with_the_calendar_down_reuses_the_saved_half_day(tmp_path, alerts):
@@ -63,11 +73,17 @@ def test_another_days_saved_session_is_never_reused(tmp_path, alerts):
     assert len(alerts) == 1 and "can't start" in alerts[0]
 
 
-@pytest.mark.parametrize("content", [
-    "{not json", "[]", '{"day": 1}', "",
-    json.dumps({"day": "TODAY", "open": "2026-01-01T09:30:00", "close": "2026-01-01T16:00:00"}),  # naive
-    json.dumps({"day": "TODAY", "open": "TODAY 16:00-04:00", "close": "TODAY 09:30-04:00"}),  # close first
-])
+@pytest.mark.parametrize(
+    "content",
+    [
+        "{not json",
+        "[]",
+        '{"day": 1}',
+        "",
+        json.dumps({"day": "TODAY", "open": "2026-01-01T09:30:00", "close": "2026-01-01T16:00:00"}),  # naive
+        json.dumps({"day": "TODAY", "open": "TODAY 16:00-04:00", "close": "TODAY 09:30-04:00"}),  # close first
+    ],
+)
 def test_a_corrupt_saved_session_counts_as_absent(tmp_path, alerts, content):
     today = dt.datetime.now(ET).date().isoformat()
     (tmp_path / "session.json").write_text(content.replace("TODAY", today))
@@ -109,9 +125,11 @@ class _Reached(Exception):
 
 def test_run_session_restarted_mid_session_runs_on_the_saved_times(tmp_path, monkeypatch, alerts):
     now = dt.datetime.now(ET)
-    (tmp_path / "session.json").write_text(json.dumps({
-        "day": now.date().isoformat(), "open": now.isoformat(),
-        "close": (now + dt.timedelta(hours=1)).isoformat()}))
+    (tmp_path / "session.json").write_text(
+        json.dumps(
+            {"day": now.date().isoformat(), "open": now.isoformat(), "close": (now + dt.timedelta(hours=1)).isoformat()}
+        )
+    )
 
     def broker(*a, **k):
         b = SimBroker(250.0)

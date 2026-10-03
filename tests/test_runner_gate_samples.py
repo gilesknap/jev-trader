@@ -53,7 +53,9 @@ def test_runner_gate_widens_past_a_run_of_closed_days(monkeypatch, gated):
 def test_runner_gate_uses_one_fetch_in_a_normal_week(monkeypatch, gated):
     today = dt.datetime.now(ET).date()
     calls = []
-    monkeypatch.setattr(runner, "fetch_alpaca", fake_fetch([today - dt.timedelta(days=n) for n in (5, 4, 3, 2, 1)], calls))
+    monkeypatch.setattr(
+        runner, "fetch_alpaca", fake_fetch([today - dt.timedelta(days=n) for n in (5, 4, 3, 2, 1)], calls)
+    )
     runner._load_specs("unused.yaml", {})
     assert len(calls) == 1 and len(gated[0]) == 4
 
@@ -79,6 +81,7 @@ def test_a_mid_session_restart_never_samples_todays_partial_session(monkeypatch,
 def test_a_failed_sample_fetch_is_a_gate_error_not_an_invalid_file(monkeypatch, gated):
     def down(*a, **k):
         raise ConnectionError("bars API 503")
+
     monkeypatch.setattr(runner, "fetch_alpaca", down)
     with pytest.raises(GateSampleError, match="503"):
         runner._load_specs("unused.yaml", {})
@@ -88,10 +91,13 @@ def test_a_failed_sample_fetch_is_a_gate_error_not_an_invalid_file(monkeypatch, 
 
 
 def test_an_invalid_file_still_says_so(monkeypatch, gated):
-    monkeypatch.setattr(runner, "fetch_alpaca", fake_fetch([dt.datetime.now(ET).date() - dt.timedelta(days=n) for n in (3, 2, 1)], []))
+    monkeypatch.setattr(
+        runner, "fetch_alpaca", fake_fetch([dt.datetime.now(ET).date() - dt.timedelta(days=n) for n in (3, 2, 1)], [])
+    )
 
     def bad(*a, **k):
         raise ValueError("bad yaml")
+
     monkeypatch.setattr("trader.classifier.load_specs_report", bad)
     alerts = []
     assert runner._specs_for_session("unused.yaml", {}, runner.Calendar(), lambda lvl, msg: alerts.append(msg)) == []
@@ -105,6 +111,7 @@ def test_gate_samples_needs_a_lookback():
 
 def test_the_recent_calendar_covers_the_widest_gate_window():
     seen = []
-    runner._recent_calendar(type("C", (), {"get_calendar": lambda self, req: seen.append(req) or []})(),
-                            dt.date(2026, 10, 5))
+    runner._recent_calendar(
+        type("C", (), {"get_calendar": lambda self, req: seen.append(req) or []})(), dt.date(2026, 10, 5)
+    )
     assert (dt.date(2026, 10, 5) - seen[0].start).days >= max(runner.GATE_LOOKBACKS)

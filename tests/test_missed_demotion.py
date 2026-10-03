@@ -27,8 +27,11 @@ def rt(env, tmp_path, monkeypatch):
     monkeypatch.setattr(runner, "notify", lambda level, msg, **k: alerts.append(msg))
     monkeypatch.setattr(config, "load_secrets", lambda: {"ALPACA_PAPER_KEY": "k", "ALPACA_PAPER_SECRET": "s"})
     monkeypatch.setattr(runner, "AlpacaBroker", lambda *a, **k: Quiet())
-    monkeypatch.setattr(runner, "_session_for_run", lambda client: (
-        dt.datetime.combine(DAY, dt.time(9, 30), ET), dt.datetime.combine(DAY, dt.time(16), ET)))
+    monkeypatch.setattr(
+        runner,
+        "_session_for_run",
+        lambda client: (dt.datetime.combine(DAY, dt.time(9, 30), ET), dt.datetime.combine(DAY, dt.time(16), ET)),
+    )
     live = tmp_path / "books" / "live"
     live.mkdir(parents=True)
     return live, alerts
@@ -51,11 +54,17 @@ def test_a_restart_after_the_close_records_the_lost_demotion(rt):
     assert golive.load_state() == st and not any("HALTED" in a for a in alerts)
 
 
-@pytest.mark.parametrize("state,halted", [
-    ({"status": "live", "live_since": "2026-09-14", "last_session": "2026-09-28"}, False),  # not halted
-    ({"status": "armed", "sessions_left": 2, "armed_on": "2026-09-25"}, True),  # a crashed session never counts down
-    ({"status": "pending"}, True),  # nor arms
-])
+@pytest.mark.parametrize(
+    "state,halted",
+    [
+        ({"status": "live", "live_since": "2026-09-14", "last_session": "2026-09-28"}, False),  # not halted
+        (
+            {"status": "armed", "sessions_left": 2, "armed_on": "2026-09-25"},
+            True,
+        ),  # a crashed session never counts down
+        ({"status": "pending"}, True),  # nor arms
+    ],
+)
 def test_a_restart_after_the_close_changes_nothing_else(rt, state, halted):
     live, _ = rt
     golive.save_state(state)

@@ -1,4 +1,5 @@
 """The two dashboard units: only the SSH-tunnel one may trust a request with no Tailscale header."""
+
 from pathlib import Path
 
 SYSTEMD = Path(__file__).resolve().parents[1] / "deploy" / "systemd"

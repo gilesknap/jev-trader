@@ -102,10 +102,14 @@ class ClassifierSpec(Strict):
     stop_pct: float = Field(0.5, gt=0, le=G.MAX_STOP_DISTANCE * 100)  # % below entry
     target_pct: float = Field(1.0, gt=0, le=20)  # % above entry
     # ---- optional execution toolkit (all engine-enforced, inside the guardrails) ----
-    trail_pct: float | None = Field(None, gt=0, le=G.MAX_STOP_DISTANCE * 100)  # stop trails the high by this %, only rising
+    trail_pct: float | None = Field(
+        None, gt=0, le=G.MAX_STOP_DISTANCE * 100
+    )  # stop trails the high by this %, only rising
     max_hold_min: int | None = Field(None, ge=1, le=390)  # time stop: exit after this many minutes
     entry_order: EntryOrder | None = None  # default: market
-    risk_pct: float | None = Field(None, gt=0, le=2)  # size so a stop-out loses ~this % of equity (capped by size_fraction)
+    risk_pct: float | None = Field(
+        None, gt=0, le=2
+    )  # size so a stop-out loses ~this % of equity (capped by size_fraction)
     stop_atr_mult: float | None = Field(None, gt=0, le=20)  # stop distance = mult x atr_14_pct, capped at stop_pct
     scale_out: ScaleOut | None = None
 
@@ -211,8 +215,9 @@ def _unknown_keys(c) -> list[str] | None:
         return None
     except ValidationError as e:
         errs = e.errors()
-    if not any(err["type"] == "extra_forbidden" for err in errs) or \
-            any(err["type"] not in ("extra_forbidden", "missing") for err in errs):
+    if not any(err["type"] == "extra_forbidden" for err in errs) or any(
+        err["type"] not in ("extra_forbidden", "missing") for err in errs
+    ):
         return None
     out = []
     for err in errs:
@@ -229,8 +234,9 @@ def _unknown_keys(c) -> list[str] | None:
     return out
 
 
-def load_specs_report(path: Path, known_features: set[str],
-                      universe: set[str]) -> tuple[list[ClassifierSpec], dict[str, str]]:
+def load_specs_report(
+    path: Path, known_features: set[str], universe: set[str]
+) -> tuple[list[ClassifierSpec], dict[str, str]]:
     """Parse and validate, returning (enabled specs, dropped): a classifier whose only fault is
     an unknown key is dropped on its own (#150), so the others still trade; `dropped` maps its
     id to the reason. Any other problem raises ValueError describing every problem found, as

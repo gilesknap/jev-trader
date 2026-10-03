@@ -1,6 +1,6 @@
 name: CI
 
-# Runs the test suite on pull requests and pushes to main.
+# Runs the lint checks and the test suite on pull requests and pushes to main.
 # Only in a public repository (like docs.yml): the private copy is tested by trading-deploy before
 # every deploy, against the operator's own config. A code checkout without config.yaml (the public
 # repo) runs the tests against templates/data (see tests/conftest.py). No test needs secrets.
@@ -15,6 +15,23 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    # pre-commit's checks (.pre-commit-config.yaml): ruff check and format, YAML, file endings, gitleaks.
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.14'
+      - name: Install pre-commit and ruff
+        run: |
+          uv tool install pre-commit
+          uv tool install ruff==0.16.10
+          uv tool dir --bin >> "$GITHUB_PATH"
+      - name: Run pre-commit
+        run: pre-commit run --all-files --show-diff-on-failure
+
   test:
     if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest

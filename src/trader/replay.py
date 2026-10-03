@@ -63,8 +63,9 @@ def replay(
     day_alerts: list[str] = []  # e.g. a stale/missing SPY feed blocking entries; kept in the summary
     # A replay tests each spec alone on one account, whatever its mode.
     books = {"live": book, "shadow": book} | {s.book_key: book for s in specs if s.mode == "sim"}
-    engine = Engine(specs, books, decider, universe, run_dir,
-                    alert=lambda level, msg: day_alerts.append(f"{level}: {msg}"))
+    engine = Engine(
+        specs, books, decider, universe, run_dir, alert=lambda level, msg: day_alerts.append(f"{level}: {msg}")
+    )
     results = {}
     for day in days:
         engine.start_day(day, prior_sessions(sessions, day))  # one feed throughout: its own volume
@@ -78,8 +79,12 @@ def replay(
             # The engine decides on bars up to `ts` only. A market order it sends now executes at
             # the next bar's open, not at the close it just saw; none after the last bar of
             # the session: the close, as the live runner would.
-            book.broker.next_open = {s: float(b.open.iloc[i]) for s, b in today.items()
-                                     for i in [b.index.searchsorted(ts, side="right")] if i < len(b)}
+            book.broker.next_open = {
+                s: float(b.open.iloc[i])
+                for s, b in today.items()
+                for i in [b.index.searchsorted(ts, side="right")]
+                if i < len(b)
+            }
             engine.tick(now.to_pydatetime(), bars, (close - now).total_seconds() / 60)
             if pace:
                 time.sleep(pace)
@@ -88,10 +93,13 @@ def replay(
         if day_alerts:
             results[day.isoformat()]["alerts"] = list(day_alerts)
     summary = {
-        "start": start.isoformat(), "end": end.isoformat(), "days": results,
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "days": results,
         "decision_calls": getattr(decider, "calls", 0),
         "decision_cost_usd": round(getattr(decider, "total_cost", 0.0), 5),
-        "final_equity": round(book.broker.equity(), 2), "start_equity": cash,
+        "final_equity": round(book.broker.equity(), 2),
+        "start_equity": cash,
         **({"calendar": "assumed regular 09:30-16:00 sessions (no exchange calendar)"} if calendar.assumed else {}),
     }
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=1))

@@ -6,11 +6,10 @@ from types import SimpleNamespace as NS
 import pandas as pd
 import pytest
 
+from test_engine import Always, spec
 from trader.broker import AlpacaBroker, SimBroker
 from trader.data import ET
 from trader.engine import Book, Engine
-
-from test_engine import Always, spec
 
 
 class APIError(Exception):
@@ -32,8 +31,13 @@ class FakeClient:
         o = self.orders[oid]
         if o.get("script"):
             o.update(o["script"].pop(0))
-        return NS(id=oid, symbol=o.get("symbol", "SPY"), status=NS(value=o["status"]),
-                  filled_qty=o.get("filled_qty", 0), filled_avg_price=o.get("price"))
+        return NS(
+            id=oid,
+            symbol=o.get("symbol", "SPY"),
+            status=NS(value=o["status"]),
+            filled_qty=o.get("filled_qty", 0),
+            filled_avg_price=o.get("price"),
+        )
 
     def cancel_order_by_id(self, oid):
         self.calls.append(("cancel", oid))
@@ -156,8 +160,7 @@ def test_a_fill_whose_price_is_never_reported_is_unknown_not_the_reference_price
     c = FakeClient()
     c.orders["o1"] = {"status": "filled", "filled_qty": 1.0, "price": None}
     assert broker(c)._settle("o1") == (1.0, 0.0)
-    c.orders["o2"] = {"status": "filled", "filled_qty": 1.0, "price": "0",
-                      "script": [{}, {"price": 100.2}]}
+    c.orders["o2"] = {"status": "filled", "filled_qty": 1.0, "price": "0", "script": [{}, {"price": 100.2}]}
     assert broker(c)._settle("o2") == (1.0, 100.2)
     c.submit_order = lambda req: NS(id="o1")
     fill = broker(c).buy_notional("SPY", 100.0, 101.5, None, "t-SPY-10141000")
@@ -192,8 +195,9 @@ def test_orphan_close_failure_does_not_raise(tmp_path):
     br.positions["SPY"] = __import__("trader.broker", fromlist=["Position"]).Position("SPY", 0.1, 100.0)
     book = Book("paper", br, tmp_path / "paper")
     alerts = []
-    eng = Engine([], {"live": book, "shadow": book}, Always(), {"SPY"}, tmp_path,
-                 alert=lambda lvl, msg: alerts.append(msg))
+    eng = Engine(
+        [], {"live": book, "shadow": book}, Always(), {"SPY"}, tmp_path, alert=lambda lvl, msg: alerts.append(msg)
+    )
     now = dt.datetime(2026, 9, 21, 9, 31, tzinfo=ET)
     eng.start_day(now.date(), {})
     eng.tick(now, {}, 389)  # must not raise

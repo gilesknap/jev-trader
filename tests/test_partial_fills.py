@@ -5,10 +5,9 @@ import json
 import pandas as pd
 import pytest
 
-from trader.broker import OrderState, Position, SimBroker
-
 from test_engine import Always, spec
 from test_execution_toolkit import make, ticks
+from trader.broker import OrderState, Position, SimBroker
 
 LIMIT = {"type": "limit", "offset_pct": 0.05, "expire_min": 60}  # limit 99.95 on a 100.00 print
 
@@ -207,4 +206,6 @@ def test_a_failing_cancel_still_protects_the_partial_fill_it_saw(tmp_path, sessi
     eng.decider = Always(entry="WAIT")
     br.set_fill(0.1, 99.95)
     ticks(eng, bars, 6, 8)
-    assert "SPY" in book.pending and book.entries["SPY"].qty == pytest.approx(0.1) and book.entries["SPY"].stop_id == "s1"
+    assert (
+        "SPY" in book.pending and book.entries["SPY"].qty == pytest.approx(0.1) and book.entries["SPY"].stop_id == "s1"
+    )

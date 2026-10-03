@@ -27,16 +27,38 @@ BENCH = [{"date": d, "spy_open": "100", "spy_close": c} for d, c in zip(DAYS, ("
 def trades(day, n, notional, held_min=30):
     out = []
     for k in range(n):
-        out.append({"time": f"{day}T10:{k:02d}-04:00", "classifier": "c", "symbol": f"S{k}", "side": "buy",
-                    "notional": str(notional), "pnl": "", "pnl_pct": ""})
-        out.append({"time": f"{day}T{10 + held_min // 60}:{k + held_min % 60:02d}-04:00", "classifier": "c",
-                    "symbol": f"S{k}", "side": "sell", "notional": str(notional), "pnl": "0", "pnl_pct": "0"})
+        out.append(
+            {
+                "time": f"{day}T10:{k:02d}-04:00",
+                "classifier": "c",
+                "symbol": f"S{k}",
+                "side": "buy",
+                "notional": str(notional),
+                "pnl": "",
+                "pnl_pct": "",
+            }
+        )
+        out.append(
+            {
+                "time": f"{day}T{10 + held_min // 60}:{k + held_min % 60:02d}-04:00",
+                "classifier": "c",
+                "symbol": f"S{k}",
+                "side": "sell",
+                "notional": str(notional),
+                "pnl": "0",
+                "pnl_pct": "0",
+            }
+        )
     return out
 
 
 def test_series_return_drawdown_and_spy():
     d = SB.daily(equity(), BENCH, trades(DAYS[0], 1, 50))
-    assert [round(r["return_pct"], 4) for r in d["rows"]] == [1.0, round((0.99 / 1.01 - 1) * 100, 4), round((1 / 0.99 - 1) * 100, 4)]
+    assert [round(r["return_pct"], 4) for r in d["rows"]] == [
+        1.0,
+        round((0.99 / 1.01 - 1) * 100, 4),
+        round((1 / 0.99 - 1) * 100, 4),
+    ]
     assert d["book"]["days"] == 3 and d["book"]["days_traded"] == 1  # the quiet days count
     assert d["book"]["max_drawdown_pct"] == pytest.approx((0.99 / 1.01 - 1) * 100)
     assert d["book"]["total_pct"] == pytest.approx(0.0, abs=1e-9)
@@ -115,9 +137,11 @@ def test_cli_daily_returns_reads_each_book(tmp_path, monkeypatch, capsys):
 
 def test_a_paper_rebase_between_sessions_is_not_a_return():
     """rebase-paper resets the NAV to 1 before the next open: each session is measured open to close."""
-    rows = [{"time": f"{d}T{t}-04:00", "equity": str(250 * v), "nav": str(v)}
-            for d, marks in zip(DAYS, ([1.0, 1.0], [1.0, 0.96], [1.0, 1.0]), strict=True)
-            for t, v in zip(("09:30", "16:00"), marks, strict=True)]
+    rows = [
+        {"time": f"{d}T{t}-04:00", "equity": str(250 * v), "nav": str(v)}
+        for d, marks in zip(DAYS, ([1.0, 1.0], [1.0, 0.96], [1.0, 1.0]), strict=True)
+        for t, v in zip(("09:30", "16:00"), marks, strict=True)
+    ]
     d = SB.daily(rows, BENCH)
     assert [r["return_pct"] for r in d["rows"]] == [0.0, -4.0, 0.0]
     assert d["book"]["total_pct"] == pytest.approx(-4.0)

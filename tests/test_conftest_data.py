@@ -68,8 +68,9 @@ def test_data_main_checkout_gets_the_template_strategist_tree(layout, request, d
     assert env["TRADER_DATA_ROOT"] == str(data_main)  # the config under test stays the candidate's
     strategist = Path(env["TRADER_STRATEGIST_ROOT"])
     assert strategist != data_main
-    assert (strategist / "state" / "classifiers.yaml").read_text() == \
-        (TEMPLATE_DATA / "strategist" / "state" / "classifiers.yaml").read_text()
+    assert (strategist / "state" / "classifiers.yaml").read_text() == (
+        TEMPLATE_DATA / "strategist" / "state" / "classifiers.yaml"
+    ).read_text()
     assert not (data_main / "state").exists()  # nothing written into the checkout
 
 

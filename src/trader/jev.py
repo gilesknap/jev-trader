@@ -42,9 +42,7 @@ class JevClient:
             },
         )
 
-    def decide(
-        self, state: dict | str, instructions: str, criteria: dict[str, str]
-    ) -> Decision:
+    def decide(self, state: dict | str, instructions: str, criteria: dict[str, str]) -> Decision:
         body = {
             "model": self.model,
             "state": state,
@@ -57,7 +55,7 @@ class JevClient:
             },
         }
         last: Exception | None = None
-        for attempt in range(2):  # one retry; the engine's circuit breaker handles outages
+        for _attempt in range(2):  # one retry; the engine's circuit breaker handles outages
             try:
                 r = self._http.post(DECISIONS_URL, json=body)
                 if r.status_code in (429, 500, 502, 503, 524, 529):
@@ -79,9 +77,7 @@ class JevClient:
                 )
             except (httpx.HTTPError, DecisionError, KeyError, ValueError) as e:
                 last = e
-                if isinstance(e, DecisionError) and not str(e).startswith(
-                    ("HTTP 429", "HTTP 5")
-                ):
+                if isinstance(e, DecisionError) and not str(e).startswith(("HTTP 429", "HTTP 5")):
                     break
                 time.sleep(0.5)
         raise DecisionError(str(last))

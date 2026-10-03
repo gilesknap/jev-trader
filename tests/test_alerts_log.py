@@ -77,7 +77,18 @@ def test_template_strategist_gitignore_covers_the_wrappers_local_files():
     """The strategist branch's own .gitignore (#169 section 3.2): secrets, stamps, the alerts fallback, the
     run lock, replays and decision logs must never be committed, or be reverted by the path check."""
     ignored = TEMPLATE_GITIGNORE.read_text().split()
-    for name in (".env", ".last_run", ".last_postclose", "strategist-alerts.log", ".run.lock", "replays/",
-                 "logs/decisions/*.jsonl.gz", "runtime/", "__pycache__/", ".pytest_cache/", ".venv/"):
+    for name in (
+        ".env",
+        ".last_run",
+        ".last_postclose",
+        "strategist-alerts.log",
+        ".run.lock",
+        "replays/",
+        "logs/decisions/*.jsonl.gz",
+        "runtime/",
+        "__pycache__/",
+        ".pytest_cache/",
+        ".venv/",
+    ):
         assert name in ignored, name
     assert config.STRATEGIST_ALERTS.name in ignored

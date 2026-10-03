@@ -19,13 +19,17 @@ def encode_bars(df: pd.DataFrame) -> dict:
         # Epoch nanoseconds whatever the index's unit: pandas 3 builds bar indexes in us (the live stream,
         # alpaca-py), and asi8 counts in that unit, which decode_bars would misread as ns (#181).
         "t": [int(x) for x in df.index.as_unit("ns").asi8],
-        "o": df.open.tolist(), "h": df.high.tolist(), "l": df.low.tolist(),
-        "c": df.close.tolist(), "v": df.volume.tolist(),
+        "o": df.open.tolist(),
+        "h": df.high.tolist(),
+        "l": df.low.tolist(),
+        "c": df.close.tolist(),
+        "v": df.volume.tolist(),
     }
 
 
 def decode_bars(d: dict) -> pd.DataFrame:
     """Inverse of encode_bars: an America/New_York index in ns, float OHLCV columns."""
     idx = pd.to_datetime(np.array(d["t"], dtype="int64"), utc=True).tz_convert("America/New_York")
-    return pd.DataFrame({"open": d["o"], "high": d["h"], "low": d["l"], "close": d["c"], "volume": d["v"]},
-                        index=idx, dtype=float)
+    return pd.DataFrame(
+        {"open": d["o"], "high": d["h"], "low": d["l"], "close": d["c"], "volume": d["v"]}, index=idx, dtype=float
+    )

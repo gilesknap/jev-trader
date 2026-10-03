@@ -3,8 +3,6 @@
 import datetime as dt
 import types
 
-import pytest
-
 from test_engine import spec
 from trader import alerts, cli, config
 
@@ -19,8 +17,9 @@ class LateEvening(dt.datetime):
 
 
 def late_evening(monkeypatch, module):
-    monkeypatch.setattr(module, "dt", types.SimpleNamespace(datetime=LateEvening, date=dt.date,
-                                                            timedelta=dt.timedelta, UTC=dt.UTC))
+    monkeypatch.setattr(
+        module, "dt", types.SimpleNamespace(datetime=LateEvening, date=dt.date, timedelta=dt.timedelta, UTC=dt.UTC)
+    )
 
 
 def test_ny_today_is_the_new_york_date(monkeypatch):

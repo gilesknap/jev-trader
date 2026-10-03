@@ -104,8 +104,9 @@ def test_a_mode_override_through_paper_also_restarts_the_week(env, tmp_path):
 def test_the_reset_keeps_the_rest_of_the_live_books_risk_state(tmp_path):
     live = tmp_path / "live"
     live.mkdir()
-    (live / "risk.json").write_text(json.dumps({"halted": True, "reason": "x", "live_sessions": 9,
-                                                "last_live_session": DAYS[0].isoformat()}))
+    (live / "risk.json").write_text(
+        json.dumps({"halted": True, "reason": "x", "live_sessions": 9, "last_live_session": DAYS[0].isoformat()})
+    )
     runner.count_live_session("paper", DAYS[1], live)
     assert risk(live) == {"halted": True, "reason": "x", "live_sessions": 0}
 
@@ -163,7 +164,9 @@ def test_run_session_resets_the_count_on_a_paper_session(tmp_path, monkeypatch):
     monkeypatch.setattr(runner, "BOOKS_DIR", tmp_path / "books")
     monkeypatch.setattr(runner, "notify", lambda *a, **k: None)
     monkeypatch.setattr(runner, "AlpacaBroker", lambda *a, **k: Flaky(250.0))
-    monkeypatch.setattr(runner, "_session_today", lambda client: (now - dt.timedelta(hours=1), now + dt.timedelta(hours=1)))
+    monkeypatch.setattr(
+        runner, "_session_today", lambda client: (now - dt.timedelta(hours=1), now + dt.timedelta(hours=1))
+    )
     monkeypatch.setattr(runner, "_load_specs", lambda *a, **k: [])
     monkeypatch.setattr(runner, "fetch_alpaca", lambda *a, **k: (_ for _ in ()).throw(ConnectionError("down")))
     monkeypatch.setattr(runner, "reconcile_sim_accounts", lambda *a, **k: None)
