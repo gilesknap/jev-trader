@@ -125,7 +125,8 @@ def evaluate(names: list[str], sessions: list[tuple[pd.DataFrame, pd.DataFrame, 
         try:
             for bars, prev, spy in sessions:
                 for i in range(30, len(bars)):
-                    ctx = F.FeatureContext(prev, spy.iloc[: i + 1], i, 390 - i)
+                    # As the engine sees bar i: minute i + 1 of the session (the first bar is 1).
+                    ctx = F.FeatureContext(prev, spy.iloc[: i + 1], i + 1, 390 - (i + 1))
                     t = time.perf_counter()
                     v = fn(bars.iloc[: i + 1], ctx)
                     elapsed += time.perf_counter() - t

@@ -162,6 +162,7 @@ def my_feature(bars, ctx):
 - They run in a **sandbox** (bubblewrap: no network, no files outside the code, no environment), never in the runner's process. Anything that tries I/O simply fails.
 - They must be pure functions. Allowed imports are exactly `math`, `statistics`, `numpy`, `pandas` and `from trader.features import feature`. Also rejected: attributes starting with `_`, `read_` or `to_` (except `to_numpy`/`to_list`), module internals such as `.io`/`.lib`/`.os`, path or URL string literals, and names like `open`, `print`, `eval`, `type`, `getattr`.
 - A custom feature may not reuse a library feature's name.
+- Live IEX bars are **sparse**: a minute without an IEX trade has no bar, and a halted symbol has none for a while. Don't count rows to mean minutes (`bars.iloc[:15]` is not "the first 15 minutes"): select by timestamp (`bars.index`), as the library's `ret_*m_pct`, `or15_*` and `rel_volume_15m` do. `ctx.minutes_since_open` counts the bar just completed (1 for the 09:30 bar, both live and in the gate).
 - They must be finite on at least 80% of bars after a 30-minute warm-up, and take less than 5 ms per call.
 - The runner re-checks every custom feature at each session start. Rejected ones make dependent classifiers invalid, and **then nothing trades that day**, so always run `trader validate`.
 - Library features: `trader features`.
