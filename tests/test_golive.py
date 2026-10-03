@@ -13,6 +13,7 @@ def env(tmp_path, monkeypatch):
     book.mkdir(parents=True)
     monkeypatch.setattr(golive, "STATE_FILE", tmp_path / "golive.json")
     monkeypatch.setattr(golive, "PAPER_BOOK", book)
+    monkeypatch.setattr(golive, "LIVE_BOOK", tmp_path / "books" / "live")
     mode = tmp_path / "mode.yaml"
     mode.write_text("mode: auto\n")
     monkeypatch.setattr(golive.config, "MODE_FILE", mode)
