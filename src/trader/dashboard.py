@@ -140,6 +140,19 @@ def _equity_points(rows: list[dict]) -> list:
     return _downsample(out)
 
 
+TRADES_TAIL = 40  # earlier fills sent after the latest day's, so a busy day never pushes its own fills off
+
+
+def recent_trades(rows: list[dict], today: str | None) -> tuple[list[dict], int]:
+    """(fills to show, newest first; how many older ones were left out). Every fill from `today`
+    (the New York date; a replay has none, so its latest day), plus the TRADES_TAIL before them."""
+    rows = sorted((r for r in rows if isinstance(r.get("time"), str)), key=lambda r: r["time"], reverse=True)
+    day = today or (rows[0]["time"][:10] if rows else "")
+    n_day = sum(1 for r in rows if r["time"][:10] >= day)
+    kept = rows[: n_day + TRADES_TAIL]
+    return kept, len(rows) - len(kept)
+
+
 SKIP_REASONS = {  # the engine's skip_* outcomes, as the dashboard says them
     "feed_stale": "market data stale",
     "paused": "Jev calls paused after errors",
@@ -348,13 +361,18 @@ def data(source: str = "live"):
         eq = _csv(d / "equity.csv")
         books[d.name] = {
             "equity": _equity_points(eq),
-            "trades": _csv(d / "trades.csv")[-60:],
             "nav": _json(d / "nav.json"),
             "risk": _json(d / "risk.json"),
         }
     sims = _sim_dirs(source)
     if sims:  # every sim account's trades together; each account's own state is in status.json
-        books["sim"] = {"equity": [], "trades": _sim_trades(source)[-60:], "nav": None, "risk": None, "accounts": len(sims)}
+        books["sim"] = {"equity": [], "nav": None, "risk": None, "accounts": len(sims)}
+    today = None
+    if source == "live":
+        from zoneinfo import ZoneInfo
+
+        today = dt.datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+    trades, omitted = recent_trades([r for d in book_dirs for r in _csv(d / "trades.csv")] + _sim_trades(source), today)
     return {
         "source": source,
         "status": _with_why(_json(base / "status.json")),
@@ -362,6 +380,8 @@ def data(source: str = "live"):
         "summary": _json(base / "summary.json"),
         "benchmark": _csv(base / "benchmark.csv"),
         "books": books,
+        "trades": trades,
+        "trades_omitted": omitted,
     }
 
 

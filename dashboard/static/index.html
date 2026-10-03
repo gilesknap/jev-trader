@@ -327,11 +327,12 @@ code { font-family: var(--mono); font-size: .9em; }
 
 <!-- ============ TRADES ============ -->
 <div class="page" id="page-trades" hidden>
-  <section><h2>Recent trades <span>the last 40 fills, newest first, grouped by New York trading day, times in New York time</span></h2>
+  <section><h2>Recent trades <span>all of today's fills and the 40 before them, newest first, grouped by New York trading day, times in New York time</span></h2>
     <details class="about"><summary>About trades</summary>
       <p>Every buy and sell. P&amp;L (profit and loss) appears on the sell that closes a trade. <b>paper</b> is the Alpaca practice account, <b>live</b> is real money, and <b>sim</b> is the pretend account inside a backtest.</p></details>
     <p class="dayline" id="trades-day" hidden></p>
-    <div class="table-wrap" id="trades"></div></section>
+    <div class="table-wrap" id="trades"></div>
+    <p class="note" id="trades-more" hidden></p></section>
 </div>
 
 <!-- ============ NOTES ============ -->
@@ -708,10 +709,13 @@ function render(d) {
     { h: "today so far", raw: 1, v: r => r.probe || !r.x.why ? "" : `<span class="pmeta" title="${esc(Object.entries(r.x.counts || {}).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(", "))}">${esc(r.x.why)}</span>` },
   ], rows, r => r.first ? "grp" : "", "No rules loaded yet. The runner loads them shortly before the open.");
 
-  const trades = Object.values(d.books).flatMap(b => b.trades).sort((a, b) => b.time.localeCompare(a.time)).slice(0, 40);
+  // The server sends every fill from today (a replay: its last day) and a bounded tail before them, newest first.
+  const trades = d.trades || [];
   const today = d.source === "live" ? nyToday() : null, td = tradeDays(trades, today);
   badge("n-trades", td.nToday);
   $("trades-day").hidden = !td.note; $("trades-day").textContent = td.note;
+  $("trades-more").hidden = !d.trades_omitted;
+  $("trades-more").textContent = `Showing the last ${trades.length} of ${trades.length + (d.trades_omitted || 0)} fills.`;
   const tcols = [
     { h: "NY time", v: r => r.time.slice(11, 16), num: 1 },
     { h: "stock", raw: 1, v: r => `<span class="sym">${esc(r.symbol)}</span>` },
