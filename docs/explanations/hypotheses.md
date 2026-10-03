@@ -30,13 +30,16 @@ An idea has two stages:
 - **Exploring.** Replays, probes and sim accounts, tuned freely, with every variant counted in the
   journal's replay log. Nothing at this stage is evidence.
 - **Confirming.** The spec is frozen, and the checkpoint and its decision rule are fixed before
-  the first confirming session. Sessions the strategist has already looked at don't count. An
-  edit, other than a bug fix or one a steering entry requires, ends the attempt: it is recorded,
-  and a new attempt starts with a new checkpoint. The runner's promotion record restarts on the
-  same edits (see [Evidence and promotion](evidence.md#promotion-to-mode-live)).
+  the first confirming session. Sessions the strategist has already looked at don't count. The
+  spec is edited only for a bug or a steering entry, and any edit, even one of those, ends the
+  attempt: it is recorded, and a new attempt starts with a new checkpoint. The runner's promotion
+  record restarts on the same edits, and on any change to the custom feature code if the rule
+  uses a custom feature (see [Evidence and promotion](evidence.md#promotion-to-mode-live)), so
+  those files are left alone while such a rule is confirming.
 
 At the checkpoint the decision rule is applied as written. A close result doesn't earn a later
-checkpoint. Rejecting an idea after a cheap check, before it ever trades, is a result too. It
+checkpoint. The outcome is `rejected`, `retained` (it passed its last planned checkpoint), or
+`confirming` again with the next checkpoint, if the rule planned one. Rejecting an idea after a cheap check, before it ever trades, is a result too. It
 meets the weekly exploration requirement, so the strategist is never pushed to trade a weak idea
 just to have something novel running.
 
@@ -48,7 +51,7 @@ label describes where an idea came from (`novel` or `conventional`), not how goo
 ## Example: taken to its checkpoint
 
 ```text
-### H7: Midday range break. Status: retained (2026-12-04), second checkpoint set
+### H7: Midday range break. Status: confirming (checkpoint 1 passed 2026-11-30; checkpoint 2 at 50 trades)
 - Observation: in 40 older SIP sessions, when QQQ's 11:30–13:00 range was under half its
   09:30–11:30 range, the first later break above the midday high often ran on (eyeballed, then
   counted: 23 of 40 sessions qualified).
@@ -64,18 +67,18 @@ label describes where an idea came from (`novel` or `conventional`), not how goo
 - Baseline: control_orb; the non-quiet-day version of the rule (replay); SPY over the same window.
 - Costs: 0.1% round trip; target 0.6%, stop 0.3%, so the hit rate must exceed about 45%. Market
   entries in QQQ and IWM only (deep enough that the slippage assumption holds).
-- Checkpoint: 25 closed paper trades or 2026-12-04, whichever comes first. Rule: retain (keep in
-  shadow, set a second checkpoint at 50) if mean net > 0 and above control_orb; else reject.
+- Checkpoint: 25 closed paper trades or 2026-12-18, whichever comes first. Rule: if mean net > 0
+  and above control_orb, keep confirming in shadow to a second checkpoint at 50 trades; else reject.
 - Rules: midday_break (shadow), frozen 2026-11-02 (attempt 2). Record: journal 2026-10-27
-  (exploration, 6 replay variants), 2026-11-02 (attempt 1 ended), 2026-12-04 (checkpoint).
+  (exploration, 6 replay variants), 2026-11-02 (attempt 1 ended), 2026-11-30 (checkpoint 1).
 ```
 
 Exploration produced six counted replay variants. The first attempt at confirmation ran for 7
 trades; then the strategist added a trailing stop, which ended the attempt (recorded in the
-journal), and attempt 2 started on fresh sessions. At the checkpoint, attempt 2 had 25 trades over
-19 days: mean +0.04% per trade after slippage, against −0.02% for control_orb on the same days.
-The day-clustered interval spans zero. The decision rule said retain, so the rule stayed in
-shadow with a second checkpoint at 50 trades. The weekly journal says plainly that the edge isn't
+journal), and attempt 2 started on fresh sessions. It reached 25 trades over 19 trading days,
+before the checkpoint's date: mean +0.04% per trade after slippage, against −0.02% for control_orb on the same days.
+The day-clustered interval spans zero. The decision rule said keep going, so the rule stayed in
+shadow, still confirming, with its spec still frozen, towards the second checkpoint at 50 trades. The weekly journal says plainly that the edge isn't
 distinguishable from luck yet.
 
 ## Example: rejected before trading
