@@ -25,6 +25,7 @@ from trader.alerts import notify
 from trader.broker import AlpacaBroker
 from trader.data import ET, fetch_alpaca, prior_sessions, split_sessions
 from trader.engine import Book, Engine, stale_feed
+from trader.market_calendar import Calendar, fetch_calendar, session_from_row
 
 BOOKS_DIR = config.RUNTIME_DIR / "books"
 # The free IEX websocket takes at most this many symbols. One subscribe over the limit is
@@ -48,12 +49,8 @@ def _session_today(client):
     cal = client.get_calendar(GetCalendarRequest(start=today, end=today))
     if not cal or cal[0].date != today:
         return None
-    c = cal[0]
-
-    def as_et(x):
-        return x.replace(tzinfo=ET) if x.tzinfo is None else x.astimezone(ET)
-
-    return as_et(c.open), as_et(c.close)
+    s = session_from_row(cal[0])
+    return s.open, s.close
 
 
 CALENDAR_TRIES, CALENDAR_RETRY_S = 3, 5.0
@@ -128,14 +125,26 @@ def _session_for_run(client):
     return session
 
 
-def _load_specs(file, secrets):
+def _recent_calendar(client, today: dt.date, alert=notify) -> Calendar:
+    """The last ten days' exchange sessions, read once at startup, so prior sessions that closed
+    early are cut at their close. Unreadable: alerts, and those days count as regular sessions."""
+    try:
+        return fetch_calendar(client, today - dt.timedelta(days=10), today)
+    except Exception as e:
+        alert("info", f"couldn't read the recent exchange calendar ({e!r}): an early close in the last few "
+                      "days is treated as a full session for prior-day features and the feature gate")
+        return Calendar()
+
+
+def _load_specs(file, secrets, calendar: Calendar | None = None):
     """Gate custom features on recent history, then validate the classifier file."""
     from trader.classifier import load_specs_report
     from trader.features.harness import run_gate
 
+    calendar = calendar or Calendar()
     end = dt.datetime.now(ET) - dt.timedelta(minutes=20)
     raw = fetch_alpaca(["SPY", "QQQ"], end - dt.timedelta(days=7), end, secrets)
-    spy, qqq = split_sessions(raw["SPY"]), split_sessions(raw["QQQ"])
+    spy, qqq = calendar.trim(split_sessions(raw["SPY"])), calendar.trim(split_sessions(raw["QQQ"]))
     days = sorted(spy)[-3:]
     samples = [(per[d], per[days[i - 1]], spy[d]) for per in (spy, qqq) for i, d in enumerate(days) if i and d in per and days[i - 1] in per]
     report = run_gate(config.CUSTOM_FEATURES_DIR, samples, alert=notify)
@@ -287,20 +296,22 @@ def tick_bars(engine: Engine, rest: RestBars, live: dict[str, pd.DataFrame], tic
     return bars, live.get("SPY", pd.DataFrame())
 
 
-def prev_day_bars(symbols: list[str], day: dt.date, now: dt.datetime, secrets, alert=notify) -> dict[str, pd.DataFrame]:
+def prev_day_bars(symbols: list[str], day: dt.date, now: dt.datetime, secrets, alert=notify,
+                  calendar: Calendar | None = None) -> dict[str, pd.DataFrame]:
     """The features' prev_day for each symbol: the last session before `day`, with SIP's prices
     (the official close, for gap and prior-day levels) and IEX's volume, the feed the live bars
     come from, so volume ratios compare like with like. These feed prev-day features only, so a
     failed fetch is never a reason to leave positions unmanaged: it alerts and those features
-    are NaN today."""
+    are NaN today. `calendar` cuts an early-closed prior session at its close."""
+    calendar = calendar or Calendar()
     start, end = now - dt.timedelta(days=7), now - dt.timedelta(minutes=16)
     try:
-        sip = {s: split_sessions(b) for s, b in fetch_alpaca(symbols, start, end, secrets).items()}
+        sip = {s: calendar.trim(split_sessions(b)) for s, b in fetch_alpaca(symbols, start, end, secrets).items()}
     except Exception as e:
         alert("urgent", f"could not fetch recent history at startup: {e}; prev-day features are NaN today")
         return {}
     try:
-        iex = {s: split_sessions(b) for s, b in fetch_alpaca(symbols, start, end, secrets, feed="iex").items()}
+        iex = {s: calendar.trim(split_sessions(b)) for s, b in fetch_alpaca(symbols, start, end, secrets, feed="iex").items()}
     except Exception as e:
         alert("urgent", f"could not fetch recent IEX history at startup: {e}; prior-session volume is NaN today "
                         "(rel_volume_15m and the like); price levels are unaffected")
@@ -431,8 +442,9 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
         }))
         time.sleep(30)
 
+    recent = _recent_calendar(paper.client, open_.date(), notify)
     try:
-        specs = _load_specs(file, secrets)
+        specs = _load_specs(file, secrets, recent)
     except Exception as e:
         notify("urgent", f"classifiers.yaml invalid, trading nothing today: {e}")
         specs = []
@@ -472,7 +484,7 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
     base, extra = session_symbols(specs, engine.unique_books())
     symbols = base + extra
     now = dt.datetime.now(ET)
-    prev = prev_day_bars(base, open_.date(), now, secrets, notify)
+    prev = prev_day_bars(base, open_.date(), now, secrets, notify, recent)
     # The opening equity row is stamped at the open, or now if starting later (#50).
     engine.start_day(open_.date(), prev, settled_at_open, opened_at=max(open_, now))
     engine.write_status(now, (close - now).total_seconds() / 60)

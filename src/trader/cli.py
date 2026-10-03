@@ -126,6 +126,7 @@ def cmd_probe_report(a):
     from trader import probe
     from trader.classifier import ClassifierSpec
     from trader.data import ET, fetch, split_sessions
+    from trader.market_calendar import load_calendar
 
     if a.replay:
         dirs = [config.REPLAY_DIR / a.replay / "decisions"]
@@ -143,8 +144,10 @@ def cmd_probe_report(a):
     # SIP's most recent 15 minutes aren't on the free plan: stop short of them during a session.
     t1 = min(dt.datetime.combine(days[-1] + dt.timedelta(days=1), dt.time(0), ET),
              dt.datetime.now(ET) - dt.timedelta(minutes=16))
-    raw = fetch(sorted(rows.s.unique()), t0, t1, config.load_secrets(), "alpaca")
-    rows = probe.forward_returns(rows, {s: split_sessions(b) for s, b in raw.items()}, horizons)
+    secrets = config.load_secrets()
+    calendar = load_calendar(secrets, days[0], days[-1])  # early closes cut horizons at their own flatten
+    raw = fetch(sorted(rows.s.unique()), t0, t1, secrets, "alpaca")
+    rows = probe.forward_returns(rows, {s: calendar.trim(split_sessions(b)) for s, b in raw.items()}, horizons, calendar)
     thresholds = {}
     try:  # each spec on its own, so one bad spec doesn't cost the others their thresholds
         raw = (yaml.safe_load(Path(a.file).read_text()) or {}).get("classifiers") or []
