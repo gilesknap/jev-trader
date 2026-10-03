@@ -156,3 +156,43 @@ def test_promotion_never_counts_trades_before_the_experiment_start(tmp_path):
     s = spec(id="idea", mode="live")
     golive.enforce_promotion([s], note, True, golive.START_DATE + dt.timedelta(days=1), tmp_path, state)
     assert s.mode == "live"
+
+
+def test_promotion_ignores_closes_of_positions_opened_under_an_earlier_spec(tmp_path):
+    """A sell row carries its entry's spec_hash: a position opened under the old spec and closed
+    after the edit (same day or later) is not evidence for the new spec. Unstamped rows fall back
+    to the date rule."""
+    state = tmp_path / "promotion.json"
+    note = lambda lvl, msg: None
+    old, new = spec(id="idea", mode="shadow"), spec(id="idea", mode="live", stop_pct=0.7)
+    digest = golive.custom_features_digest()
+    h_old, h_new = golive.spec_hash(old, digest), golive.spec_hash(new, digest)
+    assert h_old != h_new
+    golive.enforce_promotion([new], note, True, dt.date(2026, 10, 22), tmp_path, state)  # record starts 10-22
+    cols = ["time", "book", "classifier", "symbol", "side", "qty", "price", "notional", "reason", "pnl", "pnl_pct",
+            "model", "code_sha", "spec_hash"]
+
+    def write(rows):
+        with (tmp_path / "trades.csv").open("w", newline="") as f:
+            w = csv.DictWriter(f, cols)
+            w.writeheader()
+            for day, h, n in rows:
+                for _ in range(n):
+                    w.writerow({"time": f"{day}T11:00-04:00", "book": "paper", "classifier": "idea", "symbol": "SPY",
+                                "side": "sell", "qty": 1, "price": 1, "notional": 1, "reason": "x", "pnl": 0.1,
+                                "pnl_pct": 0.3, "spec_hash": h})
+
+    # 25 profitable closes after the edit, all of positions opened under the old spec: not counted
+    write([("2026-10-22", h_old, 25)])
+    assert golive.shadow_record("idea", "2026-10-22", tmp_path, h_new) == (0, None)
+    s = spec(id="idea", mode="live", stop_pct=0.7)
+    golive.enforce_promotion([s], note, True, dt.date(2026, 10, 23), tmp_path, state)
+    assert s.mode == "shadow"
+    # without a hash to check (the old call) the date rule alone would have counted them
+    assert golive.shadow_record("idea", "2026-10-22", tmp_path)[0] == 25
+    # closes on the new spec count, and so do unstamped ones dated on or after the record's start
+    write([("2026-10-22", h_old, 25), ("2026-10-22", h_new, 15), ("2026-10-23", "", 5), ("2026-10-21", "", 9)])
+    assert golive.shadow_record("idea", "2026-10-22", tmp_path, h_new)[0] == 20
+    s = spec(id="idea", mode="live", stop_pct=0.7)
+    golive.enforce_promotion([s], note, True, dt.date(2026, 10, 24), tmp_path, state)
+    assert s.mode == "live"

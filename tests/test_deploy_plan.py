@@ -136,6 +136,7 @@ def test_plan_leaves_no_gpg_agent_or_socket_dir(tmp_path, keys, monkeypatch):
             socketdirs.append(sh("gpgconf", "--homedir", homes[-1], "--list-dirs", "socketdir"))
             return homes[-1]
 
+    # deploy.tempfile is the tempfile module itself: patched for this test only (monkeypatch restores it).
     monkeypatch.setattr(deploy.tempfile, "TemporaryDirectory", Recording)
     r = Repo(tmp_path, keys[0])
     base = r.git("rev-parse", "HEAD")
