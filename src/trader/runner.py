@@ -23,7 +23,7 @@ from trader import features as F
 from trader import guardrails as G
 from trader.alerts import notify
 from trader.broker import AlpacaBroker
-from trader.data import ET, fetch_alpaca, gate_samples, prior_sessions, split_sessions
+from trader.data import ET, GATE_LOOKBACKS, GateSampleError, fetch_alpaca, gate_samples, prior_sessions, split_sessions
 from trader.engine import Book, Engine, stale_feed
 from trader.market_calendar import Calendar, fetch_calendar, session_from_row
 
@@ -154,31 +154,55 @@ def _session_for_run(client):
 
 
 def _recent_calendar(client, today: dt.date, alert=notify) -> Calendar:
-    """The last ten days' exchange sessions, read once at startup, so prior sessions that closed
-    early are cut at their close. Unreadable: alerts, and those days count as regular sessions."""
+    """The exchange sessions over the gate's widest sample window, read once at startup (one call),
+    so prior sessions that closed early are cut at their close. Unreadable: alerts, and those days
+    count as regular sessions."""
     try:
-        return fetch_calendar(client, today - dt.timedelta(days=10), today)
+        return fetch_calendar(client, today - dt.timedelta(days=max(GATE_LOOKBACKS) + 2), today)
     except Exception as e:
         alert("info", f"couldn't read the recent exchange calendar ({e!r}): an early close in the last few "
                       "days is treated as a full session for prior-day features and the feature gate")
         return Calendar()
 
 
-def _load_specs(file, secrets, calendar: Calendar | None = None):
+def _load_specs(file, secrets, calendar: Calendar | None = None, now: dt.datetime | None = None):
     """Gate custom features on recent history, then validate the classifier file."""
     from trader.classifier import load_specs_report
     from trader.features.harness import run_gate
 
     calendar = calendar or Calendar()
-    end = dt.datetime.now(ET) - dt.timedelta(minutes=20)
-    samples = gate_samples(lambda days: {s: calendar.trim(split_sessions(b)) for s, b in _fetch_within(
-        STARTUP_FETCH_TIMEOUT_S, ["SPY", "QQQ"], end - dt.timedelta(days=days), end, secrets).items()})
+    now = now or dt.datetime.now(ET)
+    end = now - dt.timedelta(minutes=20)
+
+    def sessions_for(days):  # completed sessions only: a mid-session restart's partial today is no sample
+        return {s: {d: b for d, b in calendar.trim(split_sessions(bars)).items() if d < now.date()}
+                for s, bars in _fetch_within(STARTUP_FETCH_TIMEOUT_S, ["SPY", "QQQ"], end - dt.timedelta(days=days),
+                                             end, secrets).items()}
+    try:
+        samples = gate_samples(sessions_for)
+    except GateSampleError:
+        raise
+    except Exception as e:  # e.g. the bars API down: a data problem, said as such by the caller
+        raise GateSampleError(f"couldn't fetch the custom-feature gate's sample bars: {e!r}") from e
     report = run_gate(config.CUSTOM_FEATURES_DIR, samples, alert=notify)
     if report.errors:
         notify("urgent", f"Custom features rejected: {report.errors}")
     specs, dropped = load_specs_report(file, F.known_features(), set(config.universe()))
     _alert_dropped(dropped)
     return specs
+
+
+def _specs_for_session(file, secrets, calendar: Calendar, alert=notify) -> list:
+    """_load_specs for run_session: on any failure nothing trades today, with an alert that says
+    why (a gate that couldn't get its sample bars is not an invalid classifiers.yaml)."""
+    try:
+        return _load_specs(file, secrets, calendar)
+    except GateSampleError as e:
+        alert("urgent", f"custom-feature gate couldn't run, trading nothing today: {e}. A market-data "
+                        "problem, not classifiers.yaml")
+    except Exception as e:
+        alert("urgent", f"classifiers.yaml invalid, trading nothing today: {e}")
+    return []
 
 
 def _alert_dropped(dropped: dict[str, str], alert=notify) -> None:
@@ -500,11 +524,7 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
         time.sleep(30)
 
     recent = _recent_calendar(paper.client, open_.date(), notify)
-    try:
-        specs = _load_specs(file, secrets, recent)
-    except Exception as e:
-        notify("urgent", f"classifiers.yaml invalid, trading nothing today: {e}")
-        specs = []
+    specs = _specs_for_session(file, secrets, recent, notify)
     specs = _exclude_prelaunch_specs(specs, open_.date())
     labels = [p for p in (s.family_problem() for s in specs) if p]
     if labels:  # a label only feeds the scoreboard: say so, but trade as normal

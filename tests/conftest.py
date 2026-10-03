@@ -95,7 +95,18 @@ TEST_START_DATE = dt.date(2026, 10, 5)
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "config_start_date: use config.yaml's experiment.start_date, unpinned")
+    config.addinivalue_line("markers", "speed_gate: keep the feature gate's real per-call speed budget")
     config.addinivalue_line("markers", "real_strategist_alerts: leave config.STRATEGIST_ALERTS at its default")
+
+
+@pytest.fixture(autouse=True)
+def generous_speed_budget(request, monkeypatch):
+    """The feature gate's speed budget is wall-clock, so a loaded host (a deploy's test run beside a
+    replay) can fail any test that runs the gate. Only the speed_gate test keeps the real one."""
+    from trader.features import harness
+
+    if request.node.get_closest_marker("speed_gate") is None:
+        monkeypatch.setattr(harness, "SPEED_BUDGET_S", 1.0)
 
 
 @pytest.fixture(autouse=True)

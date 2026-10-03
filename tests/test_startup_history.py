@@ -79,7 +79,7 @@ def test_a_hung_gate_sample_fetch_is_given_up_on(monkeypatch, hang):
     monkeypatch.setattr(runner, "STARTUP_FETCH_TIMEOUT_S", 0.05)
     monkeypatch.setattr(runner, "fetch_alpaca", hang)
     monkeypatch.setattr(trader.features.harness, "run_gate", lambda *a, **k: pytest.fail("gated without samples"))
-    with pytest.raises(TimeoutError):
+    with pytest.raises(runner.GateSampleError, match="TimeoutError"):  # said as a data problem, not a bad file
         runner._load_specs("unused.yaml", {})
 
 

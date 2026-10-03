@@ -127,8 +127,16 @@ def _session_clock(bars: pd.DataFrame) -> tuple[list[float], float]:
     return minute, minute[-1]
 
 
-def evaluate(names: list[str], sessions: list[tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]]) -> dict[str, str]:
-    """sessions: (bars, prev_day, spy) per day. Returns name -> error for failures."""
+# The gate's speed limit: mean wall-clock seconds per call. Machine load counts against it, so the
+# tests relax it (conftest) except in the one test about it.
+SPEED_BUDGET_S = 0.005
+
+
+def evaluate(names: list[str], sessions: list[tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]],
+             budget_s: float | None = None) -> dict[str, str]:
+    """sessions: (bars, prev_day, spy) per day. Returns name -> error for failures. `budget_s`:
+    the speed limit, SPEED_BUDGET_S by default (the sandbox passes the runner's)."""
+    budget_s = SPEED_BUDGET_S if budget_s is None else budget_s
     errors = {}
     for name in names:
         fn = F.REGISTRY[name]
@@ -153,7 +161,7 @@ def evaluate(names: list[str], sessions: list[tuple[pd.DataFrame, pd.DataFrame, 
             errors[name] = "no bars to evaluate"
         elif finite / total < 0.8:
             errors[name] = f"only {finite}/{total} finite values"
-        elif elapsed / total > 0.005:
+        elif elapsed / total > budget_s:
             errors[name] = f"too slow: {elapsed / total * 1000:.1f} ms/call"
     return errors
 
