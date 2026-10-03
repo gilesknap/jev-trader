@@ -13,9 +13,11 @@ asks two questions per probe and horizon:
    without P(ENTER) as an extra input. Both are fitted and scored on exactly the same rows and
    days, and `jev_increment` is the paired per-day difference in IC (with Jev minus without)
    with a 95% interval. Only an interval above zero says Jev adds something its inputs don't;
-   otherwise the honest reading is "inconclusive: no detectable incremental value", which is
-   not proof that a plain rule would do. And a linear model is a low bar: a lift says Jev
-   combines its inputs usefully, not that no rule could, nor that it trades better.
+   one below zero says Jev does worse than its inputs alone; anything else is "inconclusive:
+   no detectable incremental value", which is not proof that a plain rule would do. The test
+   is per probe and horizon, so a few readings will disagree by chance. And a linear model is
+   a low bar: a lift says Jev combines its inputs usefully, not that no rule could, nor that
+   it trades better.
 
 Forward returns run from the close the question was asked at, to the close `h` minutes later,
 cut off at the end-of-day flatten (close - 15 min, from the exchange calendar: 15:45 ET, or
@@ -35,6 +37,7 @@ import numpy as np
 import pandas as pd
 
 from trader.market_calendar import Calendar, Session
+from trader.stats import t95
 
 SLIPPAGE_ROUND_TRIP_PCT = 0.1  # 0.05% a side, as everywhere else
 MIN_DAYS_TO_FIT = 3  # walk-forward baselines start once this many earlier days exist
@@ -133,13 +136,17 @@ def _ridge_ic(train: pd.DataFrame, test: pd.DataFrame, cols: list[str], y: str) 
     """Out-of-sample IC on `test` of a ridge regression fitted on `train`. The ridge penalty keeps
     a dozen inputs over a few hundred noisy rows from fitting noise. The symbol is an input as
     one 0/1 column per symbol seen in training (a symbol first seen on the test day gets none),
-    so a ticker effect Jev can see is open to the baseline too."""
-    syms = sorted(train.s.unique()) if "s" in train else []
+    so a ticker effect Jev can see is open to the baseline too. Dummies are scaled by their
+    training sd like every other input (but not centred, so an unseen symbol sits on the
+    intercept): under one shared penalty, a rare symbol's effect would otherwise be shrunk far
+    more than the same effect carried by P(ENTER), and Jev would get credit for the ticker."""
+    syms = sorted(train.s.unique()) if "s" in train and train.s.nunique() > 1 else []
     mu, sd = train[cols].mean(), train[cols].std().replace(0, 1)
+    dsd = [(train.s == s).to_numpy(float).std(ddof=1) or 1.0 for s in syms]
 
     def design(df):
         return np.c_[np.ones(len(df)), ((df[cols] - mu) / sd).to_numpy(),
-                     *([(df.s == s).to_numpy(float) for s in syms] if len(syms) > 1 else [])]
+                     *[(df.s == s).to_numpy(float) / k for s, k in zip(syms, dsd, strict=True)]]
 
     X = design(train)
     pen = RIDGE * len(train) * np.eye(X.shape[1])
@@ -160,6 +167,7 @@ def _walk_forward(g: pd.DataFrame, cols: list[str], y: str) -> dict:
         if i < MIN_DAYS_TO_FIT:
             continue
         train, test = g[g.day.isin(days[:i])], g[g.day == d]
+        # Five rows per coefficient of the larger (with-Jev) model, symbol dummies included.
         if len(train) < 5 * (len(cols) + 2 + train.s.nunique()) or len(test) < 5:
             continue
         b, p = _ridge_ic(train, test, cols, y), _ridge_ic(train, test, cols + ["p_enter"], y)
@@ -173,13 +181,14 @@ def _walk_forward(g: pd.DataFrame, cols: list[str], y: str) -> dict:
 def _increment(deltas: list[float]) -> dict:
     """Mean per-day IC gain from adding Jev, with a 95% interval across days and a verdict that
     is allowed to say "inconclusive"."""
-    from trader.scoreboard import t95
-
     n = len(deltas)
     m = float(np.mean(deltas)) if n else None
-    half = float(t95(n - 1) * np.std(deltas, ddof=1) / math.sqrt(n)) if n >= MIN_DAYS_FOR_T else None
-    if half is None:
+    sd = float(np.std(deltas, ddof=1)) if n > 1 else 0.0
+    half = float(t95(n - 1) * sd / math.sqrt(n)) if n >= MIN_DAYS_FOR_T and sd > 0 else None
+    if n < MIN_DAYS_FOR_T:
         verdict = f"inconclusive: too few days ({n})"
+    elif half is None:
+        verdict = "inconclusive: no spread across days"
     elif m - half > 0:
         verdict = "Jev adds to its inputs: 95% interval above zero"
     elif m + half < 0:

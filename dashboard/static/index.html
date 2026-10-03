@@ -797,7 +797,8 @@ const ic = s => !s || s.mean == null ? "–" : (s.mean >= 0 ? "+" : "−") + Mat
 const tval = s => !s || s.t == null ? "" : ` <span class="muted">t ${s.t >= 0 ? "" : "−"}${Math.abs(s.t).toFixed(1)}</span>`;
 // A deliberately cautious one-line reading of the main horizon (30 min when present). It never
 // turns green: at these sample sizes nothing here is more than a hint. The two baselines are compared
-// by the report's paired per-day test (jev_increment); older reports without it get no reading.
+// by the report's paired per-day test (jev_increment), shown for the main horizon; an older report
+// without it reads as "needs a few more days".
 function probeVerdict(pr, h) {
   const j = h && h.jev_ic, plain = h && h.wf_inputs_only, plus = h && h.wf_inputs_plus_jev;
   const d = j && j.days != null ? j.days : pr.days;

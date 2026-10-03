@@ -141,8 +141,9 @@ and horizon (15, 30 and 60 minutes by default, cut at the flatten, 15 minutes be
    walk-forward (on earlier days only, scored on the next), with and without P(ENTER) as an extra
    input, both on exactly the same rows and days. `jev_increment` is the paired per-day IC gain
    with a 95% interval. Only an interval above zero says Jev adds something its inputs don't;
-   anything else is "inconclusive: no detectable incremental value", not proof that a plain
-   trigger would do. A lift is weaker evidence than it looks: beating a linear model is a low bar,
+   one below zero says Jev does worse than its inputs alone; anything else is "inconclusive: no
+   detectable incremental value", not proof that a plain trigger would do. The test is per probe
+   and horizon, so a few readings will disagree by chance. A lift is weaker evidence than it looks: beating a linear model is a low bar,
    and ranking returns is not the same as trading them better.
 
 After each close the post-close wrapper writes the last 30 days' report to
