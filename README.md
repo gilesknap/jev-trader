@@ -42,7 +42,9 @@ before the close), on about 30 liquid US ETFs and mega-cap stocks, in a cash acc
 shorting, no margin, no options or other derivatives, no crypto. That keeps the risk easy to
 reason about and the results easy to attribute. None of it is fundamental to the design,
 though: the universe is a config file, and the guardrails and broker adapter are ordinary code.
-A fork can widen the scope as far as its owner is comfortable with.
+A fork can widen the scope as far as its owner is comfortable with: see
+[widening the trading scope](https://gilesknap.github.io/jev-trader/how-to/widen-the-scope.html),
+including where the next bills come from (paid real-time market data, for one).
 
 ## How it's laid out
 
