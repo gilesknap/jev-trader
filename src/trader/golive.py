@@ -22,7 +22,6 @@ import json
 import math
 import statistics
 from dataclasses import dataclass
-from zoneinfo import ZoneInfo
 
 from trader import config
 from trader import guardrails as G
@@ -40,13 +39,11 @@ LIVE_BOOK = config.RUNTIME_DIR / "books" / "live"
 # Alerts saved in golive.json with the state change they announce, until they've been sent: a
 # crash between the save and the send leaves them there for resend_unsent() at the next start.
 UNSENT = "unsent_alerts"
-ET = ZoneInfo("America/New_York")
 
 
 def session_date() -> dt.date:
-    """Today's date in New York, the session calendar everything here is stamped in. The host's
-    `date.today()` (UTC on the server) is already tomorrow on a US evening."""
-    return dt.datetime.now(ET).date()
+    """Today's date in New York, the session calendar everything here is stamped in (config.ny_today)."""
+    return config.ny_today()
 
 
 @dataclass
@@ -176,27 +173,53 @@ def enforce_promotion(specs, notify, account_live: bool, today: dt.date | None =
     shadow. The record is tracked in paper mode too, so it's ready when the account goes live."""
     state_file = state_file or PROMOTION_FILE
     today = (today or session_date()).isoformat()
-    state = json.loads(state_file.read_text()) if state_file.exists() else {}
+    try:
+        state = json.loads(state_file.read_text()) if state_file.exists() else {}
+        if not isinstance(state, dict):
+            raise ValueError("not a JSON object")
+    except (OSError, ValueError, RecursionError) as e:
+        # Fail closed, never abort the session: every record restarts today, so no rule can go live
+        # until it re-earns its paper record. The file is set aside for a look.
+        aside = state_file.with_name(f"{state_file.name}.corrupt-{dt.datetime.now(dt.UTC):%Y%m%dT%H%M%S%fZ}")
+        try:
+            state_file.replace(aside)
+            kept = f"moved to {aside.name}"
+        except OSError:
+            kept = "left in place"
+        notify("urgent", f"promotion record {state_file.name} is unreadable ({e!r}; {kept}): every classifier's "
+                         "record restarts today, so none can go live until it earns a fresh paper record")
+        state = {}
     digest = custom_features_digest(custom_dir)
     for s in specs:
         if s.probe:
             continue  # probes never trade: no promotion record, and nothing on the scoreboard
-        h = spec_hash(s, digest)
-        rec = state.get(s.id)
-        if not rec or rec["hash"] != h:
-            state[s.id] = rec = {"hash": h, "since": today}
-        rec["family"] = s.family_label  # kept after the classifier is retired, for the scoreboard
-        if s.mode == "live" and not s.control:
-            n, exp = shadow_record(s.id, rec["since"], book_dir, rec["hash"])
-            if n < MIN_TRADES or exp is None or exp <= 0:
+        try:
+            h = spec_hash(s, digest)
+            rec = state.get(s.id)
+            if not isinstance(rec, dict) or rec.get("hash") != h:
+                state[s.id] = rec = {"hash": h, "since": today}
+            rec["family"] = s.family_label  # kept after the classifier is retired, for the scoreboard
+            if s.mode == "live" and not s.control:
+                n, exp = shadow_record(s.id, rec["since"], book_dir, rec["hash"])
+                if n < MIN_TRADES or exp is None or exp <= 0:
+                    s.mode = "shadow"
+                    if account_live:
+                        notify("urgent", f"{s.id} asked for live but has {n}/{MIN_TRADES} paper trades on its current spec "
+                                         f"(expectancy {'n/a' if exp is None else f'{exp:+.3f}%'}): running it in shadow")
+        except Exception as e:  # fail closed for this rule only: never abort the session for all of them
+            asked_live = s.mode == "live"
+            if asked_live:
                 s.mode = "shadow"
-                if account_live:
-                    notify("urgent", f"{s.id} asked for live but has {n}/{MIN_TRADES} paper trades on its current spec "
-                                     f"(expectancy {'n/a' if exp is None else f'{exp:+.3f}%'}): running it in shadow")
-    state_file.parent.mkdir(parents=True, exist_ok=True)
-    tmp = state_file.with_suffix(".tmp")
-    tmp.write_text(json.dumps(state, indent=1))
-    tmp.replace(state_file)
+            notify("urgent" if asked_live and account_live else "info",
+                   f"{s.id}: its promotion check failed ({e!r}); "
+                   + ("running it in shadow" if asked_live else "it can't be promoted until that is fixed"))
+    try:
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp = state_file.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state, indent=1))
+        tmp.replace(state_file)
+    except OSError as e:  # the modes above already hold for today; the record is simply not advanced
+        notify("urgent", f"promotion record {state_file.name} couldn't be saved ({e!r}); today's modes are unaffected")
     return specs
 
 
@@ -218,6 +241,10 @@ def load_state() -> dict:
             raise ValueError("not an object with a known status")
         if type(st.get("sessions_left", 0)) is not int:
             raise ValueError("sessions_left is not an integer")
+        un = st.get(UNSENT, [])
+        if not isinstance(un, list) or not all(isinstance(n, list) and len(n) == 2 and all(isinstance(x, str) for x in n)
+                                               for n in un):
+            raise ValueError(f"{UNSENT} is not a list of [level, message]")
         return st
     except Exception as e:
         sha = hashlib.sha256(raw).hexdigest()[:12] if raw is not None else "unreadable"
@@ -410,8 +437,8 @@ def _save_then_alert(st: dict, expected: dict, notices: list, notify) -> bool:
     """The compare-and-swap save of an automatic update, with its alerts saved in it (UNSENT); then
     they're sent and cleared. A crash after the save can't lose them (resend_unsent), and a dropped
     (stale) update sends nothing. True if saved."""
-    if notices:
-        st[UNSENT] = [list(n) for n in notices]
+    if notices:  # after any left by a failed earlier send, so neither is lost
+        st[UNSENT] = (st.get(UNSENT) or []) + [list(n) for n in notices]
     if not save_state(st, expected):
         st.pop(UNSENT, None)
         return False
@@ -455,6 +482,7 @@ def demote_on_halt_cleared(notify) -> bool:
         st = load_state()
         if st["status"] != "live":
             return False
+        st.pop(UNSENT, None)  # superseded (a GOING LIVE never sent): this alert says where things stand
         st.update(status="demoted", demoted_on=session_date().isoformat(), demoted_by="clear-halt")
         _write_state(st)
     notify("urgent", "Go-live was still LIVE when the live halt was cleared (the halted session's end was never "

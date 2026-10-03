@@ -122,6 +122,14 @@ def test_resend_never_raises(env):
     golive.resend_unsent(lambda *a: pytest.fail("nothing to send"))
     golive.save_state({"status": "pending", golive.UNSENT: "not a list of alerts"})
     golive.resend_unsent(lambda *a: None)
+    assert golive.load_state()["status"] == "corrupt"  # fails closed, like any malformed field
+
+
+def test_alerts_left_by_a_failed_send_go_out_with_the_next_ones(env):
+    golive.save_state({"status": "live", "live_since": "2026-10-20", golive.UNSENT: [["urgent", "earlier"]]})
+    sent = []
+    golive.after_session(lambda level, msg: sent.append(msg), live_book_halted=True, session=DAYS[20])
+    assert sent[0] == "earlier" and "HALTED" in sent[1] and golive.UNSENT not in golive.load_state()
 
 
 # ---- trading API timeouts on the session-start path -------------------------------------

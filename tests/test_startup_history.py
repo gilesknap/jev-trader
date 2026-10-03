@@ -84,7 +84,7 @@ def test_a_hung_gate_sample_fetch_is_given_up_on(monkeypatch, hang):
 
 
 OPEN = dt.datetime.combine(DAY, dt.time(9, 30), ET)
-TICK = dt.datetime.combine(DAY, dt.time(9, 36, 4), ET)
+TICK = dt.datetime.combine(DAY, dt.time(9, 36), ET)
 
 
 def today_bars():

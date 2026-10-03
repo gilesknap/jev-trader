@@ -42,7 +42,10 @@ stays until you release it.
 The runner decides paper or live once, when it starts (`schedule.runner_start`, 12:50 UK as
 shipped, well before the open); the switch to live happens then too. A HOLD pressed after that
 day's runner has started, even before the open, applies only from the next session; to stop today's live
-trading as well, press STOP.
+trading as well, press STOP. If the runner restarts on a paper day (after a HOLD, a demotion or a
+`config/mode.yaml` switch) while the live account still holds positions, it winds the live book
+down: nothing new is bought live, and everything it holds is sold in the first minute after the
+open, with an alert.
 
 ## Re-arm
 

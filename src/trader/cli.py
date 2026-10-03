@@ -87,7 +87,9 @@ def cmd_replay(a):
 
     import re
 
-    run_id = a.name or dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    from trader.data import ET
+
+    run_id = a.name or dt.datetime.now(ET).strftime("%Y%m%d-%H%M%S")  # New York time, like everything else
     if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,79}", run_id) or run_id in (".", ".."):
         sys.exit(f"invalid replay name {run_id!r}: letters, digits, '_', '-', '.' only")
     secrets = config.load_secrets()

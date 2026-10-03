@@ -38,6 +38,9 @@ TICK_DECISION_BUDGET_S = 35.0  # wall-clock seconds per tick for decision calls
 PROBE_TICK_BUDGET_S = 20.0
 # A market fill whose average price Alpaca hasn't reported by then is priced another way (#60).
 UNPRICED_FILL_WAIT = dt.timedelta(minutes=3)
+# An entry fill the broker reports more than this before the engine adopts it happened while the
+# runner wasn't watching (pending orders are polled every minute): its exit may predate adoption.
+OFFLINE_FILL = dt.timedelta(minutes=3)
 # The day-start equity read is retried this often before falling back (#119).
 START_EQUITY_TRIES = 3
 START_EQUITY_RETRY_S = 2.0
@@ -45,6 +48,9 @@ START_UNVERIFIED_NOTE = "no new entries: start equity unreadable"
 # A tracked position gone from the broker whose exit fill can't be read is looked up this many
 # times (once a tick) before its exit is recorded at a guessed price (#131).
 EXIT_LOOKUP_TRIES = 10
+# Book.blocked for the live book on a paper day (runner.wind_down_live_book): it trades nothing and
+# everything it holds is closed at the first tick.
+WIND_DOWN = "wind-down"
 
 TRADE_COLS = ["time", "book", "classifier", "symbol", "side", "qty", "price", "notional", "reason", "pnl", "pnl_pct",
               *PROVENANCE_COLS]  # provenance last: a file written before it is upgraded in place (Book)
@@ -61,6 +67,14 @@ def stale_feed(spy: pd.DataFrame | None, now: dt.datetime) -> tuple[bool, str]:
         return mso > 4, "no SPY bars this session"
     return (now - (spy.index[-1] + pd.Timedelta(minutes=1))) > dt.timedelta(minutes=3), f"last SPY bar {spy.index[-1]:%H:%M}"
 
+
+
+def _broker_time(at, now: dt.datetime) -> dt.datetime | None:
+    """A broker timestamp in `now`'s zone; None if absent or unreadable (never raises)."""
+    try:
+        return pd.Timestamp(at).tz_convert(now.tzinfo).to_pydatetime() if at is not None else None
+    except Exception:
+        return None
 
 @dataclass
 class Entry:
@@ -84,6 +98,9 @@ class Entry:
     banked: float = 0.0  # P&L already realised by a scale-out
     server_stop: float = 0.0  # price of the server-side stop order (when stop_id)
     last_sell: str = ""  # ISO time the last scale-out sell completed (its fill isn't the exit)
+    # ISO time the broker filled the entry, when that was before the engine adopted it (a limit that
+    # filled while the runner was down): its exit may be earlier than `time`, so look from here.
+    filled_at: str = ""
     # Bars before this (ISO) have been checked. Persisted: after a restart, bars from before
     # the trail raised the stop must not be re-tested against the raised stop.
     scanned_to: str = ""
@@ -98,7 +115,9 @@ class Entry:
 
     def exits_since(self) -> dt.datetime:
         """Where to look for this position's exit fills in the broker's order history."""
-        return dt.datetime.fromisoformat(self.last_sell) if self.last_sell else self.time
+        if self.last_sell:
+            return dt.datetime.fromisoformat(self.last_sell)
+        return dt.datetime.fromisoformat(self.filled_at) if self.filled_at else self.time
 
     def __post_init__(self):
         self.init_stop = self.init_stop or self.stop
@@ -185,7 +204,7 @@ class Book:
     dir: Path
     nav: NavBook = field(default_factory=NavBook)
     day_start_equity: float = 0.0
-    blocked: str | None = None  # "kill" | "halt" | "stop"
+    blocked: str | None = None  # "kill" | "halt" | "stop" | WIND_DOWN
     entries: dict[str, Entry] = field(default_factory=dict)
     pending: dict[str, Pending] = field(default_factory=dict)
     realised_today: float = 0.0
@@ -489,7 +508,7 @@ class Engine:
                              cash_at_open=b.cash_at_open, buys_today=0.0, account_at_open=snap,
                              start_unverified=b.start_unverified)
             if eq is not None:
-                b.nav.mark(eq)  # never marked with a stand-in: the HWM halt uses only real reads
+                self._mark_nav(b, eq)  # never marked with a stand-in: the HWM halt uses only real reads
             if b.start_unverified is None:  # a stand-in never goes in the log; see _start_equity_readable
                 self._opening_mark(b, opened_at, b.day_start_equity)
             try:  # a damaged trade log must never stop the session from starting
@@ -508,6 +527,7 @@ class Engine:
                                   f"({b.realised_today:.2f}) as today's realised loss")
             b.trades_today, b.wins_today = 0, 0
         self._restore_classifier_state(today)
+        self._floor_trades_from_ledger(today)
         ddir = self.run_dir / "decisions"
         ddir.mkdir(exist_ok=True)
         if self._decisions_fh:
@@ -529,6 +549,20 @@ class Engine:
         self._alert_every(f"start-equity:{b.name}", "urgent", f"[{b.name}] couldn't read equity at session "
                           f"start ({err!r}): no new entries until it can be read; exits, stops and the flatten run")
         return None
+
+    def _mark_nav(self, b: Book, eq: float) -> float:
+        """Mark unit NAV. The mark that issues a book's first units (a new book, or the first after
+        `trader rebase-paper`) is saved at once: nav.json is otherwise saved only at the close, so a
+        restart later that session would issue them again at the restart's equity, and the day's
+        P&L up to the restart would never enter the NAV record. Never raises on the save."""
+        fresh = b.nav.units <= 0
+        nav = b.nav.mark(eq)
+        if fresh and b.nav.units > 0:
+            try:
+                b.nav.save(b.dir / "nav.json")
+            except Exception as ex:
+                self._alert_every(f"nav-save:{b.name}", "urgent", f"[{b.name}] couldn't save the new NAV units: {ex!r}")
+        return nav
 
     def _opening_mark(self, b: Book, at: dt.datetime, equity: float) -> None:
         """The day's first equity row, at the real day-start equity, so the go-live gate's worst
@@ -611,7 +645,8 @@ class Engine:
             data = json.loads(f.read_text()) if f.exists() else {}
             if not isinstance(data, dict):
                 raise ValueError("not a JSON object")
-            if data.get("day") != today:
+            if data.get("day") != today:  # nothing saved today: start fresh, matched to what is held
+                self._resume_fresh()
                 return
             states = data.get("states", {})
             if not isinstance(states, dict) or not all(isinstance(v, dict) for v in states.values()):
@@ -621,10 +656,7 @@ class Engine:
                 f.replace(f.with_name(f.name + ".unreadable"))  # kept for a look; rewritten each tick
             except OSError:
                 pass
-            for cs in self.states:
-                for sym, st in cs.symbols.items():
-                    if not cs.spec.probe:
-                        self._resume_symbol(cs, sym, st, "armed", 0)
+            self._resume_fresh()
             self._alert_every("classifier-state", "urgent", f"{f.name} is unreadable ({ex}), so the rules start fresh: if the runner "
                                  "restarted mid-session, today's trade counts (max_trades) and stand-downs are "
                                  "lost and a rule may trade again today. Open positions are still managed. "
@@ -632,6 +664,9 @@ class Engine:
             return
         damaged = []
         for cs in self.states:
+            for sym, st in cs.symbols.items():  # one the file doesn't have (added mid-session) resumes fresh
+                if sym not in states.get(cs.spec.id, {}) and not cs.spec.probe:
+                    self._resume_symbol(cs, sym, st, "armed", 0)
             for sym, saved in states.get(cs.spec.id, {}).items():
                 st = cs.symbols.get(sym)
                 if st is None:
@@ -657,6 +692,46 @@ class Engine:
                                  f"{', '.join(damaged)}: they start fresh, so today's trade count and any "
                                  "stand-down for them are lost. Open positions are still managed.")
 
+    def _resume_fresh(self) -> None:
+        """Every rule starts armed with no trades today, matched to the positions and resting
+        orders its book holds now (one opened before the first save is resumed as holding)."""
+        for cs in self.states:
+            for sym, st in cs.symbols.items():
+                if not cs.spec.probe:
+                    self._resume_symbol(cs, sym, st, "armed", 0)
+
+    def _floor_trades_from_ledger(self, today: str) -> None:
+        """A rule's trade count can never be below what its book's trades.csv shows it opened today:
+        every position the engine opens writes an ENTER row at once, while classifier_state.json
+        is saved only at the end of the tick. So a fill booked after the last save, a crash between
+        the row and the save, or an unreadable state file (fresh start) no longer lets a rule
+        exceed max_trades. A rule raised to its limit while armed is retired, as after an exit.
+        Counted across every book on purpose: a rule whose mode changed today (sim to shadow, say)
+        still traded today. Best-effort: an unreadable ledger changes nothing (restore_realised
+        already reported it)."""
+        counts: dict[tuple[str, str], int] = {}
+        for b in self.unique_books():
+            p = b.dir / "trades.csv"
+            try:
+                with p.open(newline="") as f:
+                    for r in csv.DictReader(f):
+                        if (r.get("side") == "buy" and str(r.get("reason") or "").startswith("ENTER")
+                                and not str(r.get("reason")).startswith("ENTER (late fill)")
+                                and str(r.get("time") or "").startswith(today)):
+                            key = (r.get("classifier") or "", r.get("symbol") or "")
+                            counts[key] = counts.get(key, 0) + 1
+            except (OSError, ValueError, csv.Error):
+                continue
+        for cs in self.states:
+            if cs.spec.probe:
+                continue
+            for sym, st in cs.symbols.items():
+                n = counts.get((cs.spec.id, sym), 0)
+                if n > st.trades:
+                    st.trades = n
+                    if st.status == "armed":
+                        cs.on_exit(sym)  # re-arms only if the rule allows another trade today
+
     def _resume_symbol(self, cs: ClassifierState, sym: str, st, status: str, trades: int) -> None:
         """Set a symbol's restored state, matched to what its book holds now."""
         book = self.books[cs.spec.book_key]
@@ -677,7 +752,12 @@ class Engine:
     def end_day(self, now: dt.datetime) -> dict:
         summary = {}
         for b in self.unique_books():
-            eq = b.broker.equity()
+            try:
+                eq = b.broker.equity()
+            except Exception as ex:  # one account's API failure mustn't stop the session's end (gate, summary)
+                self._alert_every(f"end-equity:{b.name}", "urgent",
+                                  f"[{b.name}] equity unreadable at the close ({ex!r}): no closing mark today")
+                continue
             b.nav.mark(eq)
             b.nav.save(b.dir / "nav.json")
             b.append_equity(now, eq)
@@ -766,7 +846,7 @@ class Engine:
         self._enforce_exits(b, now, bars)
         self._risk(b, now)
         if b.blocked and (b.entries or b.pending):  # a kill/halt/STOP flatten failed earlier: keep retrying
-            self._flatten(b, now, prices, f"{b.blocked} (retry)")
+            self._flatten(b, now, prices, "wind-down (paper today)" if b.blocked == WIND_DOWN else f"{b.blocked} (retry)")
         if b.blocked == "stop" or (self.day and b.stop_requested(self.day)):
             if b.blocked != "stop":
                 b.blocked = "stop"
@@ -936,7 +1016,7 @@ class Engine:
         eq = b.broker.equity()
         if b.start_unverified:
             self._start_equity_readable(b, eq, now)
-        nav = b.nav.mark(eq)
+        nav = self._mark_nav(b, eq)
         # Still "exact" (settled cash unreadable): nothing is held or bought, so today's loss is 0,
         # not the read against the stand-in; the halt is still checked on the real read.
         base = eq if b.start_unverified == "exact" else b.day_start_equity
@@ -1291,7 +1371,10 @@ class Engine:
         return cs.symbols.get(sym) if cs else None
 
     def _open_entry(self, book: Book, classifier, sym, fill: Fill, now, stop_pct, target_pct, params, cid,
-                    place_stop: bool = True, estimated: bool = False) -> None:
+                    place_stop: bool = True, estimated: bool = False, filled_at: dt.datetime | None = None) -> None:
+        """`filled_at`: the broker's fill time, when it was well before `now` (filled while the runner
+        was down). The ENTER row is stamped then and exits are looked up from then; the engine's own
+        clock (time stop, the first tick's checks) still starts at `now`."""
         if not (fill.price > 0 and fill.qty > 0):  # never track a position with no price: no stop would work
             self.alert("urgent", f"[{book.name}] {sym} filled with no usable price/qty ({fill.qty} @ {fill.price}); "
                                  "not tracked, so the next minute closes it as an untracked position")
@@ -1302,7 +1385,8 @@ class Engine:
                       trail_pct=params.get("trail_pct"), max_hold_min=params.get("max_hold_min"),
                       scale_at=fill.price * (1 + sp / 100) if sp else None,
                       scale_fraction=params.get("scale_fraction", 0.0), scale_breakeven=params.get("scale_breakeven", False),
-                      price_estimated=estimated, spec_hash=book.provenance.specs.get(classifier, ""))
+                      price_estimated=estimated, spec_hash=book.provenance.specs.get(classifier, ""),
+                      filled_at=filled_at.isoformat() if filled_at else "")
         book.entries[sym] = entry
         book.save_entries()
         if place_stop:
@@ -1319,8 +1403,8 @@ class Engine:
             if st.note.startswith("limit ") and " resting" in st.note:  # filled: keep only the allocator's part
                 st.note = st.note.partition(" resting")[2].strip().removeprefix("(").removesuffix(")")
         book.append_trade({
-            "time": now.isoformat(timespec="minutes"), "book": book.name, "classifier": classifier, "symbol": sym,
-            "side": "buy", "qty": f"{fill.qty:.6f}", "price": f"{fill.price:.4f}",
+            "time": (filled_at or now).isoformat(timespec="minutes"), "book": book.name, "classifier": classifier,
+            "symbol": sym, "side": "buy", "qty": f"{fill.qty:.6f}", "price": f"{fill.price:.4f}",
             "notional": f"{fill.qty * fill.price:.2f}", "reason": "ENTER" + (" (price estimated)" if estimated else ""),
             "pnl": "", "pnl_pct": "",
         })
@@ -1419,9 +1503,11 @@ class Engine:
             # (the order is known, so they're adopted, not sold as an orphan).
             fill = Fill(sym, "buy", delta, px, now) if first else \
                 Fill(sym, "buy", p.filled_qty, p.filled_cost / p.filled_qty, now)
+            at = _broker_time(o.filled_at, now)
+            offline = at if first and at is not None and now - at > OFFLINE_FILL else None
             self._open_entry(b, p.classifier, sym, fill, now, p.stop_pct, p.target_pct,
                              p.params, p.client_id if first else f"{p.client_id}-l{now:%H%M}", place_stop,
-                             estimated=p.price_estimated)
+                             estimated=p.price_estimated, filled_at=offline)
             if o.filled_at is not None and sym in b.entries:  # scan the fill's own bar for the stop (conservative)
                 self._set_cursor(b, b.entries[sym], pd.Timestamp(o.filled_at).tz_convert(now.tzinfo).floor("min"))
             return
