@@ -157,7 +157,11 @@ if [[ -n $SPLIT ]]; then
     echo "Deployed: code $(git -C /srv/trading/main -c safe.directory='*' log --oneline -1 2>/dev/null)"
     echo "          config $(git -C "$C" -c safe.directory='*' log --oneline -1 2>/dev/null)"
 else
-    echo "Mode: $(grep -E '^mode:' /srv/trading/main/config/mode.yaml 2>/dev/null || echo unknown)"
+    if [[ -f /srv/trading/main/config.yaml ]]; then
+        echo "Mode: $(grep -E '^mode:' /srv/trading/main/config/mode.yaml 2>/dev/null || echo unknown)"
+    else
+        echo "Mode: none (main is code only, with no data: see the failed check above)"
+    fi
     echo "Deployed: $(git -C /srv/trading/main -c safe.directory='*' log --oneline -1 2>/dev/null)"
 fi
 if (( fails )); then echo "$fails check(s) FAILED"; exit 1; else echo "all checks passed"; fi
