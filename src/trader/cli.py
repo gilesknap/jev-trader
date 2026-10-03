@@ -49,10 +49,28 @@ def _specs(path: Path, source: str = "alpaca"):
     return load_specs(path, F.known_features(), set(config.universe()))
 
 
+def _has_custom_features(directory: Path) -> bool:
+    """Whether the gate has anything to run (the sandbox's own test): a refused directory has
+    nothing, and run_gate reports it without needing sample bars."""
+    from trader.safeio import read_sources
+
+    try:
+        sources, _ = read_sources(directory)
+    except (OSError, ValueError):
+        return False
+    return any(not name.startswith("_") for name in sources)
+
+
 def cmd_validate(a):
     from trader.features.harness import run_gate
 
-    report = run_gate(config.CUSTOM_FEATURES_DIR, _gate_samples(a.source))
+    samples = []
+    if _has_custom_features(config.CUSTOM_FEATURES_DIR):  # no custom features: no fetch to fail
+        try:
+            samples = _gate_samples(a.source)
+        except Exception as e:  # a data outage isn't a bug in the specs: one line, not a traceback
+            sys.exit(f"custom features NOT gated: couldn't fetch {a.source} sample bars ({type(e).__name__}: {e})")
+    report = run_gate(config.CUSTOM_FEATURES_DIR, samples)
     print(json.dumps({"custom_ok": report.ok, "custom_features": report.features, "errors": report.errors}, indent=1))
     try:
         specs = _specs(Path(a.file))
