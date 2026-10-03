@@ -323,8 +323,9 @@ def cmd_features(a):
         print(f"REJECTED {f}: {e}")
 
 
-def main(argv=None):
-    p = argparse.ArgumentParser(prog="trader")
+def build_parser() -> argparse.ArgumentParser:
+    """The `trader` command line (also rendered into the docs' CLI reference)."""
+    p = argparse.ArgumentParser(prog="trader", description="Run, inspect and control the trading system.")
     sub = p.add_subparsers(required=True)
     default_file = str(config.CLASSIFIERS_FILE)
 
@@ -422,7 +423,11 @@ def main(argv=None):
     s = sub.add_parser("features", help="list available features")
     s.set_defaults(fn=cmd_features)
 
-    a = p.parse_args(argv)
+    return p
+
+
+def main(argv=None):
+    a = build_parser().parse_args(argv)
     # Commands that write runtime state (the runner's own units always have TRADER_RUNTIME set).
     if a.fn in (cmd_run, cmd_stop, cmd_clear_halt, cmd_watchdog, cmd_hold_live, cmd_release_live,
                 cmd_rebase_paper) or (a.fn is cmd_compact and a.scope == "runtime"):

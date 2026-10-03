@@ -6,7 +6,7 @@ Each run starts with **no memory**. This repository is your memory; read it, the
 
 `DESIGN.md` is the agreed design. This file is how you operate within it.
 
-> Interactive sessions where the human is building or maintaining the system are not strategist runs: follow the human, and use `README.md` for operations.
+> Interactive sessions where the human is building or maintaining the system are not strategist runs: follow the human, and use the how-to guides in `docs/` for operations.
 
 ## Mission
 1. **Beat buy-and-hold SPY on a risk-adjusted basis**, net of slippage, measured on unit NAV.

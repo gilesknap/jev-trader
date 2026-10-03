@@ -1,6 +1,6 @@
 # Setting up your own copy
 
-This guide takes you from nothing to a runner trading on paper, on your own VPS, from your own private copy of this repo. It covers the accounts you need and the order to do things in. [README.md](README.md) covers the architecture and day-to-day operations; this guide doesn't repeat them.
+This guide takes you from nothing to a runner trading on paper, on your own VPS, from your own private copy of this repo. It covers the accounts you need and the order to do things in. The [explanations](../explanations.md) cover the architecture, and the [how-to guides](../how-to.md) cover day-to-day operations; this guide doesn't repeat them.
 
 Plan on an evening for steps 1–7, then a few days of paper before the experiment starts (step 8).
 
@@ -128,7 +128,7 @@ The dashboard (with its STOP button) is served only on your tailnet, and the VPS
 
 1. Make a Tailscale account (free) and install Tailscale on your laptop and phone.
 2. In the admin console → Access controls, replace the default allow-all policy with something like this (swap in your login):
-   ```jsonc
+   ```javascript
    {
      "tagOwners": {
        "tag:vps": ["autogroup:admin"]
@@ -153,7 +153,7 @@ The dashboard (with its STOP button) is served only on your tailnet, and the VPS
    Open the printed link and approve it. Tagging the machine also means its key doesn't expire with your login.
 5. Point the `HostName` in your `~/.ssh/config` alias at the VPS's Tailscale name (`tailscale status` shows it), and close public SSH as described in step 1 if you like.
 
-**How the dashboard is protected.** `3-runner.sh` runs `tailscale serve` to proxy `https://<vps>:8444` to a Unix socket only `runner` can reach. Tailscale adds a `Tailscale-User-Login` header naming who is connecting, and the dashboard lets in only the logins listed in `config.yaml` (the dashboard users). A request without that header is refused. The one exception is `TRADER_DASHBOARD_ALLOW_LOCAL=1`, which lets header-less requests in. It exists for local development only (see README). **Never set it on the Tailscale-served dashboard**, not even "temporarily" in a systemd drop-in. `tailscale serve` sends no login header for requests from tagged devices, and the VPS itself is tagged, so any process on the VPS (the strategist included) could reach the dashboard and press STOP. To use the dashboard from a machine without Tailscale, use the SSH tunnel (step 2b), the only unit where that setting belongs.
+**How the dashboard is protected.** `3-runner.sh` runs `tailscale serve` to proxy `https://<vps>:8444` to a Unix socket only `runner` can reach. Tailscale adds a `Tailscale-User-Login` header naming who is connecting, and the dashboard lets in only the logins listed in `config.yaml` (the dashboard users). A request without that header is refused. The one exception is `TRADER_DASHBOARD_ALLOW_LOCAL=1`, which lets header-less requests in. It exists for local development only (see [Your first replay](first-replay.md)). **Never set it on the Tailscale-served dashboard**, not even "temporarily" in a systemd drop-in. `tailscale serve` sends no login header for requests from tagged devices, and the VPS itself is tagged, so any process on the VPS (the strategist included) could reach the dashboard and press STOP. To use the dashboard from a machine without Tailscale, use the SSH tunnel (step 2b), the only unit where that setting belongs.
 
 ## 2b. Dashboard without Tailscale (SSH tunnel)
 
@@ -185,7 +185,7 @@ This dashboard trusts anyone who reaches its socket, so it's the one place `TRAD
 2. Make the live account a **cash** account, not margin. The runner never shorts or borrows, and a cash account makes sure it can't. Settled-cash rules (T+1) apply; the runner sizes from settled cash.
 3. Market data: the free plan is fine. The runner streams **IEX** bars live (the free feed, up to 30 symbols), and backtests read historical SIP bars, which the free plan allows for data older than 15 minutes.
 4. Generate API keys, separately for paper (in the paper dashboard) and live (in the live dashboard). Each gives a key id and a secret.
-5. Reset the paper account's balance to about what you'll fund live with (the original uses $250), so paper sizing matches reality. After any later paper reset, run `trader rebase-paper` (README → Controls).
+5. Reset the paper account's balance to about what you'll fund live with (the original uses $250), so paper sizing matches reality. After any later paper reset, run `trader rebase-paper` ([Use the controls](../how-to/controls.md)).
 6. Fund the live account with at least the go-live minimum ($100 in `src/trader/golive.py`) before the gate is likely to pass. Until it's funded, the runner stays on paper and alerts you. Deposits and withdrawals are yours alone; the code never moves money.
 
 **Where the keys go:**
@@ -225,7 +225,7 @@ gh auth login          # GitHub.com → HTTPS → paste the token
 gh auth setup-git      # so git push uses it
 git config --global user.name "strategist" && git config --global user.email "<your noreply address>"
 ```
-The token lets the strategist push its branch and open PRs and issues. It could technically push to `main` too (branch protection isn't available on private repos on the free plan), which is why nothing runs until **you** deploy (README → Deploying).
+The token lets the strategist push its branch and open PRs and issues. It could technically push to `main` too (branch protection isn't available on private repos on the free plan), which is why nothing runs until **you** deploy ([Deploy a change](../how-to/deploy.md)).
 
 **GitHub (runner).** `runner` gets a **read-only deploy key** in step 6. It only ever pulls `main`.
 
@@ -235,7 +235,18 @@ The token lets the strategist push its branch and open PRs and issues. It could 
 
 ## 6. Install
 
-Follow the table in [README.md → One-time setup](README.md#one-time-setup): step 0 (clone as trader), 1 (`1-host.sh`), 2 (`2-strategist.sh`, from a fresh trader login), 3a (`3-runner.sh key`, then add the printed key under your repo → Settings → Deploy keys, **read-only**), 3b (`3-runner.sh install`). Between 2 and 3b:
+Follow the table below: step 0 (clone as trader), 1 (`1-host.sh`), 2 (`2-strategist.sh`, from a fresh trader login), 3a (`3-runner.sh key`, then add the printed key under your repo → Settings → Deploy keys, **read-only**), 3b (`3-runner.sh install`). All the scripts are idempotent, so re-running one is always safe. Run each as a single short command, not by pasting long command lists.
+
+| # | As | Command | Does |
+|---|---|---|---|
+| 0 | trader | `git clone https://github.com/<owner>/<repo> /tmp/trading-setup` (your private repo, as in `config.yaml`) | Gets the scripts before `/srv/trading` exists (a fresh install only) |
+| 1 | admin | `sudo bash /tmp/trading-setup/deploy/setup/1-host.sh` | Creates the `trading` group, the `runner` user (no sudo, lingering) and `/srv/trading/{strategist,main,runtime}` with the right owners and modes |
+| 2 | trader, **from a fresh login** | `bash /tmp/trading-setup/deploy/setup/2-strategist.sh` | Checks out the `strategist` branch, creates `.env` (paper keys only, generated ntfy topic), installs the strategist's systemd timers, links `~/trading` |
+| 3a | admin | `sudo bash /srv/trading/strategist/deploy/setup/3-runner.sh key` | Creates `runner`'s deploy key and prints it. Add it on GitHub → Settings → Deploy keys, **read-only** |
+| 3b | admin | `sudo bash /srv/trading/strategist/deploy/setup/3-runner.sh install` | Checks out `main` as runner, runs the tests, installs `trading-deploy`, the services and `tailscale serve` → dashboard socket |
+| ✓ | admin | `sudo bash /srv/trading/main/deploy/setup/check.sh` | Verifies users, permissions, secrets placement, services, socket isolation and the strategist timers. Every line should read PASS |
+
+Between 2 and 3b:
 
 - Fill in `/srv/trading/strategist/.env`: paper keys and the OpenRouter key.
 - Subscribe to the printed ntfy topic.
@@ -245,6 +256,7 @@ After 3b, as admin:
 sudo -u runner -H nano /home/runner/.config/trading/env        # add ALPACA_LIVE_KEY / ALPACA_LIVE_SECRET
 sudo bash /srv/trading/main/deploy/setup/check.sh               # every line should read PASS
 ```
+**Live keys go only in `runner`'s file.** Never put them in the strategist's `.env`: `check.sh` fails if they're there.
 The setup scripts read the repo and the Tailscale port from `config.yaml` (through `deploy/setup/cfg.sh`), so they clone your repo, not the original.
 
 `3-runner.sh install` prints the dashboard's address. Open it from your laptop; you should see "The runner isn't trading right now".
@@ -256,7 +268,7 @@ The setup scripts read the repo and the Tailscale port from `config.yaml` (throu
 - **At the runner's start** (the timer, shortly before the US open): an ntfy "runner started session …". The dashboard's banner switches to "The runner is trading now".
 - **During the session:** watch `decision_errors` and `probe_errors` in the dashboard's At a glance panel. A few Jev timeouts a day pause decisions for 5 minutes each and are harmless; a steady stream means a key or credit problem.
 - **After the close:** a Daily P&L ntfy, then the strategist's post-close run commits a journal to the `strategist` branch (check the branch on GitHub).
-- **Saturday:** the weekly run opens a PR from `strategist` to `main`. Reviewing and merging it is your weekly job (README → Daily operations).
+- **Saturday:** the weekly run opens a PR from `strategist` to `main`. Reviewing and merging it is your weekly job ([Daily operations](../how-to/daily-operations.md)).
 
 If something doesn't happen, the logs are in `/srv/trading/runtime/alerts.log` (runner), `/srv/trading/strategist/strategist-alerts.log` (the strategist wrapper's and housekeeping's alerts), `journalctl --user` as runner, and `~trader/.local/state/trader/` for the strategist's runs (one log per run).
 
@@ -298,7 +310,7 @@ Before the experiment starts, push real orders through every execution path on p
 
 ## Changing `config.yaml` later
 
-Edit it, run `uv run trader config render-deploy`, commit through a PR, merge and deploy (README → Deploying). Then:
+Edit it, run `uv run trader config render-deploy`, commit through a PR, merge and deploy ([Deploy a change](../how-to/deploy.md)). Then:
 - **A schedule change** also needs the strategist's timers reinstalled, as trader: `bash /srv/trading/strategist/deploy/setup/2-strategist.sh` (after the strategist checkout has merged `main`; `check.sh` fails until you do). The runner timer is reinstalled by the deploy.
 - **A dashboard users change** also needs `TRADER_DASHBOARD_USERS` in `/home/runner/.config/trading/services.env` updated to match, then a dashboard restart. That file is installed once and is never overwritten, and its value wins over `config.yaml`.
 - **A start date change** takes effect at the runner's next session start.
@@ -311,8 +323,16 @@ git fetch --multiple origin upstream   # both remotes, so origin/main is current
 git switch -c upstream-sync origin/main
 git merge upstream/main
 ```
-Conflicts are usually only in `config.yaml` (keep your values, take any new keys) and the rendered deploy files (take either side, then re-run `uv run trader config render-deploy` to regenerate them from your `config.yaml`). Anything under `state/`, `journal/` or `logs/` is yours: keep your side. Then run the tests, commit, push the branch, open a PR on your repo and merge it with **"Create a merge commit"** (not squash or rebase), so `trading-deploy` sees a GitHub-signed merge and lists it without a diff review. Deploy as usual (README → Deploying). If the merge changed `config.yaml`, the follow-ups in "Changing `config.yaml` later" above apply too. If anything under `deploy/systemd-trader/` changed, reinstall the strategist timers as in "A schedule change" above. Finish with `sudo bash /srv/trading/main/deploy/setup/check.sh` after the deploy: every line should read PASS.
+Conflicts are usually only in `config.yaml` (keep your values, take any new keys) and the rendered deploy files (take either side, then re-run `uv run trader config render-deploy` to regenerate them from your `config.yaml`). Anything under `state/`, `journal/` or `logs/` is yours: keep your side. Then run the tests, commit, push the branch, open a PR on your repo and merge it with **"Create a merge commit"** (not squash or rebase), so `trading-deploy` sees a GitHub-signed merge and lists it without a diff review. Deploy as usual ([Deploy a change](../how-to/deploy.md)). If the merge changed `config.yaml`, the follow-ups in "Changing `config.yaml` later" above apply too. If anything under `deploy/systemd-trader/` changed, reinstall the strategist timers as in "A schedule change" above. Finish with `sudo bash /srv/trading/main/deploy/setup/check.sh` after the deploy: every line should read PASS.
 
 ## Starting over later
 
 To restart the experiment (say after changing the design): pick a new start date in `config.yaml`, reset `state/` and `journal/` (the full-copy bullet in step 0, point 3), reset the paper balance and run `trader rebase-paper`, and deploy. The runtime's history (`/srv/trading/runtime`) isn't backed up anywhere; copy it off first if you want to keep it. Everything the strategist has written is on GitHub.
+
+## Checking a private copy's docs
+
+A private copy doesn't publish its docs (the docs workflow skips private repositories). Build them locally instead (see [Build the docs](../how-to/build-docs.md)):
+
+```bash
+uv run --group docs sphinx-build -W --keep-going docs build/html
+```

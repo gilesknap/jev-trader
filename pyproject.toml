@@ -17,6 +17,19 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8", "yfinance>=0.2.50"]
 
+[dependency-groups]
+# The documentation site (docs/). Not installed by the runtime or the deploy:
+#   uv run --group docs sphinx-build -W --keep-going docs build/html
+docs = [
+    "sphinx>=8",
+    "myst-parser>=4",
+    "pydata-sphinx-theme>=0.16",
+    "sphinx-copybutton>=0.5",
+    "sphinx-design>=0.6",
+    "sphinxcontrib-mermaid>=1",
+    "sphinx-argparse>=0.5",
+]
+
 [project.scripts]
 trader = "trader.cli:main"
 

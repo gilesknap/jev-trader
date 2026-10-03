@@ -91,7 +91,7 @@ logs/decisions/*.jsonl.gz one line per classifier call
 - Market holidays/half-days from Alpaca calendar API; strategist runs skip non-trading days. The runner saves each day's open and close in `runtime/session.json`; if the calendar can't be read on a same-day restart (retried briefly), it reuses them, with an alert. Otherwise it never guesses times or decides "no session" without the calendar: it alerts (hourly at most) and exits, and systemd's restart is the retry (#125).
 
 ## Human to-dos
-- Run the setup commands as the admin account (see README).
+- Run the setup commands as the admin account (see the installation tutorial in `docs/`).
 - Alpaca account (KYC, USD funding, W-8BEN); paper keys early.
 - GitHub repo + fine-grained PAT; protect `main`.
 - OpenRouter credit (few $); ntfy app.

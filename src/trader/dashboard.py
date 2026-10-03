@@ -183,7 +183,7 @@ def links(repo: str | None, sha: str | None) -> list[dict]:
         groups.append({"title": "GitHub (code and the strategist's notes)", "hint": "Your weekly job: merge the weekly PR "
                                                                               "and answer needs-human issues.", "links": [
             ("Repository", gh, repo),
-            ("README: operations", f"{gh}/blob/main/README.md#daily-operations", "deploying, controls, alerts"),
+            ("Docs: operations", f"{gh}/blob/main/docs/how-to/daily-operations.md", "deploying, controls, alerts"),
             ("Pull requests", f"{gh}/pulls", "weekly PR and proposal/* changes to review"),
             ("Issues: needs-human", f"{gh}/issues?q=is%3Aissue+is%3Aopen+label%3Aneeds-human", "things the strategist asked you for"),
             ("Weekly journal", f"{gh}/tree/strategist/journal/weekly", "the strategist's retrospectives"),

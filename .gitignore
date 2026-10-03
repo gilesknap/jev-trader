@@ -11,3 +11,5 @@ strategist-alerts.log
 replays/
 # Decision logs stay on disk (90 days) for the strategist, but out of git history (disk budget).
 logs/decisions/*.jsonl.gz
+build/
+docs/_generated/

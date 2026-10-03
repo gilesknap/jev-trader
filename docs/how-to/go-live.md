@@ -1,0 +1,55 @@
+# Watch, veto or re-arm go-live
+
+Go-live is automatic: when the runner's gate passes, it arms, gives you 3 paper sessions to veto,
+then switches the account to live by itself. [Evidence and promotion](../explanations/evidence.md#the-go-live-gate)
+explains the gate.
+
+## See where it stands
+
+```bash
+uv run trader golive
+```
+
+It prints the override from `config/mode.yaml`, the effective mode, the saved state and the gate
+evaluated now (days, trades, expectancy after slippage, worst day, and what's blocking). The same
+state is in `/srv/trading/runtime/golive.json`, and the Daily P&L alert names the blocking reasons
+while the gate is pending. The weekly journal carries the strategist's go-live assessment when the
+gate is close or has armed.
+
+## What you'll be told
+
+- **Gate passed:** an alert, then one after each paper session with the sessions left.
+- **Disarmed:** the gate stopped passing (or the logs couldn't be read) during the window; it's
+  back to pending, and a later pass starts a fresh window.
+- **Going live:** at the session start after the window, after a final gate check.
+- **Live account under $100:** the runner stays on paper and alerts until it's funded.
+
+The account's first 5 live sessions ever trade at half size (a later re-arm after a demotion doesn't restart that count).
+
+## Veto
+
+Press **HOLD LIVE** on the dashboard, or as `runner` (with the services environment loaded, see
+[Use the controls](controls.md)):
+
+```bash
+uv run trader hold-live
+```
+
+A HOLD always wins, at any stage, even one pressed while the runner is re-checking the gate. It
+stays until you release it.
+
+## Re-arm
+
+```bash
+uv run trader release-live
+```
+
+This resets the state to pending; the gate is re-evaluated after each session from then on. Use it
+after a veto, or after clearing a live halt (which demotes go-live to paper).
+
+## A corrupt `golive.json`
+
+If the file can't be read or holds an invalid state, the runner stays on paper, sends one urgent
+alert, and changes nothing by itself: it doesn't reset to pending, so you can look first. HOLD LIVE
+or `trader release-live` replaces it with a clean vetoed or pending state and keeps the bad file as
+`golive.json.corrupt-<time>` (the newest 5 are kept).

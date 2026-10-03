@@ -27,31 +27,37 @@ def _vwap(bars: pd.DataFrame) -> float:
 
 @feature("ret_1m_pct")
 def ret_1m(bars, ctx):
+    """% change of the close over the last 1 bar."""
     return _ret(bars, 1)
 
 
 @feature("ret_5m_pct")
 def ret_5m(bars, ctx):
+    """% change of the close over the last 5 bars."""
     return _ret(bars, 5)
 
 
 @feature("ret_15m_pct")
 def ret_15m(bars, ctx):
+    """% change of the close over the last 15 bars."""
     return _ret(bars, 15)
 
 
 @feature("ret_30m_pct")
 def ret_30m(bars, ctx):
+    """% change of the close over the last 30 bars."""
     return _ret(bars, 30)
 
 
 @feature("ret_since_open_pct")
 def ret_since_open(bars, ctx):
+    """% change from today's first open to the latest close."""
     return (bars.close.iloc[-1] / bars.open.iloc[0] - 1) * 100 if len(bars) else NAN
 
 
 @feature("gap_pct")
 def gap(bars, ctx):
+    """% gap from the previous session's last close to today's first open."""
     if ctx.prev_day.empty or not len(bars):
         return NAN
     return (bars.open.iloc[0] / ctx.prev_day.close.iloc[-1] - 1) * 100
@@ -59,6 +65,7 @@ def gap(bars, ctx):
 
 @feature("vwap_dist_pct")
 def vwap_dist(bars, ctx):
+    """% above (negative: below) today's volume-weighted average price."""
     v = _vwap(bars)
     return (bars.close.iloc[-1] / v - 1) * 100 if v == v else NAN
 
@@ -85,6 +92,7 @@ def or15_break(bars, ctx):
 
 @feature("or30_break_pct")
 def or30_break(bars, ctx):
+    """% above the 30-min opening-range high (negative = below it)."""
     return _or_break(bars, 30)
 
 
@@ -96,6 +104,7 @@ def or15_low(bars, ctx):
 
 @feature("or15_width_pct")
 def or15_width(bars, ctx):
+    """Width of the 15-min opening range (high / low - 1), in %."""
     if len(bars) < 15:
         return NAN
     hi, lo = bars.high.iloc[:15].max(), bars.low.iloc[:15].min()
@@ -104,6 +113,7 @@ def or15_width(bars, ctx):
 
 @feature("rsi_14")
 def rsi14(bars, ctx):
+    """14-bar RSI of 1-min closes (simple averages), 0..100."""
     if len(bars) < 15:
         return NAN
     d = bars.close.diff().iloc[-14:]
@@ -124,6 +134,7 @@ def rel_volume(bars, ctx):
 
 @feature("atr_14_pct")
 def atr14(bars, ctx):
+    """Average true range of the last 14 bars, as % of the latest close."""
     if len(bars) < 15:
         return NAN
     pc = bars.close.shift(1)
@@ -140,6 +151,7 @@ def range_pos(bars, ctx):
 
 @feature("rel_spy_since_open_pct")
 def rel_spy(bars, ctx):
+    """Return since open minus SPY's return since open, in percentage points."""
     if ctx.spy.empty or not len(bars):
         return NAN
     spy = (ctx.spy.close.iloc[-1] / ctx.spy.open.iloc[0] - 1) * 100
@@ -148,6 +160,7 @@ def rel_spy(bars, ctx):
 
 @feature("ema_9_21_diff_pct")
 def ema_diff(bars, ctx):
+    """% difference between the 9- and 21-bar EMAs of the close."""
     if len(bars) < 21:
         return NAN
     c = bars.close
@@ -177,6 +190,7 @@ def slope30(bars, ctx):
 
 @feature("prev_high_dist_pct")
 def prev_high(bars, ctx):
+    """% above (negative: below) the previous session's high."""
     if ctx.prev_day.empty:
         return NAN
     return (bars.close.iloc[-1] / ctx.prev_day.high.max() - 1) * 100
@@ -184,6 +198,7 @@ def prev_high(bars, ctx):
 
 @feature("prev_low_dist_pct")
 def prev_low(bars, ctx):
+    """% above (negative: below) the previous session's low."""
     if ctx.prev_day.empty:
         return NAN
     return (bars.close.iloc[-1] / ctx.prev_day.low.min() - 1) * 100
@@ -191,9 +206,11 @@ def prev_low(bars, ctx):
 
 @feature("minutes_since_open")
 def mso(bars, ctx):
+    """Minutes since the 09:30 ET open, counting the current bar (the first bar is 1)."""
     return ctx.minutes_since_open
 
 
 @feature("minutes_to_close")
 def mtc(bars, ctx):
+    """Minutes until the close."""
     return ctx.minutes_to_close

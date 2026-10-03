@@ -351,7 +351,7 @@ code { font-family: var(--mono); font-size: .9em; }
       <dt>Become the runner (for the <code>uv run trader</code> commands below)</dt>
       <dd>From your admin account:<code class="cmd">sudo -iu runner</code><code class="cmd">cd /srv/trading/main &amp;&amp; set -a &amp;&amp; . ~/.config/trading/services.env &amp;&amp; set +a</code>Skip the second line and the commands that change state refuse to run.</dd>
       <dt>Deploy merged code to the runner</dt>
-      <dd>From your admin account. It shows what is about to deploy, tests it first, and may ask you to review a diff and type <b>yes</b> (the README's deploy section has the details). Strategy changes don't need this; only code on main does.<code class="cmd">sudo -u runner trading-deploy</code></dd>
+      <dd>From your admin account. It shows what is about to deploy, tests it first, and may ask you to review a diff and type <b>yes</b> (the docs' deploy guide, <code>docs/how-to/deploy.md</code>, has the details). Strategy changes don't need this; only code on main does.<code class="cmd">sudo -u runner trading-deploy</code></dd>
       <dt>STOP: sell everything and stop for today</dt>
       <dd>The red button at the top, or:<code class="cmd">uv run trader stop</code></dd>
       <dt>Veto or allow the switch to real money</dt>
@@ -368,7 +368,7 @@ code { font-family: var(--mono); font-size: .9em; }
         <b>Strategist runs</b>: <code>~trader/.local/state/trader/*.log</code> (kept 14 days).<br>
         <b>Permanent record</b> (every fill, every Jev decision): <code>/srv/trading/strategist/logs/</code>.</dd>
       <dt>Everything else</dt>
-      <dd>The operations guide: <span id="readme"><code>README.md</code> in <code>/srv/trading/main</code></span>.</dd>
+      <dd>The operations guides: <span id="readme"><code>docs/how-to/</code> in <code>/srv/trading/main</code></span>.</dd>
     </dl></details>
     <details class="help"><summary>Glossary: day-trading terms used on this dashboard</summary><dl>
       <dt>Day trading</dt><dd>Buying and selling within the same day. Unlike long-term investing, every position here is closed before the market shuts, so overnight news can't hurt it.</dd>
@@ -1108,7 +1108,7 @@ async function loadOverview() {
     g.links.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.label)} ↗<span>${esc(l.hint)}</span></a>`).join("") + "</div>").join("");
   const gh = OVERVIEW.repo ? `https://github.com/${OVERVIEW.repo}` : null;
   if (gh) {
-    $("readme").innerHTML = `<a href="${esc(gh)}/blob/main/README.md" target="_blank" rel="noopener noreferrer">README.md</a>`;
+    $("readme").innerHTML = `<a href="${esc(gh)}/tree/main/docs/how-to" target="_blank" rel="noopener noreferrer">docs/how-to/</a>`;
   }
 }
 function renderOverviewState(h) {
