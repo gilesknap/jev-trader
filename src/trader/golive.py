@@ -353,7 +353,7 @@ def resolve_mode(notify, live_equity=None, session: dt.date | None = None) -> st
         st.update(status="live", live_since=day.isoformat())
         if not save_state(st, expected):
             return "paper"  # golive.json changed under us (a HOLD, or a release): never go live on a stale read
-        notify("urgent", f"GOING LIVE today with ${eq:.2f} (half size for the first week). Veto any time: HOLD LIVE on the dashboard.")
+        notify("urgent", f"GOING LIVE today with ${eq:.2f} (half size for the first 5 live sessions). To stop today: STOP on the dashboard. HOLD LIVE returns to paper from the next session.")
     return "live" if st["status"] == "live" else "paper"
 
 

@@ -1164,7 +1164,7 @@ let docs = null, docSel = "strategy";
 async function renderDocs() {
   docs = await api("/api/docs");
   const btn = ([k, label], mono) => `<button data-k="${esc(k)}" class="${k === docSel ? "on" : ""}${mono ? " mono" : ""}">${esc(label)}</button>`;
-  const groups = [["The strategist's state", [["strategy", "Current strategy"], ["classifiers", "Rule settings (raw file)"], ["watchlist", "Ideas not yet tried"]], false],
+  const groups = [["The strategist's state", [["strategy", "Current strategy"], ["classifiers", "Rule settings (raw file)"], ["watchlist", "Hypotheses (active and rejected)"]], false],
     ...Object.entries(docs.journal).filter(([, n]) => n.length).map(([k, names]) =>
       [`${k} journal`, names.slice(0, 6).map(n => [`j:${k}/${n}`, n.replace(".md", "")]), true])];
   $("doctabs").innerHTML = groups.map(([title, items, mono]) => `<div><h3>${esc(title)}</h3>${items.map(i => btn(i, mono)).join("")}</div>`).join("") +
