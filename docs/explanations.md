@@ -10,6 +10,7 @@ explanations/day-in-the-life
 explanations/decisions
 explanations/money-safety
 explanations/evidence
+explanations/hypotheses
 explanations/strategist
 explanations/limitations
 explanations/design

@@ -27,7 +27,7 @@ market through daylight-saving changes.
 |---|---|
 | `state/strategy.md` | the living thesis: phase, beliefs, what's running and why (rewritten, not appended) |
 | `state/classifiers.yaml` | the next session's classifiers |
-| `state/watchlist.md` | hypotheses not yet traded |
+| `state/watchlist.md` | its hypothesis records, active and rejected (see [Hypotheses and experiments](hypotheses.md)) |
 | `state/steering.md` | the human's steering decisions (read every run, never edited by the strategist) |
 | `features/custom/*.py` | its own feature functions |
 | `journal/daily/`, `journal/weekly/`, `journal/monthly/`, `journal/yearly/` | its journal, compacted over time |
@@ -127,7 +127,9 @@ a URL), and the settings file is `trader`'s own, so treat them as a reduction, n
 
 The charter sets a mission (beat buy-and-hold SPY on a risk-adjusted basis, net of slippage;
 staying out is a valid position), a weekly exploration mandate (at least one genuinely novel
-hypothesis in shadow or sim, labelled `family: novel`, with failures recorded as findings), and an
+hypothesis in shadow or sim, labelled `family: novel`, or one investigated and rejected before
+trading, with failures recorded as findings), a falsifiable record for every hypothesis with a
+pre-registered decision checkpoint (see [Hypotheses and experiments](hypotheses.md)), and an
 honesty requirement (each week: what it believed that turned out wrong, how paper and live
 diverged, and whether any edge is distinguishable from luck). It also sets research hygiene for
 backtests. Read `CLAUDE.md` in the code for the full text: it is the strategist's operating manual, and the
