@@ -16,7 +16,7 @@ fixed benchmark, not just whether the account went up. A blended equity line can
   doesn't restart a promotion record.
 - A scoreboard reports per classifier and per family, after slippage: trades, win rate, mean net
   return with a confidence interval, and a cautious verdict ("can't tell from luck yet" until the
-  interval clears zero). It adds Welch comparisons between families, and buy-and-hold SPY as a
+  interval clears zero). It adds head-to-head comparisons between families, and buy-and-hold SPY as a
   yardstick.
 - The charter asks for honest labels and justification of each `novel` label, because the human
   may steer the project by this board.

@@ -1,7 +1,7 @@
 # Decision records
 
 Short records of the decisions that shaped the system: the context, what was decided and what it
-costs. Each is dated to when it was made. The system was built in a private repository before the
+costs. Each is dated to when it was made; numbers are in the order they were recorded. The system was built in a private repository before the
 code moved here (see [0014](adr/0014-public-code-private-data.md)), so the issue and pull-request
 numbers in **Origin** refer to that repository, and aren't links.
 
@@ -22,6 +22,8 @@ numbers in **Origin** refer to that repository, and aren't links.
 | [0013](adr/0013-wrapper-publishes-the-strategist-branch.md) | 2026-09-30 | The wrapper, not the model, publishes the strategist's branch |
 | [0014](adr/0014-public-code-private-data.md) | 2026-10-03 | Public code repository, private data repository per owner |
 | [0015](adr/0015-human-steering.md) | 2026-10-03 | The human steers the strategist through state/steering.md |
+| [0016](adr/0016-execution-toolkit-in-the-spec.md) | 2026-09-27 | Strategies are declarative specs with an execution toolkit |
+| [0017](adr/0017-strategist-checkout-is-untrusted-input.md) | 2026-09-27 | The strategist's checkout is untrusted input |
 
 ```{toctree}
 :hidden:

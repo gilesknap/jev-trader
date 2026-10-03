@@ -7,7 +7,7 @@
 ## Context
 
 The runner holds the live brokerage keys and also executes feature code the strategist writes. The
-human's own account has passwordless sudo, so running services there would put the live keys one
+human's admin account has sudo, so running services there would put the live keys one
 step from anything that compromised the session. The first design also let the strategist's
 account trigger deploys through a sudoers rule.
 

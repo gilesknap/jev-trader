@@ -12,8 +12,8 @@ else's meant hunting through the tree.
 
 ## Decision
 
-A root `config.yaml` holds everything personal or deployment-specific, and the setup scripts
-render units from it. The code has no built-in dashboard user: an empty list lets nobody in.
+A root `config.yaml` holds everything personal or deployment-specific, and
+`trader config render-deploy` renders the units and environment files from it. The code has no built-in dashboard user: an empty list lets nobody in.
 **Safety rules stay in code on purpose**: guardrails, gate thresholds and equity floors aren't
 configurable.
 

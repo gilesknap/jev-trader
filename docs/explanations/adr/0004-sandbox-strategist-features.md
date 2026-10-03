@@ -14,7 +14,8 @@ it could be bypassed (finding #13, rated critical).
 
 - The runner never imports custom code. One long-lived worker computes custom features under
   bubblewrap: no network, a cleared environment, a private `/tmp`, read-only system and code
-  directories, and nothing from home directories or the runtime directory. Memory and file
+  directories (including the interpreter's own environment), and nothing from home directories,
+  the runtime directory or secrets files. Memory and file
   descriptors are limited.
 - It fails closed: if the worker dies, answers badly or times out, custom features are NaN for
   the rest of the session, with an urgent alert. Triggers then fail, so nothing enters; stops
