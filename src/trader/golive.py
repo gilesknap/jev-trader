@@ -182,7 +182,7 @@ def enforce_promotion(
     but mode/enabled) restarts its record. Non-qualifying `mode: live` specs are downgraded to
     shadow. The record is tracked in paper mode too, so it's ready when the account goes live."""
     state_file = state_file or PROMOTION_FILE
-    today = (today or session_date()).isoformat()
+    since = (today or session_date()).isoformat()
     try:
         state = json.loads(state_file.read_text()) if state_file.exists() else {}
         if not isinstance(state, dict):
@@ -210,7 +210,7 @@ def enforce_promotion(
             h = spec_hash(s, digest)
             rec = state.get(s.id)
             if not isinstance(rec, dict) or rec.get("hash") != h:
-                state[s.id] = rec = {"hash": h, "since": today}
+                state[s.id] = rec = {"hash": h, "since": since}
             rec["family"] = s.family_label  # kept after the classifier is retired, for the scoreboard
             if s.mode == "live" and not s.control:
                 n, exp = shadow_record(s.id, rec["since"], book_dir, rec["hash"])

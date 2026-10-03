@@ -15,6 +15,7 @@ import threading
 import time
 from collections import defaultdict
 from pathlib import Path
+from typing import overload
 
 import pandas as pd
 
@@ -127,6 +128,7 @@ def _session_for_run(client):
     raises as before and systemd's restart is the retry. Times are never guessed, and "no session
     today" is only ever decided by a successful calendar read."""
     today = dt.datetime.now(ET).date()
+    err: Exception | None = None
     for attempt in range(CALENDAR_TRIES):
         try:
             session = _session_today(client)
@@ -136,6 +138,7 @@ def _session_for_run(client):
             if attempt + 1 < CALENDAR_TRIES:
                 time.sleep(CALENDAR_RETRY_S)
     else:
+        assert err is not None  # every attempt failed
         saved = _saved_session(today)
         if saved is None:
             _calendar_alert(
@@ -286,15 +289,12 @@ def _apply_cashflows(book: Book, broker: AlpacaBroker) -> None:
 def stream_bars(rows: dict[str, list], tick: dt.datetime) -> dict[str, pd.DataFrame]:
     """The stream's rows as bars: one per minute (a repeated minute keeps the last), in order,
     and only bars that closed before `tick`. Call it under the rows lock."""
-    return {
-        s: pd.DataFrame(r, columns=BAR_COLS)
-        .drop_duplicates("ts", keep="last")
-        .set_index("ts")
-        .sort_index()
-        .loc[lambda d, t=tick: d.index < t]
-        for s, r in rows.items()
-        if r
-    }
+
+    def bars(r: list) -> pd.DataFrame:
+        d = pd.DataFrame(r, columns=BAR_COLS).drop_duplicates("ts", keep="last").set_index("ts").sort_index()
+        return d[d.index < tick]
+
+    return {s: bars(r) for s, r in rows.items() if r}
 
 
 def catch_up_bars(
@@ -365,7 +365,8 @@ class RestBars:
             max((b.index[-1] for b in (stream.get(s), self.bars.get(s)) if b is not None and len(b)), default=None)
             for s in syms
         ]
-        start = self.open_ if None in latest else max(self.open_, min(latest))
+        known = [t for t in latest if t is not None]
+        start = self.open_ if len(known) < len(latest) else max(self.open_, min(known))
         out: dict = {}
 
         def run():
@@ -396,8 +397,14 @@ class RestBars:
         """The stream's bars, gaps filled from REST. The stream wins a minute both have."""
         return stream | {s: self._merge(b, stream.get(s)) for s, b in self.bars.items()}
 
+    @overload
     @staticmethod
-    def _merge(old: pd.DataFrame | None, new: pd.DataFrame | None) -> pd.DataFrame:
+    def _merge(old: pd.DataFrame, new: pd.DataFrame | None) -> pd.DataFrame: ...
+    @overload
+    @staticmethod
+    def _merge(old: pd.DataFrame | None, new: pd.DataFrame) -> pd.DataFrame: ...
+    @staticmethod
+    def _merge(old: pd.DataFrame | None, new: pd.DataFrame | None) -> pd.DataFrame | None:
         parts = [d for d in (old, new) if d is not None and len(d)]
         if not parts:
             return old if old is not None else new

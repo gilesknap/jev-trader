@@ -250,13 +250,16 @@ class FeatureSandbox:
             p = self._proc
             if p is None or p.poll() is not None:
                 raise SandboxError("worker not running")
+            stdin, stdout = p.stdin, p.stdout
+            if stdin is None or stdout is None:  # never: it is started with both piped
+                raise SandboxError("worker has no pipes")
             result: list = []
 
             def talk():
                 try:
-                    p.stdin.write(json.dumps(req, separators=(",", ":")) + "\n")
-                    p.stdin.flush()
-                    result.append(p.stdout.readline())
+                    stdin.write(json.dumps(req, separators=(",", ":")) + "\n")
+                    stdin.flush()
+                    result.append(stdout.readline())
                 except (OSError, ValueError) as e:
                     result.append(e)
 

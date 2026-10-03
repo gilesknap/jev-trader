@@ -224,10 +224,10 @@ def _unknown_keys(c) -> list[str] | None:
         if err["type"] == "missing":
             out.append(f"missing {'.'.join(map(str, err['loc']))}")
             continue
-        loc = err["loc"]
-        # The model that owns the bad key, for a "did you mean" hint from its field names.
-        model = _NESTED.get(loc[0], ClassifierSpec) if len(loc) > 1 else ClassifierSpec
+        loc: tuple[int | str, ...] = tuple(err["loc"])
         key = str(loc[-1])
+        # The model that owns the bad key, for a "did you mean" hint from its field names.
+        model = _NESTED.get(str(loc[0]), ClassifierSpec) if len(loc) > 1 else ClassifierSpec
         close = difflib.get_close_matches(key, list(model.model_fields), n=1, cutoff=0.6)
         where = ".".join(map(str, loc))
         out.append(f"unknown key {where}" + (f" (did you mean {close[0]}?)" if close else ""))

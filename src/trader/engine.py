@@ -19,13 +19,14 @@ import weakref
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast, overload
 
 import pandas as pd
 
 from trader import allocator as A
 from trader import features as F
 from trader import guardrails as G
-from trader.broker import TERMINAL, Fill, NotFilled, OrderState, PartialExit
+from trader.broker import TERMINAL, Broker, Fill, NotFilled, OrderState, PartialExit, Position
 from trader.classifier import ClassifierSpec, ClassifierState
 from trader.data import ET
 from trader.jev import DecisionError
@@ -89,7 +90,8 @@ def stale_feed(spy: pd.DataFrame | None, now: dt.datetime) -> tuple[bool, str]:
 def _broker_time(at, now: dt.datetime) -> dt.datetime | None:
     """A broker timestamp in `now`'s zone; None if absent or unreadable (never raises)."""
     try:
-        return pd.Timestamp(at).tz_convert(now.tzinfo).to_pydatetime() if at is not None else None
+        # cast: pandas types this as possibly NaT, which the caller's comparisons treat like any datetime.
+        return cast(dt.datetime, pd.Timestamp(at).tz_convert(now.tzinfo).to_pydatetime()) if at is not None else None
     except Exception:
         return None
 
@@ -218,7 +220,7 @@ class Book:
     """One account (sim, Alpaca paper or Alpaca live) with its own risk state and logs."""
 
     name: str
-    broker: object
+    broker: Broker
     dir: Path
     nav: NavBook = field(default_factory=NavBook)
     day_start_equity: float = 0.0
@@ -603,6 +605,7 @@ class Engine:
 
     def _read_equity(self, b: Book) -> float | None:
         """Equity, retried briefly; None (alerted) if it still can't be read. Never raises (#119)."""
+        err: Exception | None = None
         for i in range(START_EQUITY_TRIES):
             try:
                 eq = float(b.broker.equity())
@@ -877,6 +880,7 @@ class Engine:
         if self._decisions_fh:
             self._close_decisions()
             self._decisions_fh = None
+            assert self.day is not None  # start_day set it when it opened the file
             path = self.run_dir / "decisions" / f"{self.day.isoformat()}.jsonl"
             if path.exists():
                 with path.open("rb") as src, gzip.open(str(path) + ".gz", "wb") as dst:
@@ -981,8 +985,9 @@ class Engine:
 
     def _book_checks(self, b: Book, now, bars, prices) -> None:
         b.broker.update_prices(prices)
-        if hasattr(b.broker, "update_bars"):
-            b.broker.update_bars(bars)  # simulated limit fills
+        update_bars = getattr(b.broker, "update_bars", None)
+        if update_bars is not None:
+            update_bars(bars)  # simulated limit fills
         self._poll_pending(b, now)
         self._enforce_exits(b, now, bars)
         self._risk(b, now)
@@ -1072,6 +1077,7 @@ class Engine:
         EXIT_LOOKUP_TRIES or the EOD flatten (`final`). Only then, or when nothing is found, is the
         exit a guess: at `px`, or at the stop for one that closed while the runner was down."""
         tries, down = b.unresolved.get(sym, (0, False))
+        how = ""
         try:
             fill, how = b.broker.stop_fill(e.stop_id, now, strict=True), "server stop"
             if fill is None:
@@ -1112,7 +1118,7 @@ class Engine:
                 "urgent", f"[{b.name}] {sym} position disappeared without a stop fill; P&L estimated at last price"
             )
 
-    def _close_orphan(self, b: Book, sym, pos, now, bars) -> None:
+    def _close_orphan(self, b: Book, sym, pos: Position, now, bars) -> None:
         """A broker position the engine has no record of (a crash before its entry was saved, the
         remainder of a partial close, a buy made outside the engine) has no stop, so close it.
         Only ever called from the tick, so never before the open (a market sell would queue, and
@@ -1156,7 +1162,7 @@ class Engine:
                 self._set_cursor(b, e, ts)  # a failed exit re-scans from this bar next tick
                 self._exit(b, sym, e, min(float(row.open), e.stop), now, why, resting=True)
                 return
-            if ts < pd.Timestamp(e.time):
+            if cast(pd.Timestamp, ts) < pd.Timestamp(e.time):  # the window's index is a DatetimeIndex
                 continue  # the bar a limit entry filled in: only its stop risk counts
             if row.high >= e.target:
                 self._set_cursor(b, e, ts)
@@ -1295,7 +1301,8 @@ class Engine:
                     pos["scaled_out"] = e.qty < e.orig_qty - 1e-9
                 choice, probs = self._ask(spec, sym, now, sb, feats, pos, "exit")
                 st.count("asked_exit" if choice is not None else "jev_error")
-                if choice is not None and probs.get("EXIT", 0) >= spec.exit.threshold:
+                # spec.exit: a classifier without an exit question is a probe, which never holds a position
+                if choice is not None and spec.exit is not None and probs.get("EXIT", 0) >= spec.exit.threshold:
                     self._exit(book, sym, e, px, now, "classifier EXIT")
             else:  # pending: its limit entry is resting at the broker
                 st.count("skip_order_resting")
@@ -1476,9 +1483,10 @@ class Engine:
             )
             if size < floor:  # never dust (#118); floor > MIN_NOTIONAL, so check_entry can't overwrite the note
                 return
-        limit = None
+        limit, expire_min = None, 0
         if spec.entry_order and spec.entry_order.type == "limit":
             limit = math.floor(px * (1 - spec.entry_order.offset_pct / 100) * 100) / 100  # whole cents, rounded down
+            expire_min = spec.entry_order.expire_min
         ref = limit or px
         order = G.EntryOrder(
             sym,
@@ -1507,7 +1515,7 @@ class Engine:
             qty,
             round(qty * limit, 4) if limit is not None else order.notional,
             now,
-            now + dt.timedelta(minutes=spec.entry_order.expire_min if limit is not None else 0),
+            now + dt.timedelta(minutes=expire_min),
             stop_pct,
             spec.target_pct,
             self._entry_params(spec),
@@ -1518,6 +1526,7 @@ class Engine:
         book.pending[sym] = p
         book.save_pending()
         st.status = "pending"
+        fill: Fill | None = None
         try:
             if limit is not None:
                 p.order_id = book.broker.buy_limit(sym, qty, limit, now, cid)
@@ -1530,6 +1539,7 @@ class Engine:
             book.save_pending()
             st.note = f"limit {limit:.2f} resting" + (f" ({st.note})" if binding != "requested" else "")
             return
+        assert fill is not None  # the market order above returned one, or raised
         p.order_id = fill.order_id  # so a fill it can't price yet is followed up by id (#134)
         self._settle_pending(book, sym, p, OrderState("filled", fill.qty, fill.price), now, place_stop=True)
 
@@ -1772,7 +1782,7 @@ class Engine:
             p.price_estimated = p.price_estimated or guessed
             b.save_pending()  # booked before the position: see below for a crash in between
         else:
-            delta = 0.0
+            delta, px = 0.0, 0.0
         if p.exited:
             if delta:
                 self.alert(
@@ -1988,6 +1998,12 @@ class Engine:
         # None: nothing was held any more (closed by something else), so the price is a guess
         self._record_exit(book, sym, e, fill or Fill(sym, "sell", e.qty, ref, now), reason, estimated=fill is None)
 
+    @overload
+    @staticmethod
+    def _resold(b: Book, sym, e: Entry, fill: Fill, now) -> Fill: ...
+    @overload
+    @staticmethod
+    def _resold(b: Book, sym, e: Entry, fill: Fill | None, now) -> Fill | None: ...
     @staticmethod
     def _resold(b: Book, sym, e: Entry, fill: Fill | None, now) -> Fill | None:
         """An exit order booked in part before it was final (a close whose cancel was still settling)

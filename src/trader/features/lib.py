@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import math
 import numbers
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -40,14 +41,14 @@ def _now(bars: pd.DataFrame, ctx) -> pd.Timestamp:
     last = bars.index[-1]
     m = getattr(ctx, "minutes_since_open", None)
     if isinstance(m, numbers.Real) and not isinstance(m, bool) and math.isfinite(m):
-        return max(last, _open(bars) + (m - 1) * MINUTE)
+        return max(last, _open(bars) + (float(m) - 1) * MINUTE)
     return last
 
 
 def _close_at(bars: pd.DataFrame, t: pd.Timestamp) -> float:
     """The close as of minute `t`: the last bar at or before it, carried at most STALE_MIN minutes."""
     i = bars.index.searchsorted(t, side="right")
-    if i == 0 or bars.index[i - 1] < t - STALE_MIN * MINUTE:
+    if i == 0 or bars.index[int(i) - 1] < t - STALE_MIN * MINUTE:
         return NAN
     return float(bars.close.iloc[i - 1])
 
@@ -71,7 +72,9 @@ def recent_returns_bps(bars: pd.DataFrame, now, n: int = 10) -> list[float]:
     return spanning several minutes. Minutes before today's first bar are left out."""
     if not len(bars):
         return []
-    grid = pd.date_range(end=pd.Timestamp(now) - MINUTE, periods=n + 1, freq="1min").as_unit(bars.index.unit)
+    grid = pd.date_range(end=pd.Timestamp(now) - MINUTE, periods=n + 1, freq="1min").as_unit(
+        cast(pd.DatetimeIndex, bars.index).unit
+    )
     grid = grid[grid >= bars.index[0]]
     close = bars.close.reindex(bars.index.union(grid)).ffill().reindex(grid)
     return (close.pct_change().iloc[1:] * 1e4).round(1).fillna(0).tolist()

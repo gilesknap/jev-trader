@@ -13,6 +13,10 @@ import json
 import math
 import os
 import sys
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 def _limits() -> list[str]:
@@ -47,7 +51,7 @@ class Worker:
         self.custom: list[str] = []
         self.warnings = warnings or []
 
-    def handle(self, req: dict) -> dict:
+    def handle(self, req: dict) -> dict[str, Any]:
         from trader import features as F
         from trader.features import harness
         from trader.features.barcodec import decode_bars  # config-free: never import sandbox here
@@ -55,7 +59,10 @@ class Worker:
         try:
             if req["op"] == "load":
                 names, errors = harness.load_custom_inprocess(__import__("pathlib").Path(req["dir"]))
-                samples = [tuple(decode_bars(x) for x in s) for s in req.get("samples", [])]
+                samples = [
+                    cast("tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]", tuple(decode_bars(x) for x in s))
+                    for s in req.get("samples", [])
+                ]
                 errors.update(harness.evaluate(names, samples, req.get("speed_budget_s")))
                 good = [n for n in names if n not in errors]
                 for bad in set(names) - set(good):
@@ -79,6 +86,7 @@ def main() -> None:
     w = Worker(_limits())
     for line in proto_in:
         rid = nonce = None
+        reply: dict[str, Any]
         try:
             req = json.loads(line)
             rid, nonce = req.pop("id", None), req.pop("nonce", None)

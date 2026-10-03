@@ -204,7 +204,8 @@ def _num_text(v) -> str:
 def why_summary(x: dict) -> str:
     """One plain-English line on what a rule did with a stock today, from the engine's counts
     (status.json: classifiers[].symbols[sym].counts and .last_trigger)."""
-    counts = x.get("counts") if isinstance(x.get("counts"), dict) else {}
+    counts = x.get("counts")
+    counts = counts if isinstance(counts, dict) else {}
     n = {k: v for k, v in counts.items() if isinstance(v, int) and v > 0}
     checks, no_trig, errors = n.get("checks", 0), n.get("no_trigger", 0), n.get("jev_error", 0)
     asked = sum(v for k, v in n.items() if k.startswith("asked_"))
@@ -684,7 +685,7 @@ def overview():
             "split": False,
             "deployed": deployed,
             "config": None,
-            "links": links(repo, deployed and deployed["sha"]),
+            "links": links(repo, deployed["sha"] if deployed else None),
         }
     data_repo = config.SETTINGS.owner.github_repo
     cfg = deployed_commit(root)
@@ -694,7 +695,9 @@ def overview():
         "split": True,
         "deployed": deployed,
         "config": cfg,
-        "links": links(repo, deployed and deployed["sha"], {"repo": data_repo, "sha": cfg and cfg["sha"]}),
+        "links": links(
+            repo, deployed["sha"] if deployed else None, {"repo": data_repo, "sha": cfg["sha"] if cfg else None}
+        ),
     }
 
 
