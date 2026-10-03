@@ -222,6 +222,8 @@ class Rig:
         self.lock = tmp / "trader-home" / "strategist.lock"
         self.scratch = tmp / "scratch"
         self.scratch.mkdir()
+        self.tmpdir = tmp / "tmpdir"  # the script's $TMPDIR: every run must leave it empty
+        self.tmpdir.mkdir()
         # The single-repo layout is a monorepo: its code checkout carries the config too.
         self.code, self.code_origin = self.repo("code", CODE_FILES if split else CODE_FILES | {"config.yaml": "owner: x\n"})
         (self.code / ".venv" / "bin").mkdir(parents=True)
@@ -273,7 +275,7 @@ class Rig:
 
     def run(self, *args, answer="yes", **env):
         e = {k: v for k, v in os.environ.items() if not k.startswith(("TRADER_", "GIT_"))} | GIT_ENV | {
-            "HOME": str(self.home), "FAKE_LOG": str(self.log), "FAKE_REVIEW": str(self.review),
+            "HOME": str(self.home), "TMPDIR": str(self.tmpdir), "FAKE_LOG": str(self.log), "FAKE_REVIEW": str(self.review),
             "FAKE_TRADER": str(self.bin / "trader"), "TRADER_DEPLOY_CONFIG_DIR": str(self.config),
             "TRADER_STRATEGIST_LOCK": str(self.lock), "FAKE_CODE_DIR": str(self.code), **{k: str(v) for k, v in env.items()}}
         return subprocess.run(["bash", str(self.script), *args], input=answer + "\n", env=e,
@@ -286,14 +288,20 @@ class Rig:
         return self.review.read_text() if self.review.exists() else ""
 
 
+def leaves_no_temp_files(rig):
+    yield rig
+    left = sorted(p.name for p in rig.tmpdir.iterdir())
+    assert not left, f"trading-deploy leaked temp files: {left}"
+
+
 @pytest.fixture
 def mono(tmp_path):
-    return Rig(tmp_path, split=False)
+    yield from leaves_no_temp_files(Rig(tmp_path, split=False))
 
 
 @pytest.fixture
 def split(tmp_path):
-    return Rig(tmp_path, split=True)
+    yield from leaves_no_temp_files(Rig(tmp_path, split=True))
 
 
 # ---- single-repo layout: what it always did, and never a two-repo step
