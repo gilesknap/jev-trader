@@ -146,6 +146,10 @@ if [[ -n $SPLIT ]]; then
     chk  "runner can reach the strategist run lock"   "as_runner test -x /home/trader/.local/state/trader"
     L=/home/trader/.local/state/trader/strategist.lock
     chk  "runner can read the lock (if any)"          "[[ ! -e $L ]] || as_runner test -r $L"
+else
+    echo "Single-repo layout"
+    # The public code carries no config: main still on it (e.g. a rollback that kept its origin) can't run.
+    chk  "main checkout holds config.yaml"            "[[ -f /srv/trading/main/config.yaml ]]"
 fi
 
 if [[ -n $SPLIT ]]; then
