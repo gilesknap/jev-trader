@@ -265,7 +265,7 @@ def test_hold_during_after_session_is_never_overwritten(env, monkeypatch, sessio
     assert st["status"] == "vetoed" and golive.load_state()["status"] == "vetoed"
     assert len(sent) == n  # no stale ARMED / DISARMED / countdown alert after the HOLD
     golive.release(note)  # `trader release-live` semantics are unchanged: back to pending from scratch
-    assert golive.load_state() == {"status": "pending", "released_on": dt.date.today().isoformat()}
+    assert golive.load_state() == {"status": "pending", "released_on": golive.session_date().isoformat()}
 
 
 # ---- #115: a corrupt golive.json fails closed to paper and never raises ----
@@ -324,7 +324,7 @@ def test_hold_on_corrupt_state_vetoes_and_keeps_the_file(env):
 def test_release_on_corrupt_state_gives_clean_pending(env):
     golive.STATE_FILE.write_text('{"status": "armed", "sessions_left": null}')
     golive.release(lambda *a: None)
-    assert golive.load_state() == {"status": "pending", "released_on": dt.date.today().isoformat()}
+    assert golive.load_state() == {"status": "pending", "released_on": golive.session_date().isoformat()}
     [kept] = golive.STATE_FILE.parent.glob("golive.json.corrupt-*")
     assert kept.read_text() == '{"status": "armed", "sessions_left": null}'
 
