@@ -15,6 +15,7 @@ how-to/go-live
 how-to/prelaunch
 how-to/alerts
 how-to/write-a-classifier
+how-to/widen-the-scope
 how-to/migrate-to-split
 how-to/build-docs
 how-to/contribute

@@ -37,6 +37,11 @@ def my_feature(bars, ctx):
     return float(...)   # dimensionless; NaN if not enough data
 ```
 
+Live IEX bars are sparse (a minute without an IEX trade has no bar), so select windows by
+timestamp rather than counting rows: the library's minute-named features (`ret_*m_pct`, `or15_*`,
+`or30_*`, `rel_volume_15m`) use elapsed exchange time, and its bar-named indicators (`rsi_14`,
+`atr_14_pct`, ...) count bars. `ctx.minutes_since_open` is 1 for the 09:30 bar, live and in the gate.
+
 Rules, enforced by the gate (`src/trader/features/harness.py`) and the sandbox:
 
 - They run only in a bubblewrap sandbox: no network, a cleared environment, a private `/tmp`,

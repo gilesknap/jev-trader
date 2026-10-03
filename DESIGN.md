@@ -17,7 +17,7 @@ not links to this repository's tracker.
 Opus 5.5 strategist gets ~£200 (held as USD) and autonomy to invent and run an intraday strategy.
 - Primary: beat buy-and-hold SPY risk-adjusted, net of slippage (measured on unit NAV).
 - Standing aside is a valid outcome; every classifier needs a written reason.
-- Exploration mandate: ≥1 genuinely novel hypothesis in shadow or sim per week, failures recorded (charter).
+- Exploration mandate: ≥1 genuinely novel hypothesis per week, in shadow or sim, or investigated and rejected before trading; each with a falsifiable record and a pre-registered decision checkpoint; failures recorded (charter; `docs/explanations/hypotheses.md`).
 - Honest self-assessment in the weekly report ("what I believed that was wrong", paper-vs-live, luck vs edge), published as a weekly issue in the data repo.
 - Quarterly reviews (first at 3 months, mid-point at 6 weeks); runs indefinitely if successful.
 
@@ -108,7 +108,7 @@ A rule (classifier) moves through these states. The first four are per classifie
 | **demoted** (rule) | strategist sets `mode: shadow` when live underperforms its paper record; the runner runs it as shadow at any start where it isn't eligible (alerting when the account is live) | strategist's judgement | `state/classifiers.yaml` (the runner's downgrade isn't written back; it's re-decided each start) | next runner start | charter for underperformance; code for ineligibility |
 | account **pending** | the start; a disarm; `trader release-live` | the gate, after each session: ≥10 trading days, ≥20 closed non-control paper trades, positive expectancy after slippage, no day ≤ −5%, paper book not halted | `runtime/golive.json` | — | code (`src/trader/golive.py`) |
 | account **armed** | the runner, after a session in which the gate passes | the gate, re-checked after each of 3 paper sessions and again at the switch; a failure disarms to pending | `runtime/golive.json` | counts down per session | code |
-| account **live** | the runner, at the first runner start (12:50 UK as shipped) after the 3 sessions | final gate check, and live equity ≥ $100 at that start (otherwise it stays armed and alerts each start) | `runtime/golive.json`; live session count in the live book's `risk.json` | that session; the first 5 live sessions ever at half size | code |
+| account **live** | the runner, at the first runner start (12:50 UK as shipped) after the 3 sessions | final gate check, and live equity ≥ $100 at that start (otherwise it stays armed and alerts each start) | `runtime/golive.json`; live session count in the live book's `risk.json` | that session; the first 5 live sessions after every return to live at half size | code |
 | account **vetoed** | the human: HOLD LIVE (dashboard) or `trader hold-live`, from any state | none | `runtime/golive.json` | next runner start | code; only `trader release-live` leaves it |
 | account **demoted** | the runner, at the end of a session in which the live book halted | the halt | `runtime/golive.json`; `halted` in the live book's `risk.json` | the live book is already flat and blocked; paper from the next start | code; the human clears the halt and releases |
 
@@ -178,7 +178,7 @@ CLAUDE.md                 stub pointing at the charter in the code
 features/custom/          strategist-authored features
 state/strategy.md         living thesis, rewritten, ~2–3k words cap
 state/classifiers.yaml    active specs
-state/watchlist.md        untraded hypotheses
+state/watchlist.md        hypothesis records, active and rejected
 state/steering.md         the human's steering decisions (strategist reads, never edits)
 journal/daily|weekly|monthly|yearly/
 logs/trades.csv           permanent (tax record; rows with book sim:<id> are simulated, not real trades)
@@ -239,7 +239,7 @@ Superseded decisions, newest first. None of these is in effect; the sections abo
 - **2026-09-27, no bracket orders.** The original design whitelisted order types and made every entry a bracket order with a stop. Alpaca rejects brackets for fractional quantities, so entries became notional market (or limit) orders with a server-side stop where accepted and engine-enforced exits (see [Orders and exits](#orders-and-exits)).
 - **2026-09-27, original details since corrected.**
   - "Auto-demote to paper on live badly diverging from paper" was never built: the account is demoted only on a live-book halt, and per-classifier demotion is the strategist's job (see [Not enforced in code](#not-enforced-in-code)).
-  - "First live week at half size" is implemented as the account's first 5 live sessions ever.
+  - "First live week at half size" is implemented as the first 5 live sessions after every return to live: any paper session, or clearing a live halt, restarts the count.
   - The kill switch blocked entries "until the next strategist run"; it lasts until the next session.
   - Custom features were to pass a "backtest gate"; the gate checks they are finite and fast on recent sessions, not whether they are profitable.
   - The universe was to be filtered by minimum price and volume; it is a fixed list in `config/universe.yaml`, with a $5 price floor in code.
