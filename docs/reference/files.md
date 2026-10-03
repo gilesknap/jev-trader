@@ -15,6 +15,7 @@ read-only to the strategist). The dashboard reads it.
 | `classifier_state.json` | Today's per-symbol trade counts, retirements and outcome tallies (checks, trigger misses, Jev asked, skips), for a mid-session restart |
 | `alerts.log` | Every alert the runner, watchdog and dashboard sent |
 | `benchmark.csv` | SPY's open and close per session, for the buy-and-hold comparison |
+| `spy_marks.csv` | SPY's last price (`time,spy`) at each 5-minute equity mark and at the close, stamped like the books' `equity.csv` rows, so the performance chart's SPY line moves during the day; blank before the day's first SPY bar. Kept 10 days; display only. Without it the chart steps from close to close |
 | `decisions/<date>.jsonl[.gz]` | One line per decision (below). Kept 14 days here; the strategist archives them |
 | `books/paper/`, `books/live/` | One directory per Alpaca book (below) |
 | `books/sim/<id>/` | One per `mode: sim` classifier, with `sim_state.json` (its simulated cash and positions) |

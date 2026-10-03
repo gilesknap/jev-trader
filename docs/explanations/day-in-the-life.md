@@ -84,7 +84,7 @@ flowchart TD
     G --> H
     H -->|yes| I[flatten everything]
     H -->|no| K[ask due classifiers their questions]
-    I --> L[every 5 min: equity mark]
+    I --> L[every 5 min: equity and SPY marks]
     K --> L
     L --> M[write status.json heartbeat]
 ```
@@ -115,7 +115,8 @@ After the close, the runner:
 - alerts if any book still holds a position;
 - marks each book's equity and NAV, and appends to `equity.csv` (the engine's `end_day`, which
   also does the next two steps);
-- records SPY's open and close in `benchmark.csv`, for the buy-and-hold comparison;
+- records SPY's open and close in `benchmark.csv`, for the buy-and-hold comparison, and trims
+  `spy_marks.csv` (SPY's price at each 5-minute mark, for the chart's intraday SPY line) to 10 days;
 - compresses the day's decision log to `decisions/<date>.jsonl.gz`;
 - runs the go-live state machine (arm, count down the veto window, disarm, or demote a halted
   live book);
