@@ -6,15 +6,14 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-from trader import golive
-from trader.broker import PartialExit
-from trader.engine import Engine
-
 from test_engine import Always, spec
 from test_execution_toolkit import make, ticks
 from test_orders import APIError
 from test_partial_exits import DAY, T0, Venue, clock, held, open_book, trade_rows  # noqa: F401 (clock: fixture)
 from test_partial_fills import LIMIT, Scripted, rows
+from trader import golive
+from trader.broker import PartialExit
+from trader.engine import Engine
 
 
 class Market(Venue):

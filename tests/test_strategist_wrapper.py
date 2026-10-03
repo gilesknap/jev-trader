@@ -701,8 +701,8 @@ mkdir -p tools/x && git -C tools/x init -q && echo x > tools/x/f
     (line,) = [a for a in s.read("alerts").splitlines() if "could NOT revert" in a]
     assert "no retry today" in line
     assert (
-        "differs from the run's start outside strategy paths (NOT reverted; pushed by the run, or by a human during it): scripts/evil.sh"
-        in line
+        "differs from the run's start outside strategy paths "
+        "(NOT reverted; pushed by the run, or by a human during it): scripts/evil.sh" in line
     )
     assert "state/n.md" not in line.split("during it): ")[1]  # allowed paths aren't named
     r = s.run("premarket")  # a later tick the same day
@@ -713,7 +713,8 @@ mkdir -p tools/x && git -C tools/x init -q && echo x > tools/x/f
 def test_survivor_alert_says_when_origin_cannot_be_checked(sandbox):
     fake_claude(
         sandbox,
-        f"mkdir -p tools/x && git -C tools/x init -q && echo x > tools/x/f\nmv {sandbox.tmp}/origin.git {sandbox.tmp}/gone.git\n",
+        "mkdir -p tools/x && git -C tools/x init -q && echo x > tools/x/f\n"
+        f"mv {sandbox.tmp}/origin.git {sandbox.tmp}/gone.git\n",
     )
     assert sandbox.run("weekly").returncode == 1
     alerts = sandbox.read("alerts")

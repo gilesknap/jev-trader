@@ -1,15 +1,15 @@
+import argparse
 import datetime as dt
 import json
 
 import pandas as pd
 import pytest
 
+from test_engine import Always, spec
 from trader import runner
 from trader.broker import SIM_START_CASH, PersistentSimBroker, SimBroker
 from trader.data import ET
 from trader.engine import Book, Engine
-
-from test_engine import Always, spec
 
 
 def _run(tmp_path, bars, specs, books):
@@ -111,7 +111,7 @@ def test_clear_halt_names():
 
     assert cli._book_name("sim/my_idea") == "sim/my_idea"
     for bad in ("sim/../paper", "sim", "other", "sim/A"):
-        with pytest.raises(Exception):
+        with pytest.raises(argparse.ArgumentTypeError):
             cli._book_name(bad)
 
 

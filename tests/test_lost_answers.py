@@ -2,17 +2,15 @@
 market entry found through the OrderPending follow-up filled with no price (#130)."""
 
 import datetime as dt
-from types import SimpleNamespace as NS
 
 import pytest
-
-from trader import golive
 
 from test_engine import Always
 from test_execution_toolkit import ticks
 from test_guessed_prices import Market
 from test_orders import APIError
 from test_partial_exits import DAY, T0, Venue, clock, held, open_book, trade_rows  # noqa: F401 (clock: fixture)
+from trader import golive
 
 
 def phantom(v, qty=1.0, oid="p1"):

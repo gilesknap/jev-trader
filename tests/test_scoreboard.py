@@ -455,7 +455,8 @@ def test_scoreboard_before_the_open_uses_the_classifiers_file(tmp_path, monkeypa
     (runtime / "status.json").write_text(json.dumps({"phase": "waiting for open", "classifiers": []}))
     cf = tmp_path / "classifiers.yaml"
     cf.write_text(
-        "classifiers:\n  - {id: idea, family: novel}\n  - {id: control_orb, control: true}\n  - {id: off, family: novel, enabled: false}\n"
+        "classifiers:\n  - {id: idea, family: novel}\n  - {id: control_orb, control: true}\n"
+        "  - {id: off, family: novel, enabled: false}\n"
         "  - {id: probe_x, family: novel, mode: probe}\n"
     )
     monkeypatch.setattr(dashboard.config, "CLASSIFIERS_FILE", cf)

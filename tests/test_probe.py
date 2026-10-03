@@ -7,14 +7,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from test_engine import Always, spec
 from trader import probe
 from trader.broker import SimBroker
 from trader.classifier import ClassifierSpec
 from trader.data import ET
 from trader.engine import Book, Engine
 from trader.jev import Decision, DecisionError
-
-from test_engine import Always, spec
 
 
 def probe_spec(**kw):
@@ -132,7 +131,6 @@ def test_probes_ask_after_trading_classifiers_and_only_within_their_budget(tmp_p
         tmp_path,
     )
     eng.start_day(bars.index[0].date(), {})
-    close = dt.datetime.combine(bars.index[0].date(), dt.time(16), ET)
     tick = lambda i: eng.tick(
         (bars.index[i] + pd.Timedelta(minutes=1)).to_pydatetime(), {"SPY": bars.loc[: bars.index[i]]}, 300
     )
@@ -184,7 +182,7 @@ def _rows(n_days=6, per_day=40, informative=True, seed=0):
     out = []
     for d in range(n_days):
         day = (dt.date(2026, 9, 1) + dt.timedelta(days=d)).isoformat()
-        for i in range(per_day):
+        for _ in range(per_day):
             x = rng.normal()
             fwd = 0.2 * x + rng.normal(0, 0.1)
             p = 1 / (1 + math.exp(-x)) if informative else rng.uniform()
@@ -245,8 +243,8 @@ def test_status_counts_each_rules_answers(tmp_path, session):
 
 
 def test_probe_report_out_writes_a_file(tmp_path, session, monkeypatch):
-    from trader import cli, config
     import trader.data
+    from trader import cli, config
 
     days = [dt.date(2026, 9, d) for d in (14, 15, 16)]
     sessions = {d: session(day=d, seed=i) for i, d in enumerate(days)}

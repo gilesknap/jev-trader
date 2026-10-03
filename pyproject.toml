@@ -55,6 +55,8 @@ reportMissingImports = false # Ignore missing stubs in imported modules
 src = ["src", "tests"]
 # The template uses 88; this code is written at about 120 columns.
 line-length = 120
+# Leave the Python examples in Markdown as written.
+extend-exclude = ["*.md"]
 lint.select = [
     "B",   # flake8-bugbear - https://docs.astral.sh/ruff/rules/#flake8-bugbear-b
     "C4",  # flake8-comprehensions - https://docs.astral.sh/ruff/rules/#flake8-comprehensions-c4
@@ -67,8 +69,21 @@ lint.select = [
     "SLF", # self - https://docs.astral.sh/ruff/settings/#lintflake8-self
 ]
 
+lint.ignore = [
+    "N812", # One-letter module aliases (`features as F`, `guardrails as G`, `scoreboard as SB`) are this code's convention
+    "N814", # ... and so is `SimpleNamespace as NS`
+    "N818", # Exception names are domain words (NotFilled, PartialExit, GuardrailViolation), not "...Error"
+]
+
 [tool.ruff.lint.per-file-ignores]
 # By default, private member access is allowed in tests
 # See https://github.com/DiamondLightSource/python-copier-template/issues/154
 # Remove this line to forbid private member access in tests
-"tests/**/*" = ["SLF001"]
+# E731: one-line lambda stubs are the tests' way of faking a callable.
+# C408: dict(...) builds keyword overrides for test specs.
+# C420: a comprehension builds a fresh value per key; dict.fromkeys would share one object.
+"tests/**/*" = ["SLF001", "E731", "C408", "C420"]
+# F811: these import pytest fixtures from another test module and take them as parameters.
+"tests/{test_golive_alerts,test_guessed_prices,test_live_week,test_lost_answers,test_missed_demotion}.py" = ["F811"]
+# E501: embedded shell scripts, whose lines can't be wrapped.
+"tests/{test_strategist_wrapper,test_trading_deploy_split}.py" = ["E501"]

@@ -4,13 +4,12 @@ import datetime as dt
 
 import pandas as pd
 
+from test_engine import Always, spec
 from trader import alerts as alerts_mod
 from trader import config, runner
 from trader.broker import SimBroker
 from trader.data import ET
 from trader.engine import Book, Engine
-from test_engine import Always, spec
-
 
 alerts: list = []
 

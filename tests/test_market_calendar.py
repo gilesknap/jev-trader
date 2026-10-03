@@ -9,6 +9,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from conftest import make_session
+from test_engine import Always, spec
 from trader import probe, runner
 from trader.broker import SimBroker
 from trader.data import ET
@@ -16,9 +18,6 @@ from trader.engine import Book, Engine
 from trader.features import harness
 from trader.market_calendar import Calendar, Session, fetch_calendar, load_calendar, regular_session
 from trader.replay import replay
-
-from conftest import make_session
-from test_engine import Always, spec
 
 HALF = dt.date(2026, 11, 27)  # the day after Thanksgiving: 13:00 close
 HALF_CAL = Calendar(

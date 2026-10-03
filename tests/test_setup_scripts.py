@@ -427,7 +427,7 @@ def test_trader_test_import_order_really_prefers_the_clone(tmp_path):
     (clone / "src" / "trader").mkdir(parents=True)
     (clone / "src" / "trader" / "__init__.py").write_text("")
     (clone / "test_which.py").write_text(
-        "import trader\n\ndef test_which():\n    assert trader.__file__.startswith(%r)\n" % str(clone)
+        f"import trader\n\ndef test_which():\n    assert trader.__file__.startswith({str(clone)!r})\n"
     )
     r, _ = run_env(
         [str(ROOT / "scripts" / "trader-test"), "-q", "-p", "no:cacheprovider", "test_which.py"], home, cwd=clone

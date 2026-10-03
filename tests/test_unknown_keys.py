@@ -71,7 +71,7 @@ def test_strict_load_for_validate_and_replays_refuses_it(tmp_path):
 def test_other_problems_still_refuse_the_whole_file(tmp_path):
     # An unknown key plus a bad value isn't "only a typo": the file fails as before.
     p = write(tmp_path, rule("good"), rule("bad", trail_pc=0.4, stop_pct=50))
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         load_specs_report(p, FEATS, UNIVERSE)
 
 

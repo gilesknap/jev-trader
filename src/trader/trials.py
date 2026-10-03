@@ -277,9 +277,8 @@ def report(rows: list[dict], cid: str | None = None, spec: str | None = None, in
     for f in sorted({r["family"] for r in rows if r["family"]}):
         fam = [r for r in every if r["family"] == f]
         n, d, _ = tally(fam)
-        lines.append(
-            f"family {f}: {n} distinct spec(s) across {len({r['classifier_id'] for r in fam})} id(s), tried on {d} different day(s)"
-        )
+        ids = len({r["classifier_id"] for r in fam})
+        lines.append(f"family {f}: {n} distinct spec(s) across {ids} id(s), tried on {d} different day(s)")
     if stubs and not include_stub:
         lines.append(f"({stubs} stub-decider row(s) not counted: --include-stub counts them)")
     return "\n".join(lines).rstrip()

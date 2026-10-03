@@ -85,11 +85,10 @@ def cmd_validate(a):
 
 
 def cmd_replay(a):
-    from trader.replay import replay
-
     import re
 
     from trader.data import ET
+    from trader.replay import replay
 
     run_id = a.name or dt.datetime.now(ET).strftime("%Y%m%d-%H%M%S")  # New York time, like everything else
     if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,79}", run_id) or run_id in (".", ".."):

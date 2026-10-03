@@ -5,10 +5,9 @@ import json
 import pandas as pd
 import pytest
 
-from trader.broker import OrderState, Position, SimBroker
-
 from test_engine import Always, spec
 from test_execution_toolkit import make, ticks
+from trader.broker import OrderState, Position, SimBroker
 
 LIMIT = {"type": "limit", "offset_pct": 0.05, "expire_min": 60}  # limit 99.95 on a 100.00 print
 

@@ -127,7 +127,7 @@ def forward_returns(
         else:
             idx, close = np.empty(0, dtype="int64"), np.empty(0)
 
-        def price(t):
+        def price(t, idx=idx, close=close):  # bound now: called only in this iteration
             """The close as of each instant in `t` (ns), NaN past the carry limit or before any bar."""
             j = np.searchsorted(idx, t, side="right")
             ok = j > 0
@@ -197,7 +197,7 @@ def _ridge_ic(train: pd.DataFrame, test: pd.DataFrame, cols: list[str], y: str) 
             *[(df.s == s).to_numpy(float) / k for s, k in zip(syms, dsd, strict=True)],
         ]
 
-    X = design(train)
+    X = design(train)  # noqa: N806 (the design matrix, in the usual notation)
     pen = RIDGE * len(train) * np.eye(X.shape[1])
     pen[0, 0] = 0.0  # never shrink the intercept
     beta = np.linalg.solve(X.T @ X + pen, X.T @ train[y].to_numpy())

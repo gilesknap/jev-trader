@@ -5,13 +5,12 @@ import json
 
 import pandas as pd
 
+from test_engine import Always, spec
 from trader import runner
 from trader.broker import SimBroker
 from trader.data import ET
 from trader.engine import Book, Engine
 from trader.nav import NavBook
-
-from test_engine import Always, spec
 
 
 def make(tmp_path, specs, cash=250.0):
@@ -108,7 +107,8 @@ def test_halt_through_engine_then_clear_after_close_unblocks_next_day(tmp_path, 
     assert book.blocked == "halt"
     assert "runner is running" in runner.clear_halt("live")  # status.json is fresh: refused
     eng.end_day(dt.datetime.combine(day, dt.time(16), ET))
-    import os, time
+    import os
+    import time
 
     os.utime(tmp_path / "status.json", (time.time() - 3600, time.time() - 3600))  # runner exited
     msg = runner.clear_halt("live")
@@ -161,6 +161,7 @@ def test_replay_rerun_under_same_name_starts_fresh(tmp_path, session):
 
 def test_replay_refuses_to_delete_outside_its_directory(tmp_path, session):
     import pytest
+
     from trader.replay import replay
 
     bars = session(path=[100.0] * 30)
@@ -181,6 +182,7 @@ def test_replay_refuses_to_delete_outside_its_directory(tmp_path, session):
 
 def test_cli_rejects_bad_replay_names():
     import pytest
+
     from trader.cli import main
 
     for bad in ["..", "../x", "/tmp/x", "a/b", ".hidden"]:

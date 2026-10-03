@@ -9,9 +9,8 @@ latest close, as paper and sim accounts do), so the two differ only in the fill 
 import pandas as pd
 import pytest
 
-from trader.replay import replay
-
 from test_engine import Always, run, spec
+from trader.replay import replay
 
 S = 0.0005  # SimBroker.SLIPPAGE
 

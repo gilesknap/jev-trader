@@ -6,10 +6,10 @@ import json
 
 import pandas as pd
 import pytest
+
 from test_engine import Always, spec
 from test_probe import probe_spec
 from test_probe import run as probe_run
-
 from trader import cli, compact, config, golive, trials
 
 DAY = dt.date(2026, 9, 21)

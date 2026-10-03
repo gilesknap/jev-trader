@@ -7,14 +7,13 @@ import datetime as dt
 import pandas as pd
 import pytest
 
+from test_engine import Always, spec
+from test_start_equity import hold, make, ticks
 from trader import engine as E
 from trader import golive
 from trader.broker import SimBroker
 from trader.data import ET
 from trader.engine import Book, Engine
-
-from test_engine import Always, spec
-from test_start_equity import hold, make, ticks
 
 DAY = dt.date(2026, 10, 6)  # inside the gate's window
 
@@ -126,7 +125,6 @@ def test_unknown_start_never_gets_an_opening_row(tmp_path, session, held, last_e
 
 def test_an_opening_row_only_day_is_not_a_trading_day(tmp_path, session):
     """A session that started but never reached a 5-minute mark mustn't count towards the gate."""
-    bars = session(day=DAY, path=[100.0] * 390)
     book = Book("paper", Scripted(1000.0), tmp_path / "paper")
     eng = Engine([spec()], {"live": book, "shadow": book}, Always("WAIT"), {"SPY"}, tmp_path)
     eng.start_day(DAY, {})  # the runner died here: only the opening row

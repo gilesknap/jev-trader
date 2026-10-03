@@ -7,6 +7,7 @@ repos:
       - id: check-yaml
       - id: check-merge-conflict
       - id: end-of-file-fixer
+        exclude: ^deploy/github-web-flow\.gpg$  # GitHub's signing key, kept byte for byte as published
 
   - repo: local
     hooks:

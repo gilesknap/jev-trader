@@ -7,11 +7,10 @@ import math
 import pandas as pd
 import pytest
 
+from conftest import make_session
 from trader import features as F
 from trader import runner
 from trader.data import ET, prior_sessions, split_sessions
-
-from conftest import make_session
 
 DAY = dt.date(2026, 9, 22)
 PREV = dt.date(2026, 9, 21)

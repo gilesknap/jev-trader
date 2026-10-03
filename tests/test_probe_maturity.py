@@ -9,10 +9,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from conftest import make_session
 from trader import probe
 from trader.data import ET
-
-from conftest import make_session
 
 DAY = dt.date(2026, 9, 21)
 
@@ -104,7 +103,7 @@ def _reference(rows, sessions, horizons, data_end=None, last_bar="15:44"):
         bars = sessions.get(r["s"], {}).get(d)
         close = bars.close if bars is not None else pd.Series(dtype=float)
 
-        def price(t):
+        def price(t, close=close):  # bound now: called only in this iteration
             j = close.index.searchsorted(t, side="right")
             return float(close.iloc[j - 1]) if j and close.index[j - 1] >= t - carry else None
 

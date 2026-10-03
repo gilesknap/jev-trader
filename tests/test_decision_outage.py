@@ -4,13 +4,12 @@ import datetime as dt
 
 import pandas as pd
 
+from test_engine import spec
 from trader import engine as E
 from trader.broker import SimBroker
 from trader.data import ET
 from trader.engine import Book, Engine
 from trader.jev import Decision, DecisionError
-
-from test_engine import spec
 
 
 class Down:

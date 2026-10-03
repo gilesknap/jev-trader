@@ -5,13 +5,12 @@ from types import SimpleNamespace as NS
 
 import pandas as pd
 
+from test_engine import Always, spec
+from test_orders import FakeClient, broker
 from trader.broker import OrderState, Position, SimBroker
 from trader.data import ET
 from trader.engine import Book, Engine, Entry, Pending
 from trader.runner import STREAM_SYMBOL_LIMIT, session_symbols
-
-from test_engine import Always, spec
-from test_orders import FakeClient, broker
 
 DAY = dt.date(2026, 9, 21)
 

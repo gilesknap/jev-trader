@@ -3,8 +3,6 @@
 import datetime as dt
 import types
 
-import pytest
-
 from test_engine import spec
 from trader import alerts, cli, config
 

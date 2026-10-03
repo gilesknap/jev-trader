@@ -525,7 +525,7 @@ class Engine:
         for b in self.unique_books():
             if b.blocked in ("kill", "stop"):
                 b.blocked = None
-            risk = b._read_risk()
+            risk = b._read_risk()  # noqa: SLF001 (Engine reads its own books' risk state)
             restarted = risk.get("day") == today
             eq = self._read_equity(b)
             b.start_unverified = risk.get("start_unverified") if restarted else None
@@ -1407,7 +1407,7 @@ class Engine:
         size = spec.size_fraction * eq
         if spec.risk_pct:  # lose about risk_pct of equity at the stop; never more than size_fraction
             size = min(size, eq * spec.risk_pct / stop_pct)
-        if book.name == "live" and book._read_risk().get("live_sessions", 99) <= 5:
+        if book.name == "live" and book._read_risk().get("live_sessions", 99) <= 5:  # noqa: SLF001 (Engine reads its own books' risk state)
             size /= 2  # first live week runs at half size
         size = min(size, cash)
         positions = book.broker.get_positions()
@@ -1493,8 +1493,9 @@ class Engine:
 
     def _entry_failed(self, book: Book, st, sym, p: Pending, e: Exception, now) -> None:
         """The entry order raised. Refused outright (a 403 or 404 with no order id), or final with
-        nothing filled: nothing is held, so release the cash and the symbol. Anything else may have been accepted: keep it
-        reserved, and track it by its order id, or find it by its client id (#60)."""
+        nothing filled: nothing is held, so release the cash and the symbol. Anything else may have
+        been accepted: keep it reserved, and track it by its order id, or find it by its client id
+        (#60)."""
         p.order_id = getattr(e, "order_id", None) or ""
         if not p.order_id and (isinstance(e, NotFilled) or getattr(e, "status_code", None) in (403, 404)):
             self._settle_pending(book, sym, p, OrderState("rejected"), now, place_stop=True)
@@ -1617,7 +1618,8 @@ class Engine:
                 self._alert_every(
                     f"nostop:{book.name}:{sym}",
                     "info",
-                    f"[{book.name}] Alpaca didn't accept a server-side stop for {sym}; the engine enforces it each minute",
+                    f"[{book.name}] Alpaca didn't accept a server-side stop for {sym}; "
+                    "the engine enforces it each minute",
                     3600,
                 )
         st = self._state(classifier, sym)

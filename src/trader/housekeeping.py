@@ -68,7 +68,8 @@ def check_openrouter(key: str) -> list[tuple[str, str, bool]]:
         out.append(
             (
                 "openrouter_credit",
-                f"OpenRouter credit ${remaining:.2f} (~{min(days, 9999):.0f} days at ${burn:.3f}/day). Top up or enable auto top-up.",
+                f"OpenRouter credit ${remaining:.2f} (~{min(days, 9999):.0f} days at ${burn:.3f}/day). "
+                "Top up or enable auto top-up.",
                 remaining < 1 or days < URGENT_DAYS,
             )
         )
@@ -107,7 +108,9 @@ def check_github() -> list[tuple[str, str, bool]]:
                 return [
                     (
                         "github_token_expiry",
-                        f"GitHub token expires in {d:.0f} days. Regenerate it (repo {config.SETTINGS.owner.github_repo}: Contents + Pull requests + Issues RW) and run `gh auth login` as trader.",
+                        f"GitHub token expires in {d:.0f} days. Regenerate it "
+                        f"(repo {config.SETTINGS.owner.github_repo}: Contents + Pull requests + Issues RW) "
+                        "and run `gh auth login` as trader.",
                         d < URGENT_DAYS,
                     )
                 ]
@@ -180,7 +183,8 @@ def check_undeployed(state: dict) -> list[tuple[str, str, bool]]:
             return [
                 (
                     "undeployed",
-                    f"main has changes merged {hours / 24:.0f} days ago that aren't deployed. Run: sudo -u runner trading-deploy",
+                    f"main has changes merged {hours / 24:.0f} days ago that aren't deployed. "
+                    "Run: sudo -u runner trading-deploy",
                     False,
                 )
             ]
@@ -194,7 +198,8 @@ def check_undeployed(state: dict) -> list[tuple[str, str, bool]]:
             out.append(
                 (
                     "undeployed",
-                    f"The code repo's main has changes merged {hours / 24:.0f} days ago that aren't deployed. Run: sudo -u runner trading-deploy",
+                    f"The code repo's main has changes merged {hours / 24:.0f} days ago that aren't deployed. "
+                    "Run: sudo -u runner trading-deploy",
                     False,
                 )
             )
@@ -214,7 +219,8 @@ def check_undeployed(state: dict) -> list[tuple[str, str, bool]]:
             out.append(
                 (
                     "undeployed_config",
-                    f"The data repo's main (deployment config) has changes merged {hours / 24:.0f} days ago that aren't deployed. Run: sudo -u runner trading-deploy",
+                    f"The data repo's main (deployment config) has changes merged {hours / 24:.0f} days ago that "
+                    "aren't deployed. Run: sudo -u runner trading-deploy",
                     False,
                 )
             )

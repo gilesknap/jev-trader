@@ -6,13 +6,12 @@ from types import SimpleNamespace as NS
 
 import pytest
 
+from test_orders import FakeClient, broker
 from trader import golive, scoreboard
 from trader.broker import Fill, Position, SimBroker
 from trader.data import ET
 from trader.engine import Book, Entry
 from trader.runner import reconcile_at_startup
-
-from test_orders import FakeClient, broker
 
 
 def trade_rows(tmp_path):

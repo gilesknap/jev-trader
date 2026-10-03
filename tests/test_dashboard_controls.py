@@ -78,7 +78,7 @@ def test_cross_site_form_post_refused(acted, client, path, word, fetch_site, enc
     headers = {"Content-Type": enctype, "Origin": "https://evil.example"}
     if fetch_site:
         headers["Sec-Fetch-Site"] = fetch_site
-    r = client.post(path, content='{"confirm":"%s","x":"="}' % word, headers=headers)
+    r = client.post(path, content=f'{{"confirm":"{word}","x":"="}}', headers=headers)
     assert r.status_code in (403, 415)
     assert acted == []
 

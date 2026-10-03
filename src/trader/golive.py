@@ -135,7 +135,6 @@ def spec_hash(spec, custom_digest: str = "") -> str:
     import hashlib
 
     from trader import features as F
-
     from trader.classifier import EXECUTION_FIELDS
 
     d = spec.model_dump(exclude={"mode", "enabled", "family"})
@@ -441,7 +440,8 @@ def resolve_mode(notify, live_equity=None, session: dt.date | None = None) -> st
         if eq is None or eq < MIN_LIVE_EQUITY:
             notify(
                 "urgent",
-                f"Go-live is due but the live account has ${eq or 0:.2f} (need ${MIN_LIVE_EQUITY:.0f}). Staying on paper; fund it to proceed.",
+                f"Go-live is due but the live account has ${eq or 0:.2f} (need ${MIN_LIVE_EQUITY:.0f}). Staying on "
+                "paper; fund it to proceed.",
             )
             return "paper"
         st.update(status="live", live_since=day.isoformat())
@@ -480,7 +480,8 @@ def after_session(notify, live_book_halted: bool = False, session: dt.date | Non
         notices.append(
             (
                 "urgent",
-                "Live book HALTED: back to paper. Going live again needs `trader release-live` after you've cleared the halt.",
+                "Live book HALTED: back to paper. Going live again needs `trader release-live` after you've "
+                "cleared the halt.",
             )
         )
     elif st["status"] == "armed":
@@ -493,14 +494,16 @@ def after_session(notify, live_book_halted: bool = False, session: dt.date | Non
                 notices.append(
                     (
                         "urgent",
-                        f"Go-live armed: {st['sessions_left']} paper session(s) left in the veto window. HOLD LIVE on the dashboard to stop it.",
+                        f"Go-live armed: {st['sessions_left']} paper session(s) left in the veto window. HOLD LIVE "
+                        "on the dashboard to stop it.",
                     )
                 )
             else:
                 notices.append(
                     (
                         "urgent",
-                        "Go-live armed: the account switches to LIVE at the next session (after a final gate check). HOLD LIVE on the dashboard to stop it.",
+                        "Go-live armed: the account switches to LIVE at the next session (after a final gate "
+                        "check). HOLD LIVE on the dashboard to stop it.",
                     )
                 )
     elif st["status"] == "pending":
@@ -510,7 +513,8 @@ def after_session(notify, live_book_halted: bool = False, session: dt.date | Non
             notices.append(
                 (
                     "urgent",
-                    f"Go-live gate PASSED ({g}). Live trading starts after {VETO_SESSIONS} more paper sessions unless you press HOLD LIVE.",
+                    f"Go-live gate PASSED ({g}). Live trading starts after {VETO_SESSIONS} more paper sessions "
+                    "unless you press HOLD LIVE.",
                 )
             )
     if not _save_then_alert(st, expected, notices, notify):

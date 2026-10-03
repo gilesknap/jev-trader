@@ -55,7 +55,7 @@ class JevClient:
             },
         }
         last: Exception | None = None
-        for attempt in range(2):  # one retry; the engine's circuit breaker handles outages
+        for _attempt in range(2):  # one retry; the engine's circuit breaker handles outages
             try:
                 r = self._http.post(DECISIONS_URL, json=body)
                 if r.status_code in (429, 500, 502, 503, 524, 529):

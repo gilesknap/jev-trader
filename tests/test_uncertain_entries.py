@@ -7,15 +7,14 @@ from types import SimpleNamespace as NS
 import pandas as pd
 import pytest
 
-from trader import golive, runner, scoreboard
-from trader.broker import NotFilled, OrderPending, OrderState, Position, SimBroker
-from trader.data import ET
-from trader.engine import Engine, Entry, Pending
-
 from test_engine import Always, spec
 from test_execution_toolkit import make, ticks
 from test_orders import APIError, FakeClient, broker
 from test_partial_fills import LIMIT, Scripted, rows
+from trader import golive, runner, scoreboard
+from trader.broker import NotFilled, OrderPending, Position, SimBroker
+from trader.data import ET
+from trader.engine import Engine, Entry, Pending
 
 
 class Lost(Scripted):

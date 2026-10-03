@@ -4,13 +4,13 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from conftest import TEST_START_DATE as START_DATE  # what the autouse fixture pins golive.START_DATE to
+from test_engine import run, spec
 from trader import cli, config
 from trader import features as F
 from trader.classifier import load_specs
-from conftest import TEST_START_DATE as START_DATE  # what the autouse fixture pins golive.START_DATE to
 from trader.jev import Decision
 from trader.runner import _exclude_prelaunch_specs
-from test_engine import run, spec
 
 
 def test_plumbing_rules_are_disabled_on_start_date_even_if_left_configured():
@@ -88,4 +88,7 @@ def test_exit_threshold_of_half_takes_a_classifier_exit_at_jevs_observed_scores(
     exits = trades[trades.side == "sell"].reset_index(drop=True)
     buys = trades[trades.side == "buy"].reset_index(drop=True)
     assert len(exits) == 2 and set(exits.reason) == {"classifier EXIT"}
-    assert all((pd.Timestamp(s) - pd.Timestamp(b)).total_seconds() < 30 * 60 for b, s in zip(buys.time, exits.time))
+    assert all(
+        (pd.Timestamp(s) - pd.Timestamp(b)).total_seconds() < 30 * 60
+        for b, s in zip(buys.time, exits.time, strict=False)
+    )

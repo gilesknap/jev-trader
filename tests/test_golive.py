@@ -438,7 +438,9 @@ def test_failed_write_leaves_corrupt_file_in_place(env, monkeypatch, act):
     assert golive.resolve_mode(lambda *a: None, session=DAYS[0]) == "paper"
 
 
-@pytest.mark.parametrize("act,status", list(zip(HUMAN_ACTIONS, ["vetoed", "pending"])), ids=["hold", "release"])
+@pytest.mark.parametrize(
+    "act,status", list(zip(HUMAN_ACTIONS, ["vetoed", "pending"], strict=True)), ids=["hold", "release"]
+)
 def test_failed_set_aside_still_writes_a_clean_state(env, monkeypatch, act, status):
     import pathlib
 

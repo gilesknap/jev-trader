@@ -8,15 +8,14 @@ import pandas as pd
 import pytest
 import yaml
 
+from test_engine import Always, spec
+from test_restart_state import ticks
 from trader import allocator as A
 from trader import config
 from trader.allocator import Exposure, allocate
 from trader.broker import Position, SimBroker
 from trader.engine import Book, Engine, Entry, Pending
 from trader.guardrails import MAX_STOP_DISTANCE, MIN_NOTIONAL
-
-from test_engine import Always, spec
-from test_restart_state import ticks
 
 # ---- the allocator -------------------------------------------------------------------------
 

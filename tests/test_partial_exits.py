@@ -8,13 +8,12 @@ from types import SimpleNamespace as NS
 import pandas as pd
 import pytest
 
+from test_engine import Always, spec
+from test_orders import APIError, FakeClient
 from trader import golive, scoreboard
 from trader.broker import AlpacaBroker, Fill, OrderState, SimBroker
 from trader.data import ET
 from trader.engine import Book, Engine, Entry, Pending
-
-from test_engine import Always, spec
-from test_orders import APIError, FakeClient
 
 DAY = dt.date(2026, 10, 14)
 T0 = dt.datetime(2026, 10, 14, 10, 0, tzinfo=ET)

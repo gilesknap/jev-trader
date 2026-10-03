@@ -7,13 +7,12 @@ from types import SimpleNamespace as NS
 import pandas as pd
 import pytest
 
+from test_engine import Always, run, spec
+from test_orders import FakeClient, broker
 from trader import golive
 from trader.broker import SimBroker
 from trader.data import ET
 from trader.engine import Book, Engine
-
-from test_engine import Always, run, spec
-from test_orders import FakeClient, broker
 
 
 def make(tmp_path, specs, decider=None, br=None):
@@ -340,8 +339,8 @@ def test_alpaca_scale_out_cancels_the_stop_first_and_defers_if_it_fired():
 
 
 def test_startup_keeps_todays_limit_fill_and_drops_stale_limits(tmp_path):
-    from trader.engine import Pending
     from trader.broker import Position
+    from trader.engine import Pending
     from trader.runner import reconcile_at_startup
 
     class Recon(SimBroker):

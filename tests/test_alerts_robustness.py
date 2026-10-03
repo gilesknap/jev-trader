@@ -1,18 +1,15 @@
 """Alert noise (#23) and small robustness items (#24)."""
 
 import datetime as dt
-import json
 from types import SimpleNamespace as NS
 
 import pandas as pd
 
+from test_engine import Always, spec
 from trader import runner
 from trader.broker import SimBroker
 from trader.data import ET
 from trader.engine import Book, Engine
-from trader.nav import NavBook
-
-from test_engine import Always, spec
 
 
 def et(y, m, d, h, mi=0):
@@ -40,7 +37,7 @@ def test_stale_feed_blocks_new_entries(tmp_path, session):
         Always(),
         {"SPY"},
         tmp_path,
-        alert=lambda l, m: alerts.append(m),
+        alert=lambda level, m: alerts.append(m),
     )
     eng.start_day(day, {})
     close = dt.datetime.combine(day, dt.time(16), ET)
@@ -155,7 +152,7 @@ def test_stale_feed_when_stream_never_delivers(tmp_path, session):
         Always(),
         {"SPY"},
         tmp_path,
-        alert=lambda l, m: alerts.append(m),
+        alert=lambda level, m: alerts.append(m),
     )
     eng.start_day(day, {})
     close = dt.datetime.combine(day, dt.time(16), ET)

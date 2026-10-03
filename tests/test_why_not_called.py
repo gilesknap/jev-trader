@@ -4,11 +4,10 @@ across a restart, and the dashboard's one-line summary of them."""
 import datetime as dt
 import json
 
-from trader.dashboard import _with_why, why_summary
-from trader.data import ET
-
 from test_engine import Always, run, spec
 from test_restart_state import make, ticks
+from trader.dashboard import _with_why, why_summary
+from trader.data import ET
 
 
 def _sym(tmp_path, cid="t", sym="SPY"):

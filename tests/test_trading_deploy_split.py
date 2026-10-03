@@ -383,10 +383,8 @@ def test_single_repo_deploy_is_unchanged_and_never_enters_two_repo_code(mono):
         mono.lock.parent.chmod(0o700)
     assert r.returncode == 0, r.stdout + r.stderr
     assert git(mono.code, "rev-parse", "HEAD") == target
-    assert (
-        r.stdout.splitlines()[0]
-        == f"=== files changed since last deploy ({git(mono.code, 'rev-parse', '--short', 'HEAD@{1}')} -> {target[:7]}) ==="
-    )
+    old = git(mono.code, "rev-parse", "--short", "HEAD@{1}")
+    assert r.stdout.splitlines()[0] == f"=== files changed since last deploy ({old} -> {target[:7]}) ==="
     assert "=== merged pull requests" in r.stdout and "code repo" not in r.stdout and "data repo" not in r.stdout
     assert mono.reviewed() == ""  # all merged PRs: no diff review, no prompt
     log = mono.logged()

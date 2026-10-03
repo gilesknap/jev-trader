@@ -301,4 +301,3 @@ layout does, except the first:
 | The deny rules in `~trader/.claude/settings.json` | Harmless; keep them, or delete the `permissions.deny` entries `2-strategist.sh` added |
 | `runner`'s traverse and read ACLs on `~trader`, `~trader/.local`, `~trader/.local/state`, `~trader/.local/state/trader` and the lock | The old layout never grants them. Remove them: `sudo setfacl -x u:runner` on each of the four directories and the lock file, and `sudo setfacl -k ~trader/.local/state/trader` for its default ACL |
 | The `weekly` label and any weekly issues in your data repository | Harmless; close any open weekly issue. The old layout reports in a weekly pull request again |
-

@@ -9,13 +9,12 @@ import signal
 import pandas as pd
 import pytest
 
+from conftest import make_session
 from trader import config, golive, runner
 from trader import features as F
 from trader.classifier import load_specs
 from trader.data import ET
 from trader.features.sandbox import FeatureSandbox
-
-from conftest import make_session
 
 needs_bwrap = pytest.mark.skipif(not shutil.which("bwrap"), reason="bubblewrap not installed")
 

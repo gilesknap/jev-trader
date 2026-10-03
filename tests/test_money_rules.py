@@ -5,13 +5,12 @@ import datetime as dt
 
 import pandas as pd
 
+from test_engine import Always, spec
 from trader import golive
 from trader.broker import SimBroker
 from trader.classifier import ClassifierSpec
 from trader.data import ET
 from trader.engine import Book, Engine
-
-from test_engine import Always, spec
 
 
 def run(tmp_path, bars, specs, cash=250.0):

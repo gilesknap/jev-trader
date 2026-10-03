@@ -106,7 +106,9 @@ def test_a_late_stream_catches_up_on_todays_bars_without_duplicates(monkeypatch)
         return {s: b for s in symbols}
 
     monkeypatch.setattr(runner, "fetch_alpaca", fetch)
-    rows = {"AAA": [(ts, *r) for ts, r in zip(b.index[3:5], b.iloc[3:5].itertuples(index=False))]}  # the stream's
+    rows = {
+        "AAA": [(ts, *r) for ts, r in zip(b.index[3:5], b.iloc[3:5].itertuples(index=False), strict=True)]
+    }  # the stream's
     rows = runner.defaultdict(list, rows)
     runner.catch_up_bars(rows, threading.Lock(), ["AAA"], [], OPEN, TICK, {}, alert=lambda *a: pytest.fail(str(a)))
     assert asked == [(("AAA",), OPEN, TICK, "iex")]

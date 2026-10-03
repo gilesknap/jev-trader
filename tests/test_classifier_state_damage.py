@@ -5,11 +5,10 @@ import json
 
 import pytest
 
-from trader.broker import SimBroker
-from trader.engine import Book, Engine
-
 from test_engine import Always, spec
 from test_restart_state import ticks
+from trader.broker import SimBroker
+from trader.engine import Book, Engine
 
 
 def make(tmp_path, specs, alerts):

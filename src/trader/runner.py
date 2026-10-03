@@ -321,7 +321,9 @@ def catch_up_bars(
             got = _fetch_within(CATCH_UP_TIMEOUT_S, syms, open_, tick, secrets, feed="iex")
             with lock:
                 for s, b in got.items():
-                    rows[s].extend((ts, *r) for ts, r in zip(b.index, b.itertuples(index=False)) if ts < tick)
+                    rows[s].extend(
+                        (ts, *r) for ts, r in zip(b.index, b.itertuples(index=False), strict=True) if ts < tick
+                    )
         except Exception as e:
             alert("urgent", f"could not fetch today's bars so far for {syms}: {e!r}; {why}")
 
@@ -415,7 +417,7 @@ def tick_bars(
             rest.poll(tick, live, {s for b in engine.unique_books() if b.broker.name != "sim" for s in b.entries})
         bars = rest.merge(live)
     except Exception as e:
-        engine._alert_every("rest-bars", "urgent", f"REST bars for held positions failed: {e!r}", 1800)
+        engine._alert_every("rest-bars", "urgent", f"REST bars for held positions failed: {e!r}", 1800)  # noqa: SLF001 (the runner drives its own engine)
     return bars, live.get("SPY", pd.DataFrame())
 
 
@@ -483,11 +485,11 @@ def _last_resort_flatten(engine: Engine, tick: dt.datetime, bars: dict, minutes_
         try:
             engine.flatten_for_close(tick, prices or None)
         except Exception as e:  # it shouldn't raise; if it does, the next minute tries again
-            engine._alert_every("eod-last-resort", "urgent", f"last-resort flatten failed: {e!r}")
+            engine._alert_every("eod-last-resort", "urgent", f"last-resort flatten failed: {e!r}")  # noqa: SLF001 (the runner drives its own engine)
     try:
         engine.write_status(tick, minutes_to_close)
     except Exception as e:
-        engine._alert_every("eod-status", "urgent", f"status write failed in the flatten window: {e!r}")
+        engine._alert_every("eod-status", "urgent", f"status write failed in the flatten window: {e!r}")  # noqa: SLF001 (the runner drives its own engine)
 
 
 WIND_DOWN_KEY = "live:wind-down"
@@ -816,7 +818,9 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
     caught_up = dt.datetime.now(ET) < open_ - dt.timedelta(seconds=90)
 
     rest = RestBars(
-        lambda syms, start, end: fetch_alpaca(syms, start, end, secrets, feed="iex"), open_, engine._alert_every
+        lambda syms, start, end: fetch_alpaca(syms, start, end, secrets, feed="iex"),
+        open_,
+        engine._alert_every,  # noqa: SLF001 (the runner drives its own engine)
     )
     tick_failures = 0
     while True:
@@ -916,7 +920,8 @@ def _open_sim_book(key: str, d: Path, alert, quarantine: Path) -> Book | None:
             shutil.move(str(d), str(dest))
             alert(
                 "urgent",
-                f"[{key}] sim account unreadable ({e!r}): moved to {dest}; it restarts with fresh cash. Paper and live are unaffected.",
+                f"[{key}] sim account unreadable ({e!r}): moved to {dest}; it restarts with fresh cash. "
+                "Paper and live are unaffected.",
             )
             return Book(key, PersistentSimBroker(d / "sim_state.json"), d)
         except Exception as e2:
@@ -1066,7 +1071,8 @@ def reconcile_at_startup(b: Book, alert) -> None:
                 )
                 alert(
                     "urgent",
-                    f"[{b.name}] {sym} closed while the runner was down and its exit price is unknown; recorded at the stop ({e.stop:.2f})",
+                    f"[{b.name}] {sym} closed while the runner was down and its exit price is unknown; "
+                    f"recorded at the stop ({e.stop:.2f})",
                 )
         b.save_entries()
     except Exception as e:

@@ -9,13 +9,12 @@ import json
 
 import pytest
 
+from test_engine import Always, spec
+from test_execution_toolkit import make, ticks
 from trader import scoreboard as SB
 from trader.broker import Fill, OrderState, SimBroker
 from trader.data import ET
 from trader.engine import Book, Engine, Pending
-
-from test_engine import Always, spec
-from test_execution_toolkit import make, ticks
 
 DAY = dt.date(2026, 9, 21)
 AT = lambda h, m: dt.datetime.combine(DAY, dt.time(h, m), ET)

@@ -6,8 +6,8 @@ import gzip
 import json
 
 import pandas as pd
-from test_engine import Always, run, spec
 
+from test_engine import Always, run, spec
 from trader import compact, config, golive
 from trader import scoreboard as SB
 from trader.broker import Fill, SimBroker

@@ -8,11 +8,10 @@ import time
 import pandas as pd
 import pytest
 
+from test_engine import Always, spec
 from trader.broker import NotFilled, SimBroker
 from trader.data import ET
 from trader.engine import Book, Engine
-
-from test_engine import Always, spec
 
 
 class APIError(Exception):

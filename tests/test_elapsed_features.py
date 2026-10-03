@@ -8,11 +8,10 @@ import math
 import pandas as pd
 import pytest
 
+from conftest import make_session
 from trader import features as F
 from trader.data import ET
 from trader.features import lib
-
-from conftest import make_session
 
 DAY = dt.date(2026, 9, 21)
 OPEN = pd.Timestamp(dt.datetime.combine(DAY, dt.time(9, 30), ET))
@@ -157,9 +156,8 @@ def test_recent_returns_are_one_minute_apart():
 def test_minutes_since_open_is_the_same_in_the_gate_as_live(tmp_path, monkeypatch):
     """Bar n of a full session is minute n (the first bar is 1, at the 09:31 tick) in the engine, in
     the custom-feature gate and in the probe log's `m`; minutes_to_close agrees too."""
-    from trader.features import harness
-
     from test_probe import Always, probe_spec, run
+    from trader.features import harness
 
     seen = {}
 

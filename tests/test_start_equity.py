@@ -7,13 +7,12 @@ import json
 import pandas as pd
 import pytest
 
+from test_engine import Always, spec
 from trader import config, golive, runner
 from trader import engine as E
 from trader.broker import SimBroker
 from trader.data import ET
 from trader.engine import Book, Engine
-
-from test_engine import Always, spec
 
 
 @pytest.fixture(autouse=True)

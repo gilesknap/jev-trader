@@ -7,11 +7,10 @@ import math
 import pandas as pd
 import pytest
 
+from conftest import make_session
 from trader import features as F
 from trader.data import ET
 from trader.features import lib
-
-from conftest import make_session
 
 DAY = dt.date(2026, 9, 21)
 OPEN = pd.Timestamp(dt.datetime.combine(DAY, dt.time(9, 30), ET))
