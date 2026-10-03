@@ -113,6 +113,9 @@ filled in is checked only against the stop.) Per bar:
 
 After the bars, a **time stop** (`max_hold_min`) exits once the position is that many minutes
 old. Each position keeps the rules it was opened with, even if the spec is edited mid-session.
+These mechanical exits run every minute of the session, outside the classifier's `window` too:
+a position still open when its window ends is held until one of them, or the flatten 15 minutes
+before the close, closes it.
 
 At each cadence, inside the window, the engine also asks the **exit question** (`exit.instructions` with exactly
 `HOLD` and `EXIT` criteria). The state now includes the position:

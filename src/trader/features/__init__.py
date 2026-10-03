@@ -19,7 +19,9 @@ SOURCES: dict[str, str] = {}  # name -> "lib" | custom file name
 
 @dataclass
 class FeatureContext:
-    prev_day: pd.DataFrame  # previous session's bars for this symbol (may be empty)
+    # Previous session's bars for this symbol (may be empty). Prices are SIP's (the official
+    # close); volume is from the same feed as today's bars (live: IEX), NaN if that feed lacks it.
+    prev_day: pd.DataFrame
     spy: pd.DataFrame  # today's SPY bars up to now (market reference)
     minutes_since_open: float
     minutes_to_close: float
