@@ -23,7 +23,7 @@ from trader import features as F
 from trader import guardrails as G
 from trader.alerts import notify
 from trader.broker import AlpacaBroker
-from trader.data import ET, fetch_alpaca, prior_sessions, split_sessions
+from trader.data import ET, fetch_alpaca, gate_samples, prior_sessions, split_sessions
 from trader.engine import Book, Engine, stale_feed
 
 BOOKS_DIR = config.RUNTIME_DIR / "books"
@@ -134,10 +134,8 @@ def _load_specs(file, secrets):
     from trader.features.harness import run_gate
 
     end = dt.datetime.now(ET) - dt.timedelta(minutes=20)
-    raw = fetch_alpaca(["SPY", "QQQ"], end - dt.timedelta(days=7), end, secrets)
-    spy, qqq = split_sessions(raw["SPY"]), split_sessions(raw["QQQ"])
-    days = sorted(spy)[-3:]
-    samples = [(per[d], per[days[i - 1]], spy[d]) for per in (spy, qqq) for i, d in enumerate(days) if i and d in per and days[i - 1] in per]
+    samples = gate_samples(lambda days: {s: split_sessions(b) for s, b in fetch_alpaca(
+        ["SPY", "QQQ"], end - dt.timedelta(days=days), end, secrets).items()})
     report = run_gate(config.CUSTOM_FEATURES_DIR, samples, alert=notify)
     if report.errors:
         notify("urgent", f"Custom features rejected: {report.errors}")

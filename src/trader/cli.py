@@ -23,27 +23,12 @@ def _decider(name: str, secrets):
 
 def _gate_samples(source: str = "alpaca"):
     """Recent SPY/QQQ sessions for the custom-feature gate: (bars, prev_day, spy) tuples."""
+    from trader.data import gate_samples
     from trader.replay import load_sessions
 
     secrets = config.load_secrets()
     end = dt.date.today() - dt.timedelta(days=1)
-    # Count sessions, not calendar days: a run of holidays (or a data gap) can leave a short
-    # window with too few sessions, and an empty sample set would reject every custom feature.
-    for lookback in (7, 21, 60):
-        sessions = load_sessions(["SPY", "QQQ"], end - dt.timedelta(days=lookback), end, secrets, source)
-        spy = sessions.get("SPY", {})
-        if len(spy) >= 3:
-            break
-    else:  # a data outage, not a bug in the features: the caller reports it, nothing is rejected
-        raise RuntimeError(f"only {len(spy)} SPY session(s) in the last {lookback} days")
-    days = sorted(spy)[-3:]
-    samples = []
-    for sym in ("SPY", "QQQ"):
-        per = sessions.get(sym, {})
-        for i, d in enumerate(days[1:], 1):
-            if d in per and days[i - 1] in per:
-                samples.append((per[d], per[days[i - 1]], spy[d]))
-    return samples
+    return gate_samples(lambda days: load_sessions(["SPY", "QQQ"], end - dt.timedelta(days=days), end, secrets, source))
 
 
 def _specs(path: Path, source: str = "alpaca"):
