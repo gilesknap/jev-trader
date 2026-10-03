@@ -359,7 +359,8 @@ def scoreboard(source: str = "live", all_days: bool | None = None):
         from trader.broker import SIM_START_CASH
 
         # Every sim account starts with the same cash, so % of it compares rules fairly. The
-        # simulated fills already include slippage, and none of this counts towards promotion.
+        # simulated fills (market and limit entries, and every exit) already include slippage, and
+        # none of this counts towards promotion.
         books["sim"] = SB.build(_sim_trades(source), families, sim_ids, SIM_START_CASH, since=None,
                                 slippage_per_side_pct=0.0, from_date=from_date)
     return {"source": source, "books": books,

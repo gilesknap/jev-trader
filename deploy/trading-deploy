@@ -17,7 +17,7 @@
 # rendered files must match, and the strategist's live specs are validated (a warning only).
 # The switch also refuses while a strategist run is live (it holds its run lock). Without
 # a checkout there (setup leaves the directory empty), everything below behaves as the
-# single-repo deploy always has.
+# single-repo deploy always has, except that it refuses a code-only target (no config.yaml).
 set -euo pipefail
 umask 027
 DRY=0; [[ "${1:-}" == "--dry-run" ]] && DRY=1
@@ -157,7 +157,9 @@ inspect_repo() {  # DIR BASE TARGET PLAINFILE LABEL FULL: show, refuse or plan o
         exit 1
     fi
     # Which commits came through a merged PR? Asked of the deployed code and key, never the candidate's.
-    planout=$("$PLAN_TRADER" deploy-plan --repo "$dir" --base "$base" --target "$target" 2>&1) && rc=0 || rc=$?
+    # `trader` loads config.yaml at import: in the two-repo layout it lives only in the deployed data.
+    planout=$(if (( ${SPLIT:-0} )); then export TRADER_DATA_ROOT="$CONFIG_DIR"; fi
+              "$PLAN_TRADER" deploy-plan --repo "$dir" --base "$base" --target "$target" 2>&1) && rc=0 || rc=$?
     case $rc in
         0) echo "=== ${label}merged pull requests (GitHub-signed merge commits; review happened in each PR) ==="
            echo "$planout" | sed 's/^PR /  /' ;;
@@ -294,6 +296,12 @@ if (( SPLIT )); then
     if [[ $OLD_CODE == "$TARGET" && $OLD_DATA == "$TARGET_DATA" ]]; then
         echo "already at origin/main in both repos (code ${OLD_CODE:0:7}, data ${OLD_DATA:0:7}); nothing to deploy"; exit 0
     fi
+elif ! git cat-file -e "$TARGET:config.yaml" 2>/dev/null; then
+    # The public code repo carries no deployment data: deployed alone, the runner would find no
+    # config.yaml and no trader-runner.timer at its next start.
+    echo "REFUSING: origin/main (${TARGET:0:7}) has no config.yaml, so it is code only, and $CONFIG_DIR holds no data checkout; nothing was changed." >&2
+    echo "Clone your data repo's main into $CONFIG_DIR (the two-repo layout, docs/how-to/migrate-to-split.md), or, rolling back, point origin at your private repository again." >&2
+    exit 1
 elif [[ "$(git rev-parse HEAD)" == "$TARGET" ]]; then
     echo "already at origin/main ($(git rev-parse --short HEAD)); nothing to deploy"; exit 0
 fi
