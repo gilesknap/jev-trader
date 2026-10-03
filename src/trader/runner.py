@@ -24,7 +24,7 @@ from trader import guardrails as G
 from trader.alerts import notify
 from trader.broker import AlpacaBroker
 from trader.data import ET, GATE_LOOKBACKS, GateSampleError, fetch_alpaca, gate_samples, prior_sessions, split_sessions
-from trader.engine import Book, Engine, stale_feed
+from trader.engine import WIND_DOWN, Book, Engine, stale_feed
 from trader.market_calendar import Calendar, fetch_calendar, session_from_row
 
 BOOKS_DIR = config.RUNTIME_DIR / "books"
@@ -423,6 +423,44 @@ def _last_resort_flatten(engine: Engine, tick: dt.datetime, bars: dict, minutes_
         engine._alert_every("eod-status", "urgent", f"status write failed in the flatten window: {e!r}")
 
 
+WIND_DOWN_KEY = "live:wind-down"
+
+
+def wind_down_live_book(secrets, alert=notify) -> Book | None:
+    """On a paper day the live account can still hold positions: a HOLD LIVE (or a live halt
+    cleared with `clear-halt`) mid-session, then a runner restart, or a mode.yaml switch to paper.
+    Without the live book in the engine they'd be unmanaged until a later live session (their
+    server-side stops lapse at the close). So when the live book tracks entries or resting orders,
+    or the live account holds anything (or that can't be read), the live book joins the session in
+    wind-down: no classifier trades it, and the engine closes all it holds at the first tick after
+    the open (Engine._book_checks); the EOD flatten backs that up. None: nothing to wind down. Never
+    raises. Every call on the trading client has its own HTTP timeout (AlpacaBroker)."""
+    if not secrets.get("ALPACA_LIVE_KEY"):
+        return None
+    try:
+        broker = AlpacaBroker(secrets["ALPACA_LIVE_KEY"], secrets["ALPACA_LIVE_SECRET"], paper=False)
+        book = Book("live", broker, BOOKS_DIR / "live")
+    except Exception as e:
+        alert("urgent", f"[live] paper today, and the live book couldn't be opened ({e!r}): anything the live "
+                        "account holds is unmanaged today. Check Alpaca now.")
+        return None
+    held: list[str] | None = None
+    try:
+        held = sorted(broker.get_positions())
+    except Exception as e:
+        alert("urgent", f"[live] paper today, and the live positions couldn't be read ({e!r}): the live book "
+                        "winds down anyway, closing anything it finds after the open")
+    if held == [] and not book.entries and not book.pending:
+        return None
+    _apply_cashflows(book, broker)  # as on a live day, so its NAV marks stay right
+    if not book.blocked:  # a halt flattens the same way, and stays for the human to clear
+        book.blocked = WIND_DOWN
+    what = held if held is not None else sorted(set(book.entries) | set(book.pending))
+    alert("urgent", f"[live] paper today, but the live account still holds {what}: closing it at the first "
+                    "minute after the open. No new live trades.")
+    return book
+
+
 def count_live_session(mode: str, day: dt.date, live_dir, alert=None) -> None:
     """The live book's `live_sessions`: the engine trades its first 5 at half size. Every return to
     live starts a fresh half-size week, whatever the path back (a runner demotion after a live halt,
@@ -511,6 +549,10 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
         live_book = Book("live", live, BOOKS_DIR / "live")
         _apply_cashflows(live_book, live)
         books["live"] = live_book
+    else:
+        winding = wind_down_live_book(secrets)
+        if winding is not None:  # under its own key: no classifier's book, so nothing enters on it
+            books[WIND_DOWN_KEY] = winding
     count_live_session(mode, open_.date(), BOOKS_DIR / "live", notify)
 
     # Wait for the open; the pre-market strategist run may still be editing classifiers.

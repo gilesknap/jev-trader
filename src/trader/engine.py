@@ -45,6 +45,9 @@ START_UNVERIFIED_NOTE = "no new entries: start equity unreadable"
 # A tracked position gone from the broker whose exit fill can't be read is looked up this many
 # times (once a tick) before its exit is recorded at a guessed price (#131).
 EXIT_LOOKUP_TRIES = 10
+# Book.blocked for the live book on a paper day (runner.wind_down_live_book): it trades nothing and
+# everything it holds is closed at the first tick.
+WIND_DOWN = "wind-down"
 
 TRADE_COLS = ["time", "book", "classifier", "symbol", "side", "qty", "price", "notional", "reason", "pnl", "pnl_pct",
               *PROVENANCE_COLS]  # provenance last: a file written before it is upgraded in place (Book)
@@ -185,7 +188,7 @@ class Book:
     dir: Path
     nav: NavBook = field(default_factory=NavBook)
     day_start_equity: float = 0.0
-    blocked: str | None = None  # "kill" | "halt" | "stop"
+    blocked: str | None = None  # "kill" | "halt" | "stop" | WIND_DOWN
     entries: dict[str, Entry] = field(default_factory=dict)
     pending: dict[str, Pending] = field(default_factory=dict)
     realised_today: float = 0.0
@@ -766,7 +769,7 @@ class Engine:
         self._enforce_exits(b, now, bars)
         self._risk(b, now)
         if b.blocked and (b.entries or b.pending):  # a kill/halt/STOP flatten failed earlier: keep retrying
-            self._flatten(b, now, prices, f"{b.blocked} (retry)")
+            self._flatten(b, now, prices, "wind-down (paper today)" if b.blocked == WIND_DOWN else f"{b.blocked} (retry)")
         if b.blocked == "stop" or (self.day and b.stop_requested(self.day)):
             if b.blocked != "stop":
                 b.blocked = "stop"
