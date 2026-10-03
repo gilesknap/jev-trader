@@ -15,7 +15,8 @@ full interactive Claude Code session rather than a bespoke chat interface.
 - Steering happens in an ordinary interactive session that reads the strategist's state and
   logs, and ends in a pull request into the `strategist` branch.
 - Decisions go in `state/steering.md`, a human-owned file of numbered entries with reasoning.
-  Active entries bind the strategist. It never edits the file, applies each new entry, and
+  Active entries bind the strategist. It never edits the file (the wrapper reverts any change a run
+  makes to it), applies each new entry, and
   acknowledges it in its journal. It argues back in the journal, not by editing.
 - By default a steering PR changes only `steering.md`, and the strategist applies the decision
   itself. Direct state edits are kept for emergencies.
