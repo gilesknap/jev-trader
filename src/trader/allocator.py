@@ -87,7 +87,7 @@ def allocate(
         if symbol in members or symbol in BROAD:
             used = sum(x.notional for x in exposures if x.symbol in members or x.symbol in BROAD)
             constraints[f"{name} bucket"] = BUCKET_CAP * equity - used
-    binding = min(constraints, key=constraints.get)
+    binding = min(constraints, key=lambda k: constraints[k])
     return max(0.0, min(desired, constraints[binding])), binding
 
 

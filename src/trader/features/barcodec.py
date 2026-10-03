@@ -8,6 +8,8 @@ standard library, numpy and pandas; tests/test_sandbox.py checks the worker's wh
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import numpy as np
 import pandas as pd
 
@@ -18,7 +20,7 @@ def encode_bars(df: pd.DataFrame) -> dict:
     return {
         # Epoch nanoseconds whatever the index's unit: pandas 3 builds bar indexes in us (the live stream,
         # alpaca-py), and asi8 counts in that unit, which decode_bars would misread as ns (#181).
-        "t": [int(x) for x in df.index.as_unit("ns").asi8],
+        "t": [int(x) for x in cast(Any, df.index).as_unit("ns").asi8],
         "o": df.open.tolist(),
         "h": df.high.tolist(),
         "l": df.low.tolist(),

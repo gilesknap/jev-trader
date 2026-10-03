@@ -164,6 +164,8 @@ def load_custom_inprocess(directory: Path) -> tuple[list[str], dict[str, str]]:
         lib_names = {n for n, src in F.SOURCES.items() if src == "lib"}
         try:
             spec = importlib.util.spec_from_file_location(f"custom_features.{path.stem}", path)
+            if spec is None or spec.loader is None:
+                raise ImportError(f"no module spec for {path.name}")
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
         except Exception as e:

@@ -25,8 +25,8 @@ tutorial uses `../my-data`), and check your diff before you push.
 - Format and lint with [ruff](https://docs.astral.sh/ruff/) (line length 120): `uv run ruff format`
   and `uv run ruff check --fix`, or all the checks CI runs: `uv run pre-commit run --all-files`
   (`.pre-commit-config.yaml`: ruff, YAML, file endings, gitleaks). `uv run pre-commit install`
-  runs them on every commit. `uv run tox -p -e pre-commit,tests,docs` runs the lint, tests and docs together (the template's
-  `type-checking` env is in `tox -p`'s default list, but pyright isn't clean yet).
+  runs them on every commit. `uv run tox -p` runs the lint, type checking (pyright in `standard`
+  mode, over `src/`), tests and docs together.
 - If you changed the docs, build them with warnings as errors:
   `uv run --group docs sphinx-build -W --keep-going docs build/html`.
 - Keep changes to the guardrails (`src/trader/guardrails.py`, `src/trader/allocator.py`) and the
@@ -39,9 +39,9 @@ tutorial uses `../my-data`), and check your diff before you push.
 Every pull request runs two GitHub Actions workflows, with a read-only token and no secrets (no
 test needs keys):
 
-- **CI** (`.github/workflows/ci.yml`, from the python-copier-template): lint (`tox -e pre-commit`),
-  the tests with coverage (`tox -e tests`) against the data template on Python 3.12, 3.13 and 3.14,
-  and a build of the wheel and sdist. Tests that need `bwrap` or `systemd-analyze` skip where those
+- **CI** (`.github/workflows/ci.yml`, from the python-copier-template): lint and type checking
+  (`tox -e pre-commit,type-checking`), the tests with coverage (`tox -e tests`) against the data
+  template on Python 3.12, 3.13 and 3.14, and a build of the wheel and sdist. Tests that need `bwrap` or `systemd-analyze` skip where those
   are missing. A tag also makes a GitHub release.
 - **Docs** (`.github/workflows/docs.yml`): the Sphinx build with warnings as errors. Merges to
   `main` publish the result to GitHub Pages.

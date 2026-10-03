@@ -20,6 +20,7 @@ from __future__ import annotations
 import datetime as dt
 import math
 import statistics
+from typing import overload
 
 from trader.golive import MIN_TRADES, SLIPPAGE_PER_SIDE_PCT, start_date
 from trader.stats import (
@@ -32,7 +33,11 @@ FAMILIES = ("novel", "conventional", "control", "unlabelled")
 # The live board, like the go-live gate, ignores sessions before golive.start_date() (test sessions).
 
 
-def _num(v, default=0.0):
+@overload
+def _num(v, default: float = 0.0) -> float: ...
+@overload
+def _num(v, default: None) -> float | None: ...
+def _num(v, default: float | None = 0.0) -> float | None:
     try:
         return float(v)
     except (TypeError, ValueError):
@@ -112,7 +117,7 @@ def summarise(trades: list[dict]) -> dict:
 def verdict(n: int, days: int, mean: float | None, half: float | None, behind: str = "losing") -> str:
     if n == 0:
         return "no trades yet"
-    if n < MIN_TO_JUDGE or days < MIN_DAYS or half is None or not math.isfinite(half):
+    if n < MIN_TO_JUDGE or days < MIN_DAYS or mean is None or half is None or not math.isfinite(half):
         return f"too few to judge ({n} trades, {days} days)"
     if mean - half > 0:
         return "ahead: 95% interval above zero"
@@ -126,7 +131,7 @@ def compare(a: list[dict], b: list[dict]) -> dict | None:
     day-clustered variances (conservative df: the smaller side's days minus one)."""
     ma, va, ga = _clustered(a)
     mb, vb, gb = _clustered(b)
-    if va is None or vb is None or va + vb == 0:
+    if ma is None or mb is None or va is None or vb is None or va + vb == 0:  # a mean is None only with no trades
         return None
     diff = ma - mb
     half = t95(min(ga, gb) - 1) * math.sqrt(va + vb)
@@ -279,7 +284,7 @@ def daily(
 
 def build(
     rows: list[dict],
-    families: dict[str, str],
+    families: dict[str, str | None],
     current: set[str],
     start_equity: float | None,
     since: dict[str, str] | None = None,

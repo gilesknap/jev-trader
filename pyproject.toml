@@ -56,6 +56,7 @@ docs = [
 dev = [
     { include-group = "test" },
     { include-group = "docs" },
+    "pandas-stubs>=3.0.5.260914",
     "pre-commit",
     "pyright",
     "ruff",
@@ -84,9 +85,8 @@ packages = ["src/trader"]
 cache-keys = [{ file = "pyproject.toml" }, { git = { commit = true, tags = true } }]
 
 [tool.pyright]
-# The template's default is "strict" (or "standard"). This codebase starts at "basic" and moves up as
-# the type errors are burned down; the type-checking CI job comes on once it is clean.
-typeCheckingMode = "basic"
+# The template's default is "strict" (or "standard"). Strict isn't a goal here.
+typeCheckingMode = "standard"
 reportMissingImports = false # Ignore missing stubs in imported modules
 
 [tool.pytest.ini_options]
@@ -144,7 +144,6 @@ commands = [
         "--pythonpath",
         "{env:VIRTUAL_ENV}/bin/python",
         "src",
-        "tests",
         { replace = "posargs", default = [
         ], extend = true },
     ],

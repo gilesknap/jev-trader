@@ -32,6 +32,7 @@ import gzip
 import json
 import math
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -118,7 +119,7 @@ def forward_returns(
     minute = pd.Timedelta(minutes=1).value
     done = None if data_end is None else pd.Timestamp(data_end).value  # an endpoint bar must complete by then
     for (day, sym), g in rows.groupby(["day", "s"]):
-        d = dt.date.fromisoformat(day)
+        d = dt.date.fromisoformat(str(day))
         last = pd.Timestamp(calendar.session(d).flatten_at).value  # once per day, not per row
         bars = sessions.get(sym, {}).get(d)
         if bars is not None and len(bars):
@@ -138,7 +139,11 @@ def forward_returns(
             return np.where(ok, close[k] if len(idx) else np.nan, np.nan)
 
         asked = (
-            pd.DatetimeIndex(pd.to_datetime(day + " " + g["t"].astype(str))).tz_localize(ET).as_unit("ns").asi8 - minute
+            # cast: pandas-stubs doesn't declare DatetimeIndex.asi8
+            cast(Any, pd.DatetimeIndex(pd.to_datetime(str(day) + " " + g["t"].astype(str))).tz_localize(ET))
+            .as_unit("ns")
+            .asi8
+            - minute
         )  # the bar the question saw
         after = asked >= last - minute
         px = pd.to_numeric(g["px"], errors="coerce").to_numpy(dtype=float) if "px" in g else np.full(len(g), np.nan)
@@ -241,7 +246,7 @@ def _increment(deltas: list[float]) -> dict:
     )  # identical deltas: fp dust
     if n < MIN_DAYS_FOR_T:
         verdict = f"inconclusive: too few days ({n})"
-    elif half is None:
+    elif half is None or m is None:  # m: None only with no days, caught above
         verdict = "inconclusive: no spread across days"
     elif m - half > 0:
         verdict = "Jev adds to its inputs: 95% interval above zero"
@@ -281,7 +286,7 @@ def score(rows: pd.DataFrame, horizons: list[int], thresholds: dict[str, float] 
     for c, g in rows.groupby("c"):
         feats = [k for k in g.columns if k.startswith("f:") and g[k].notna().any()]
         inputs = feats + [k for k in g.columns if k.startswith("x:") and g[k].notna().any()]
-        thr = (thresholds or {}).get(c, DEFAULT_THRESHOLD)
+        thr = (thresholds or {}).get(str(c), DEFAULT_THRESHOLD)
         out = {
             "rows": len(g),
             "days": int(g.day.nunique()),

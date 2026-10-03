@@ -7,9 +7,13 @@ columns open, high, low, close, volume. Each bar is labelled by its start minute
 from __future__ import annotations
 
 import datetime as dt
+from typing import TYPE_CHECKING, cast
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+
+if TYPE_CHECKING:
+    from alpaca.data.models import BarSet
 
 ET = ZoneInfo("America/New_York")
 COLS = ["open", "high", "low", "close", "volume"]
@@ -41,18 +45,19 @@ def fetch_alpaca(
 
     req = StockBarsRequest(
         symbol_or_symbols=symbols,
-        timeframe=TimeFrame.Minute,
+        timeframe=cast(TimeFrame, TimeFrame.Minute),  # a classproperty, which type checkers don't follow
         start=start,
         end=end,
         feed=DataFeed.SIP if feed == "sip" else DataFeed.IEX,
     )
-    df = _alpaca_client(secrets).get_stock_bars(req).df
+    # cast: alpaca-py declares `BarSet | RawData`; RawData only for a client built with raw_data=True.
+    df = cast("BarSet", _alpaca_client(secrets).get_stock_bars(req)).df
     out: dict[str, pd.DataFrame] = {}
     if df.empty:
         return out
     for sym, sub in df.groupby(level=0):
         sub = sub.droplevel(0)[COLS].copy()
-        sub.index = sub.index.tz_convert(ET)
+        sub.index = pd.DatetimeIndex(sub.index).tz_convert(ET)
         out[str(sym)] = sub.sort_index()
     return out
 
@@ -71,10 +76,12 @@ def fetch_yfinance(symbols: list[str], days: int = 7) -> dict[str, pd.DataFrame]
         progress=False,
         prepost=False,
     )
+    if raw is None:
+        raise RuntimeError(f"yfinance returned no data for {symbols}")
     for sym in symbols:
-        sub = raw[sym] if len(symbols) > 1 else raw
+        sub = cast(pd.DataFrame, raw[sym] if len(symbols) > 1 else raw)  # group_by="ticker": a frame per symbol
         sub = sub.rename(columns=str.lower)[COLS].dropna()
-        sub.index = sub.index.tz_convert(ET)
+        sub.index = pd.DatetimeIndex(sub.index).tz_convert(ET)
         out[sym] = sub.sort_index()
     return out
 
@@ -91,7 +98,7 @@ def split_sessions(bars: pd.DataFrame) -> dict[dt.date, pd.DataFrame]:
     """Regular-hours bars grouped by trading day."""
     rth = bars.between_time("09:30", "15:59")
     # Not dict(groupby): dict() sees GroupBy.keys and treats it as a mapping.
-    return {d: g for d, g in rth.groupby(rth.index.date)}  # noqa: C416
+    return {cast(dt.date, d): g for d, g in rth.groupby(pd.DatetimeIndex(rth.index).date)}
 
 
 def prior_sessions(
@@ -139,6 +146,7 @@ def gate_samples(sessions_for, lookbacks=GATE_LOOKBACKS) -> list[tuple]:
     bug in the features)."""
     if not lookbacks:
         raise ValueError("gate_samples needs at least one lookback")
+    spy, lookback = {}, lookbacks[0]
     for lookback in lookbacks:
         sessions = sessions_for(lookback)
         spy = sessions.get("SPY", {})

@@ -10,8 +10,14 @@ from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from trader import config
+
+if TYPE_CHECKING:
+    from alpaca.trading.models import Calendar, ClosePositionResponse, Order
+    from alpaca.trading.models import Position as AlpacaPosition
+    from alpaca.trading.requests import GetCalendarRequest, GetOrdersRequest, OrderRequest, ReplaceOrderRequest
 
 SLIPPAGE = 0.0005  # 0.05% per side, applied to simulated fills
 
@@ -75,6 +81,37 @@ def _fill_time(o, default):
 
     at = getattr(o, "filled_at", None)
     return at.astimezone(ZoneInfo("America/New_York")) if isinstance(at, dt.datetime) and at.tzinfo else default
+
+
+class Broker(Protocol):
+    """What the engine needs of a broker: SimBroker (replays, sim books) and AlpacaBroker."""
+
+    name: str
+    limit_slippage: float
+    last: dict[str, float]
+
+    def update_prices(self, prices: dict[str, float]) -> None: ...
+    def equity(self) -> float: ...
+    def settled_cash(self) -> float: ...
+    def get_positions(self) -> dict[str, Position]: ...
+    def buy_notional(self, symbol: str, notional: float, ref_price: float, now, client_id: str) -> Fill: ...
+    def place_stop(self, symbol: str, qty: float, stop_price: float, client_id: str) -> str | None: ...
+    def move_stop(self, stop_id, symbol, qty, new_stop, client_id) -> str | None: ...
+    def buy_limit(self, symbol: str, qty: float, limit: float, now, client_id: str) -> str: ...
+    def order_state(self, order_id: str) -> OrderState: ...
+    def order_id_for(self, client_id: str, symbol: str, since) -> str | None: ...
+    def cancel_order(self, order_id: str) -> OrderState: ...
+    def sell_qty(
+        self, symbol: str, qty: float, ref_price: float, now, client_id: str, stop_id: str | None = None
+    ) -> Fill | None: ...
+    def sell_all(
+        self, symbol: str, ref_price: float, now, client_id: str, stop_id: str | None = None
+    ) -> Fill | None: ...
+    def stop_fill(self, stop_id: str | None, now, strict: bool = False) -> Fill | None: ...
+    def exit_fill_since(self, symbol: str, since: dt.datetime, now, strict: bool = False) -> Fill | None: ...
+    def flatten_all(self, now=None) -> dict[str, Position]: ...
+    def cancel_all(self) -> None: ...
+    def cancel_orders(self, symbols: set[str]) -> None: ...
 
 
 class SimBroker:
@@ -300,6 +337,25 @@ class PersistentSimBroker(SimBroker):
         return f
 
 
+class _TradingClient(Protocol):
+    """The part of alpaca-py's TradingClient this module uses, as it behaves here. Its methods are
+    declared to return `Model | RawData` (a dict) because the client can be built with
+    raw_data=True; AlpacaBroker never does, so they return the models."""
+
+    def get(self, path: str, data: dict[str, Any] | None = None) -> Any: ...
+    def get_calendar(self, filters: GetCalendarRequest | None = None) -> list[Calendar]: ...
+    def get_all_positions(self) -> list[AlpacaPosition]: ...
+    def get_order_by_id(self, order_id: str) -> Order: ...
+    def get_order_by_client_id(self, client_id: str) -> Order: ...
+    def get_orders(self, filter: GetOrdersRequest | None = None) -> list[Order]: ...
+    def submit_order(self, order_data: OrderRequest) -> Order: ...
+    def replace_order_by_id(self, order_id: str, order_data: ReplaceOrderRequest | None = None) -> Order: ...
+    def cancel_order_by_id(self, order_id: str) -> None: ...
+    def cancel_orders(self) -> object: ...
+    def close_position(self, symbol_or_asset_id: str) -> Order: ...
+    def close_all_positions(self, cancel_orders: bool | None = None) -> list[ClosePositionResponse]: ...
+
+
 class AlpacaBroker:
     limit_slippage = 0.0  # a real limit buy never fills above its limit (see SimBroker.limit_slippage)
 
@@ -307,7 +363,7 @@ class AlpacaBroker:
         from alpaca.trading.client import TradingClient
 
         self.name = "alpaca-paper" if paper else "alpaca-live"
-        self.client = TradingClient(key, secret, paper=paper)
+        self.client = cast(_TradingClient, TradingClient(key, secret, paper=paper))
         self.last: dict[str, float] = {}
         self.last_flatten_error: str | None = None
         # alpaca-py sets no HTTP timeout; a hung connection would stall the engine indefinitely.
@@ -383,8 +439,9 @@ class AlpacaBroker:
             final = self._status(o) in TERMINAL  # else it could still fill: the caller must follow it up
             raise (NotFilled if final else RuntimeError)(f"order {order_id} {self._status(o)} with nothing filled")
         for _ in range(6):
-            if float(o.filled_avg_price or 0) > 0:
-                return qty, float(o.filled_avg_price)
+            px = float(o.filled_avg_price or 0)
+            if px > 0:
+                return qty, px
             time.sleep(0.5)
             o = self.client.get_order_by_id(order_id)
             qty = max(qty, float(o.filled_qty or 0))
@@ -558,7 +615,7 @@ class AlpacaBroker:
                 raise
             return None
         if qty > 0 and px > 0:
-            return Fill(o.symbol, "sell", qty, px, _fill_time(o, now), stop_id)
+            return Fill(o.symbol or "", "sell", qty, px, _fill_time(o, now), stop_id)
         return None
 
     def exit_fill_since(self, symbol: str, since: dt.datetime, now, strict: bool = False) -> Fill | None:
@@ -581,7 +638,7 @@ class AlpacaBroker:
         filled = [o for o in orders if float(o.filled_qty or 0) > 0 and float(o.filled_avg_price or 0) > 0]
         if not filled:
             return None
-        legs = [(float(o.filled_qty), float(o.filled_avg_price)) for o in filled]
+        legs = [(float(o.filled_qty or 0), float(o.filled_avg_price or 0)) for o in filled]  # both > 0 here
         qty = sum(q for q, _ in legs)
         times = [t for t in (_fill_time(o, None) for o in filled) if t is not None]
         at = max(times) if times else now  # when it actually closed, maybe an earlier session
@@ -648,6 +705,8 @@ class AlpacaBroker:
                     # hold the shares: cancel them, and retry once.
                     if retry or not self._is_held(e) or not self._release_sells(symbol, legs, ref_price, now):
                         raise
+            else:  # the second attempt either breaks or raises
+                raise AssertionError("unreachable")
             qty, px = self._settle(str(o.id))
             legs.append(self._leg(symbol, str(o.id), qty, px, ref_price, now))
             held = self._held(symbol)

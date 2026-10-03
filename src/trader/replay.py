@@ -59,7 +59,8 @@ def replay(
         if run_dir.is_symlink() or resolved.parent != run_dir.parent.resolve() or resolved.name in ("", ".", ".."):
             raise ValueError(f"refusing to delete {run_dir}")
         shutil.rmtree(resolved)
-    book = Book("sim", SimBroker(cash), run_dir / "sim")
+    broker = SimBroker(cash)
+    book = Book("sim", broker, run_dir / "sim")
     day_alerts: list[str] = []  # e.g. a stale/missing SPY feed blocking entries; kept in the summary
     # A replay tests each spec alone on one account, whatever its mode.
     books = {"live": book, "shadow": book} | {s.book_key: book for s in specs if s.mode == "sim"}
@@ -79,7 +80,7 @@ def replay(
             # The engine decides on bars up to `ts` only. A market order it sends now executes at
             # the next bar's open, not at the close it just saw; none after the last bar of
             # the session: the close, as the live runner would.
-            book.broker.next_open = {
+            broker.next_open = {
                 s: float(b.open.iloc[i])
                 for s, b in today.items()
                 for i in [b.index.searchsorted(ts, side="right")]
@@ -88,7 +89,7 @@ def replay(
             engine.tick(now.to_pydatetime(), bars, (close - now).total_seconds() / 60)
             if pace:
                 time.sleep(pace)
-        book.broker.next_open = {}
+        broker.next_open = {}
         results[day.isoformat()] = engine.end_day(close)
         if day_alerts:
             results[day.isoformat()]["alerts"] = list(day_alerts)
