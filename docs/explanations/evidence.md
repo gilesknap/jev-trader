@@ -89,7 +89,8 @@ and HOLD LIVE works from any state too, including demoted and corrupt.
   alerts until it's funded.
 - The first 5 live sessions trade at **half size**, and every return to live starts a fresh
   half-size week: after a demotion, a HOLD LIVE and re-arm, or a `config/mode.yaml` override, any
-  paper session resets the count (`live_sessions` in the live book's `risk.json`).
+  paper session, and clearing a live halt, resets the count (`live_sessions` in the live book's
+  `risk.json`).
 - A HOLD always wins, even one pressed while the runner is re-checking the gate: every automatic
   write to `golive.json` is a compare-and-swap under a lock.
 - An unreadable or invalid `golive.json` reads as a non-live `corrupt` state: paper, one alert,

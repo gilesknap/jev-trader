@@ -173,3 +173,39 @@ def test_run_session_resets_the_count_on_a_paper_session(tmp_path, monkeypatch):
     with pytest.raises(_Reached):
         runner.run_session("stub")
     assert risk(live) == {"live_sessions": 0}
+
+
+def test_clearing_a_live_halt_restarts_the_week_even_when_forced_live_by_override(env, tmp_path, monkeypatch):
+    """Demotion, `clear-halt live`, then `mode: live` in mode.yaml: no paper session in between,
+    but the cleared halt ended the stint, so the forced return is half size again."""
+    from trader import config
+
+    book, mode = env
+    write_book(book)
+    monkeypatch.setattr(config, "RUNTIME_DIR", tmp_path)  # no status.json: the runner isn't running
+    monkeypatch.setattr(runner, "BOOKS_DIR", tmp_path / "books")
+    monkeypatch.setattr(runner, "notify", lambda *a, **k: None)
+    live = tmp_path / "books" / "live"
+    due()
+    for d in DAYS[:7]:
+        start(d, live)
+    live.joinpath("risk.json").write_text(json.dumps(risk(live) | {"halted": True, "reason": "x"}))
+    golive.after_session(lambda *a: None, live_book_halted=True, session=DAYS[6])
+    assert "rebased" in runner.clear_halt("live")
+    assert risk(live)["live_sessions"] == 0 and not risk(live)["halted"]
+    mode.write_text("mode: live\n")
+    assert start(DAYS[7], live) == "live" and risk(live)["live_sessions"] == 1
+
+
+def test_clearing_a_paper_halt_leaves_the_live_count_alone(tmp_path, monkeypatch):
+    from trader import config
+
+    monkeypatch.setattr(config, "RUNTIME_DIR", tmp_path)
+    monkeypatch.setattr(runner, "BOOKS_DIR", tmp_path / "books")
+    monkeypatch.setattr(runner, "notify", lambda *a, **k: None)
+    for name, r in (("paper", {"halted": True}), ("live", {"live_sessions": 3, "last_live_session": "2026-11-02"})):
+        (tmp_path / "books" / name).mkdir(parents=True)
+        (tmp_path / "books" / name / "risk.json").write_text(json.dumps(r))
+    runner.clear_halt("paper")
+    assert risk(tmp_path / "books" / "live")["live_sessions"] == 3
+    assert "live_sessions" not in risk(tmp_path / "books" / "paper")

@@ -310,7 +310,8 @@ def count_live_session(mode: str, day: dt.date, live_dir, alert=None) -> None:
     """The live book's `live_sessions`: the engine trades its first 5 at half size. Every return to
     live starts a fresh half-size week, whatever the path back (a runner demotion after a live halt,
     a HOLD LIVE then a re-arm, a `config/mode.yaml` override): a paper session ends the live stint,
-    so it resets the count to 0, and each live session counts once (not once per restart). A failed
+    so it resets the count to 0 (as does `clear_halt("live")`, for a halt forced back live by
+    mode.yaml with no paper session between), and each live session counts once (not per restart). A failed
     reset never stops a paper session: it alerts, so the human can fix it before the next live one."""
     p = live_dir / "risk.json"
     if mode == "live":
@@ -729,6 +730,9 @@ def clear_halt(book: str) -> str:
         return "the runner is running (it holds NAV in memory): retry after it exits after the close; nothing changed"
     risk.update(halted=False)
     risk.pop("reason", None)
+    if book == "live":  # a live halt ends the stint: whatever the path back (even mode.yaml), half size again
+        risk["live_sessions"] = 0
+        risk.pop("last_live_session", None)
     _atomic_json(p, risk)
     nav = NavBook.load(d / "nav.json")
     old = nav.hwm
