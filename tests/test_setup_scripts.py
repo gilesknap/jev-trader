@@ -401,3 +401,111 @@ def test_0_data_pushes_nothing_when_the_config_does_not_load(data_env):
     r = run("you/your-data", "--name", "Ada", "--start-date", "2026-02-30")   # passes the pattern, not the loader
     assert r.returncode != 0 and "render-deploy failed" in r.stderr
     assert heads(remote) == "" and not (tmp / "gh.log").exists()
+
+
+# ---- the push probe (#186) ---------------------------------------------------------------
+
+@pytest.mark.parametrize("url, canonical", [
+    ("https://github.com/gilesknap/jev-trader.git", "https://github.com/gilesknap/jev-trader.git"),
+    ("https://github.com/gilesknap/jev-trader", "https://github.com/gilesknap/jev-trader.git"),
+    ("https://github.com/someone/fork/", "https://github.com/someone/fork.git"),
+    ("git@github-trading:gilesknap/trading", None),
+    ("git@github.com:gilesknap/trading.git", None),
+    ("ssh://git@github.com/gilesknap/trading.git", None),
+    ("http://github.com/gilesknap/trading.git", None),
+    ("https://gitlab.com/gilesknap/trading.git", None),
+    ("https://github.com.evil.example/a/b.git", None),
+    ("https://user:tok@github.com/a/b.git", None),
+    ("https://github.com/a/b/c.git", None),
+    ("https://github.com/a/b.git?x=1", None),
+    ("https://github.com/../b.git", None),
+    ("https://github.com/a/.git", None),
+    ("https://github.com/a/b.git\nhttps://github.com/c/d.git", None),
+    ("", None),
+])
+def test_github_https_url_accepts_only_https_github(url, canonical):
+    r = sh('github_https_url "$1"', url)
+    assert (r.stdout.strip() or None) == canonical and (r.returncode == 0) is (canonical is not None)
+
+
+FAKE_GIT = """#!/bin/sh
+echo "$* PROMPT=$GIT_TERMINAL_PROMPT" >> "$GIT_LOG"
+case "$*" in *" push "*) exit "$PUSH_RC" ;; esac
+exec "$REAL_GIT" "$@"
+"""
+
+
+@pytest.fixture
+def probe_env(tmp_path):
+    bin_ = tmp_path / "bin"
+    bin_.mkdir()
+    (bin_ / "git").write_text(FAKE_GIT)
+    (bin_ / "git").chmod(0o755)
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    env = {**os.environ, "PATH": f"{bin_}:{os.environ['PATH']}", "GIT_LOG": str(tmp_path / "git.log"),
+           "REAL_GIT": shutil.which("git"), "TMPDIR": str(scratch), "GIT_CONFIG_GLOBAL": "/dev/null"}
+
+    def probe(url, push_rc):
+        r = sh('push_probe "$1"', url, env={**env, "PUSH_RC": str(push_rc)})
+        log = (tmp_path / "git.log").read_text() if (tmp_path / "git.log").exists() else ""
+        return r, log, list(scratch.iterdir())
+    return probe
+
+
+@needs_git
+@pytest.mark.parametrize("push_rc, rc", [(0, 0), (128, 1), (1, 1)])
+def test_push_probe_is_a_dry_run_from_a_throwaway_repo(probe_env, push_rc, rc):
+    r, log, left = probe_env("https://github.com/gilesknap/jev-trader", push_rc)
+    assert r.returncode == rc, r.stderr
+    (push,) = [ln for ln in log.splitlines() if " push " in ln]
+    assert "push --dry-run --quiet https://github.com/gilesknap/jev-trader.git HEAD:refs/heads/probe" in push
+    assert "core.hooksPath=/dev/null" in push and push.endswith("PROMPT=0")
+    assert left == []   # the throwaway repo is gone
+
+
+@needs_git
+@pytest.mark.parametrize("url", ["git@github-trading:gilesknap/trading", "http://github.com/a/b.git",
+                                 "https://example.com/a/b.git", ""])
+def test_push_probe_refuses_anything_but_https_github(probe_env, url):
+    r, log, left = probe_env(url, 0)
+    assert r.returncode == 2 and "not an https GitHub URL" in r.stderr
+    assert log == "" and left == []   # git never ran
+
+
+@needs_git
+def test_push_probe_reports_not_probed_when_it_cannot_make_the_repo(probe_env, tmp_path):
+    (tmp_path / "scratch").chmod(0o500)   # mktemp -d fails
+    try:
+        r, log, _ = probe_env("https://github.com/a/b.git", 0)
+    finally:
+        (tmp_path / "scratch").chmod(0o700)
+    assert r.returncode == 2 and " push " not in log
+
+
+@needs_git
+@pytest.mark.parametrize("push_rc, rc", [(0, 0), (1, 1), (124, 2)])
+def test_run_push_probe_passes_the_probe_result_through(probe_env, tmp_path, push_rc, rc):
+    probe_env("https://github.com/a/b.git", 0)   # builds the fake git and its env
+    env = {**os.environ, "PATH": f"{tmp_path / 'bin'}:{os.environ['PATH']}", "GIT_LOG": str(tmp_path / "git.log"),
+           "REAL_GIT": shutil.which("git"), "TMPDIR": str(tmp_path / "scratch"), "GIT_CONFIG_GLOBAL": "/dev/null",
+           "PUSH_RC": str(push_rc)}
+    r = sh('run_push_probe "$1" "$2" env', LIB, "https://github.com/a/b.git", env=env)
+    assert r.returncode == rc, r.stderr
+
+
+@pytest.mark.parametrize("runner", ["", "false", "sh -c 'exit 1'"])
+def test_run_push_probe_never_reports_cant_push_when_nothing_ran(tmp_path, runner):
+    """An unreadable lib, or a runner (sudo) that fails with 1, is 'not probed' (2), never 1."""
+    missing = tmp_path / "absent.sh"
+    r = sh(f'run_push_probe "$1" "$2" {runner}', missing if not runner else LIB, "https://github.com/a/b.git")
+    assert r.returncode == 2
+
+
+def test_run_push_probe_with_an_unreadable_lib_is_not_probed(tmp_path):
+    lib = tmp_path / "lib.sh"
+    lib.write_text("echo x\n")
+    lib.chmod(0)
+    if os.access(lib, os.R_OK):
+        pytest.skip("running as root")
+    assert sh('run_push_probe "$1" "$2"', lib, "https://github.com/a/b.git").returncode == 2

@@ -5,15 +5,21 @@
 # repo's main; without it every check is the monorepo's.
 set -uo pipefail
 [[ $EUID -eq 0 ]] || { echo "run with sudo" >&2; exit 1; }
+LIB="$(cd "$(dirname "$0")" && pwd)/lib.sh"
 # shellcheck source=deploy/setup/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$LIB"
 SPLIT=""; split_layout && SPLIT=1
 C=$CONFIG_CHECKOUT
+[[ -n $SPLIT ]] && export TRADER_DATA_ROOT=$C   # cfg.sh: the data repo's config.yaml
+# shellcheck source=deploy/setup/cfg.sh
+. "$(dirname "$0")/cfg.sh"
 fails=0
 ok()   { printf '  \e[32mPASS\e[0m %s\n' "$1"; }
 bad()  { printf '  \e[31mFAIL\e[0m %s\n' "$1"; fails=$((fails + 1)); }
 chk()  { if eval "$2" >/dev/null 2>&1; then ok "$1"; else bad "$1"; fi; }
 nchk() { if eval "$2" >/dev/null 2>&1; then bad "$1"; else ok "$1"; fi; }
+warn() { printf '  \e[33mWARN\e[0m %s\n' "$1"; }
+wchk() { if eval "$2" >/dev/null 2>&1; then ok "$1"; else warn "$1"; fi; }   # reported, not counted
 RUID=$(id -u runner 2>/dev/null || echo 0)
 as_runner() { sudo -u runner -H env XDG_RUNTIME_DIR=/run/user/$RUID "$@"; }
 as_trader() { sudo -u trader -H "$@"; }
@@ -95,6 +101,24 @@ chk  "strategist on branch strategist"            "[[ \$(git -C /srv/trading/str
 # the public repo's ruleset. The strategist's token must be a fine-grained PAT scoped to the data
 # repo (#169 section 14 item 8). Only the prefix is tested; the token is never printed.
 chk  "trader's gh token is a fine-grained PAT"   "as_trader gh auth token 2>/dev/null | grep -q '^github_pat_'"
+# A fine-grained PAT can still reach the public code repo, and acting as the owner it would bypass
+# that repo's ruleset (#186). Probe it: a dry-run push as trader, which writes nothing, must fail
+# against the code repo, and must succeed against the data repo (so the token works and a network
+# failure can't pass for "no access"). Split layout: failures count. Monorepo: warnings only, and
+# only when main's origin is an https GitHub URL other than the data repo (today it's ssh).
+probe() { run_push_probe "$LIB" "$1" as_trader; }   # 2 (never accepted) if sudo or sourcing fails
+MAIN_ORIGIN=$(git -C /srv/trading/main -c safe.directory='*' remote get-url origin 2>/dev/null)
+CODE_URL=$(github_https_url "$MAIN_ORIGIN")
+DATA_URL=$(github_https_url "https://github.com/$(cfg owner github_repo 2>/dev/null)")   # canonical: owner/name or owner/name.git
+if [[ -n $CODE_URL && $CODE_URL != "$DATA_URL" ]]; then
+    PCHK=wchk; [[ -n $SPLIT ]] && PCHK=chk
+    $PCHK "trader cannot push to the code repo (${CODE_URL#https://github.com/})" "probe $CODE_URL; [[ \$? -eq 1 ]]"
+    $PCHK "trader can push to the data repo (${DATA_URL#https://github.com/})"   "[[ -n '$DATA_URL' ]] && probe '$DATA_URL'"
+elif [[ -n $SPLIT ]]; then
+    bad "main's origin must be the public code repo over https (got: ${MAIN_ORIGIN:-none})"
+else
+    echo "  SKIP push probes: main's origin isn't a separate https code repo (monorepo)"
+fi
 
 if [[ -n $SPLIT ]]; then
     echo "Split layout (#169)"

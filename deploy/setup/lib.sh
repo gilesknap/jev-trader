@@ -100,3 +100,51 @@ repo_name() {
     n="${n##*/}"; n="${n##*:}"
     printf '%s\n' "${n%.git}"
 }
+
+# github_https_url URL: the canonical https://github.com/OWNER/NAME.git for an https GitHub URL.
+# Fails, printing nothing, for anything else (ssh or scp-style, http, another host, odd
+# characters), so a probe can never be pointed at a URL it can't vouch for.
+github_https_url() {
+    [[ "${1:-}" =~ ^https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/?$ ]] || return 1
+    local owner=${BASH_REMATCH[1]} name=${BASH_REMATCH[2]%.git}
+    [[ $owner != .* && -n $name && $name != .* ]] || return 1
+    printf 'https://github.com/%s/%s.git\n' "$owner" "$name"
+}
+
+# push_probe URL: can the caller's git credentials push to URL? From a throwaway repo,
+# `git push --dry-run URL HEAD:refs/heads/probe` authenticates for receive-pack but sends and
+# writes nothing (#186). Never prompts; runs no hooks; gives up after 60 s. Returns 0 when it could
+# push, 1 when it couldn't (no access, or no network: pair it with a probe that must succeed), and
+# 2 when nothing was probed (URL isn't an https GitHub URL, the throwaway repo couldn't be made, or
+# the push timed out).
+push_probe() {
+    local url tmp rc
+    url=$(github_https_url "${1:-}") || { echo "push_probe: not an https GitHub URL: ${1:-}" >&2; return 2; }
+    tmp=$(mktemp -d) || return 2
+    if ! { git -C "$tmp" -c init.defaultBranch=probe init -q &&
+           git -C "$tmp" -c user.name=probe -c user.email=probe@invalid commit -q --allow-empty -m probe; } >/dev/null 2>&1; then
+        rm -rf -- "$tmp"
+        return 2
+    fi
+    GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/false SSH_ASKPASS=/bin/false timeout 60 \
+        git -C "$tmp" -c core.hooksPath=/dev/null push --dry-run --quiet "$url" HEAD:refs/heads/probe >/dev/null 2>&1
+    rc=$?
+    rm -rf -- "$tmp"
+    (( rc == 0 )) && return 0
+    (( rc == 124 )) && return 2
+    return 1
+}
+
+# run_push_probe LIB URL [RUNNER...]: push_probe URL in a fresh bash run through RUNNER (check.sh
+# passes as_trader, i.e. sudo -u trader), with this file sourced from LIB. Same return codes, but
+# a failure of anything around the probe (sudo, cd, sourcing LIB) is 2, never the 1 a "can't push"
+# check would accept: the inner shell reports the probe's result as 10 + rc, and any other exit
+# status means nothing was probed. cd /: the caller's cwd may be closed to RUNNER's user.
+run_push_probe() {
+    local lib=$1 url=$2 rc
+    shift 2
+    # shellcheck disable=SC2016  # $1 and $2 are the inner shell's
+    "$@" bash -c 'cd / || exit 2; . "$1" || exit 2; push_probe "$2"; exit $((10 + $?))' push_probe "$lib" "$url"
+    rc=$?
+    case $rc in 10|11|12) return $((rc - 10)) ;; *) return 2 ;; esac
+}
