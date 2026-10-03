@@ -697,7 +697,14 @@ class Engine:
             "day": self.day.isoformat(),
             "states": {
                 cs.spec.id: {
-                    s: {"status": st.status, "trades": st.trades, "counts": st.counts, "last_trigger": st.last_trigger}
+                    s: {
+                        "status": st.status,
+                        "trades": st.trades,
+                        "counts": st.counts,
+                        "last_trigger": st.last_trigger,
+                        "note": st.note,
+                        "alloc_note": st.alloc_note,
+                    }
                     for s, st in cs.symbols.items()
                 }
                 for cs in self.states
@@ -767,6 +774,15 @@ class Engine:
                         damaged.append(f"{cs.spec.id}/{sym}")
                     trades, status = 0, "armed"
                 self._resume_symbol(cs, sym, st, status, trades)
+                # Display only, and absent from older files. A saved note still holds if the status
+                # does; one that changed while we were down (a limit filled, or gone) drops it.
+                alloc = saved.get("alloc_note")
+                st.alloc_note = alloc if isinstance(alloc, str) else ""
+                note = saved.get("note")
+                if st.status == status:
+                    st.note = note if isinstance(note, str) else ""
+                elif st.status == "holding":
+                    st.note = st.alloc_note
         if damaged:
             self._alert_every(
                 "classifier-state",
@@ -1415,9 +1431,10 @@ class Engine:
         size, binding = A.allocate(
             sym, size, stop_pct / 100, eq, book.day_start_equity, book.realised_today, self._exposures(book, positions)
         )
+        st.alloc_note = ""  # a fresh attempt: an earlier entry's trim no longer applies
         if binding != "requested":
             floor = A.trim_floor(requested)
-            st.note = f"allocator: {binding}; allowed ${size:.2f} of ${requested:.2f}"
+            st.note = st.alloc_note = f"allocator: {binding}; allowed ${size:.2f} of ${requested:.2f}"
             if size < floor:
                 st.note += f"; skipped, under the ${floor:.2f} floor for a trimmed entry"
             self._log_decision(
@@ -1486,7 +1503,7 @@ class Engine:
             return
         if limit is not None:
             book.save_pending()
-            st.note = f"limit {limit:.2f} resting" + (f" ({st.note})" if binding != "requested" else "")
+            st.note = f"limit {limit:.2f} resting" + (f" ({st.alloc_note})" if st.alloc_note else "")
             return
         p.order_id = fill.order_id  # so a fill it can't price yet is followed up by id (#134)
         self._settle_pending(book, sym, p, OrderState("filled", fill.qty, fill.price), now, place_stop=True)
@@ -1626,8 +1643,7 @@ class Engine:
         if st is not None:
             st.status = "holding"
             st.trades += 1
-            if st.note.startswith("limit ") and " resting" in st.note:  # filled: keep only the allocator's part
-                st.note = st.note.partition(" resting")[2].strip().removeprefix("(").removesuffix(")")
+            st.note = st.alloc_note  # filled: a resting or in-doubt order's note is over; any trim still applies
         book.append_trade(
             {
                 "time": (filled_at or now).isoformat(timespec="minutes"),
@@ -1738,6 +1754,11 @@ class Engine:
                     f"[{b.name}] {sym}: {delta:g} more filled after its position closed; "
                     "not a new trade, sold as an untracked position",
                 )
+                st = self._state(p.classifier, sym)
+                if first and st is not None:  # it never opened a position: only a flatten marks such an order exited
+                    st.note = "entry filled after the flatten; sold as an untracked position"
+                    if st.status == "pending":
+                        st.status = "armed"  # display only: a flatten blocks its book (or retires it) for the day
             return
         e = b.entries.get(sym)
         if e is None:
@@ -1855,8 +1876,12 @@ class Engine:
         b.buys_today = max(0.0, b.buys_today + p.filled_cost - p.reserved)
         b.write_risk(buys_today=round(b.buys_today, 4))
         st = self._state(p.classifier, sym)
-        if p.filled_qty <= 0 and st is not None and st.status == "pending":
-            st.status, st.note = "armed", "limit expired unfilled" if p.limit else "market order not filled"
+        if p.filled_qty <= 0 and st is not None and st.status in ("pending", "retired"):
+            # Nothing filled, so the note is still this order's. Retired: the EOD flatten retired the
+            # rule while its cancel was settling, and only the note changes.
+            st.note = "limit expired unfilled" if p.limit else "market order not filled"
+            if st.status == "pending":
+                st.status = "armed"
 
     def _scale_out(self, b: Book, sym, e: Entry, ref, now) -> bool:
         """Sell scale_fraction of the position. Returns False if the scan should stop here: to
