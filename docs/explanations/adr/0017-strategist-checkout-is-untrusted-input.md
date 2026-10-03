@@ -12,7 +12,7 @@ can read, and a parse error would quote part of it into an alert the strategist 
 
 ## Decision
 
-Everything the runner and the dashboard read from the strategist's checkout goes through one
+Every file the runner and the dashboard read from the strategist's checkout goes through one
 module, `trader.safeio`. Every path component below the checkout is opened with `O_NOFOLLOW`,
 relative to its parent's descriptor, so a symlink swapped in after a check can't redirect the read.
 Only regular files are read, with a size cap, so a FIFO or a huge file can't hang the runner.
