@@ -39,7 +39,8 @@ dev = ["pytest>=8", "yfinance>=0.2.50"]
 [dependency-groups]
 # The runtime venvs (the runner's, the strategist's) sync with --no-dev, so they get none of these.
 # Running the tests: what trading-deploy's candidate run, trader-test and setup install.
-test = ["pytest>=8", "pytest-cov", "yfinance>=0.2.50"]
+# httpx2: Starlette's TestClient (the dashboard tests) deprecates plain httpx in favour of it.
+test = ["httpx2", "pytest>=8", "pytest-cov", "yfinance>=0.2.50"]
 # The documentation site (docs/).
 docs = [
     "sphinx>=8",
