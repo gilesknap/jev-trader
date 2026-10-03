@@ -7,7 +7,7 @@ from typing import Any, cast
 import pandas as pd
 
 from test_engine import Always, spec
-from trader import runner
+from trader import config, runner
 from trader.broker import SimBroker
 from trader.data import ET
 from trader.engine import Book, Engine
@@ -73,7 +73,7 @@ def test_cashflows_use_type_for_sign_and_skip_unexecuted(tmp_path, monkeypatch):
 
 
 def uk(y, m, d, h, mi=0):
-    return dt.datetime(y, m, d, h, mi, tzinfo=runner.LOCAL_TZ)
+    return dt.datetime(y, m, d, h, mi, tzinfo=config.SETTINGS.schedule.tz)
 
 
 def test_strategist_deadline_is_on_the_crons_uk_clock():

@@ -21,7 +21,7 @@ def env(tmp_path, monkeypatch):
 
 
 def write_book(book, days=10, trades_per_day=2, pnl_pct=0.3, classifier="idea", worst=-1.0):
-    start = TEST_START_DATE  # the date the autouse fixture pins golive.START_DATE to
+    start = TEST_START_DATE  # the date the autouse fixture pins config.yaml's start date to
     sessions = [start + dt.timedelta(days=i) for i in range(40) if (start + dt.timedelta(days=i)).weekday() < 5][:days]
     with (book / "trades.csv").open("w", newline="") as f:
         w = csv.DictWriter(

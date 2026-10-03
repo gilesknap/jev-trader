@@ -6,6 +6,7 @@ from types import SimpleNamespace as NS
 
 import pytest
 
+from conftest import pin_start_date
 from test_orders import FakeClient, broker
 from trader import golive, scoreboard
 from trader.broker import Fill, Position, SimBroker
@@ -62,7 +63,7 @@ def test_exit_while_down_is_recorded_with_the_real_fill(tmp_path):
 def test_exit_while_down_with_unknown_price_is_recorded_at_the_stop_but_is_not_evidence(tmp_path, monkeypatch):
     """#101: the stop is a guess, so the round trip is `(price estimated)` with no pnl_pct and counts
     towards nothing; its dollar loss at the stop stays, so today's loss budget (#117) still sees it."""
-    monkeypatch.setattr(golive, "START_DATE", dt.date(2000, 1, 1))  # its trades predate the pinned start date
+    pin_start_date(monkeypatch, dt.date(2000, 1, 1))  # its trades predate the pinned start date
     book = Book("paper", Recon(), tmp_path / "paper")
     book.entries["SPY"] = _entry()
     alerts = []

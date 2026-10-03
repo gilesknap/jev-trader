@@ -14,7 +14,6 @@ import httpx
 from trader import config
 
 DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions"
-DEFAULT_MODEL = config.SETTINGS.models.jev  # pinned in config.yaml; bump deliberately after checking behaviour
 
 
 class DecisionError(Exception):
@@ -30,8 +29,10 @@ class Decision:
 
 
 class JevClient:
-    def __init__(self, api_key: str, model: str = DEFAULT_MODEL, timeout: float = 5.0):
-        self.model = model
+    def __init__(self, api_key: str, model: str | None = None, timeout: float = 5.0):
+        # Default: config.yaml models.jev, pinned there (bump deliberately after checking behaviour);
+        # read here, not at import (#146).
+        self.model = config.SETTINGS.models.jev if model is None else model
         self.total_cost = 0.0
         self.calls = 0
         self._http = httpx.Client(

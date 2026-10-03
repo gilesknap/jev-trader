@@ -26,7 +26,6 @@ from dataclasses import dataclass
 from trader import config
 from trader import guardrails as G
 
-START_DATE = config.SETTINGS.experiment.start_date  # observe phase day 1 (config.yaml)
 MIN_TRADING_DAYS = 10
 MIN_TRADES = 20
 SLIPPAGE_PER_SIDE_PCT = 0.05
@@ -39,6 +38,12 @@ LIVE_BOOK = config.RUNTIME_DIR / "books" / "live"
 # Alerts saved in golive.json with the state change they announce, until they've been sent: a
 # crash between the save and the send leaves them there for resend_unsent() at the next start.
 UNSENT = "unsent_alerts"
+
+
+def start_date() -> dt.date:
+    """Observe phase day 1 (config.yaml experiment.start_date): the gate, promotion, the runner, the
+    scoreboard and `trader validate` all count from it. Read when it's needed, not at import (#146)."""
+    return config.SETTINGS.experiment.start_date
 
 
 def session_date() -> dt.date:
@@ -66,6 +71,7 @@ class GateResult:
 def evaluate_gate(book_dir=PAPER_BOOK, today: dt.date | None = None) -> GateResult:
     """Gate from the paper book's own trade and equity logs. Control classifiers don't count."""
     today = today or session_date()
+    start = start_date()
     closes = []
     tp = book_dir / "trades.csv"
     if tp.exists():
@@ -73,7 +79,7 @@ def evaluate_gate(book_dir=PAPER_BOOK, today: dt.date | None = None) -> GateResu
             for r in csv.DictReader(f):
                 if r["side"] != "sell" or r["classifier"].startswith("control_") or not r["pnl_pct"]:
                     continue
-                if dt.date.fromisoformat(r["time"][:10]) >= START_DATE:
+                if dt.date.fromisoformat(r["time"][:10]) >= start:
                     closes.append(float(r["pnl_pct"]) - 2 * SLIPPAGE_PER_SIDE_PCT)
 
     days: dict[dt.date, list[float]] = {}
@@ -82,7 +88,7 @@ def evaluate_gate(book_dir=PAPER_BOOK, today: dt.date | None = None) -> GateResu
         with ep.open() as f:
             for r in csv.DictReader(f):
                 d = dt.date.fromisoformat(r["time"][:10])
-                if START_DATE <= d <= today:
+                if start <= d <= today:
                     days.setdefault(d, []).append(float(r["equity"]))
     if not all(math.isfinite(v) for v in closes) or not all(
         math.isfinite(v) and v > 0 for vs in days.values() for v in vs
@@ -154,7 +160,7 @@ def shadow_record(classifier: str, since: str, book_dir=PAPER_BOOK, spec_hash: s
     the current `spec_hash`, a close stamped with another spec's hash doesn't count: its position
     opened under an earlier spec, even if it closed after the edit. An unstamped close (written
     before trade provenance) is judged by its date alone."""
-    since = max(since, START_DATE.isoformat())
+    since = max(since, start_date().isoformat())
     closes = []
     tp = book_dir / "trades.csv"
     if tp.exists():

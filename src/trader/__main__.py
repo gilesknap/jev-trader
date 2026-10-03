@@ -8,7 +8,7 @@ __all__ = ["main"]
 
 
 def main() -> None:
-    # Answered here because importing trader.cli loads config.yaml, which an installed wheel may not have.
+    # Answered here because trader.cli.main() loads config.yaml, which an installed wheel may not have.
     if sys.argv[1:] == ["--version"]:
         print(__version__)
         return

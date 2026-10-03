@@ -23,7 +23,7 @@ import statistics
 from collections.abc import Mapping
 from typing import overload
 
-from trader.golive import MIN_TRADES, SLIPPAGE_PER_SIDE_PCT, START_DATE
+from trader.golive import MIN_TRADES, SLIPPAGE_PER_SIDE_PCT, start_date
 from trader.stats import (
     t95,
 )
@@ -31,7 +31,7 @@ from trader.stats import (
 MIN_TO_JUDGE = 10  # below this many closed trades, don't even show a verdict on the sign
 MIN_DAYS = 3  # ...or this many distinct trading days
 FAMILIES = ("novel", "conventional", "control", "unlabelled")
-EXPERIMENT_START = START_DATE  # the live board, like the go-live gate, ignores earlier test sessions
+# The live board, like the go-live gate, ignores sessions before golive.start_date() (test sessions).
 
 
 @overload
@@ -350,7 +350,7 @@ def build(
             # Counted like golive.shadow_record: nothing before the start date, even when all days are
             # shown, and no close stamped with another spec's hash (its position opened under an earlier
             # spec); an unstamped close (before provenance) is judged by its date alone.
-            start = max(since[cid], EXPERIMENT_START.isoformat())
+            start = max(since[cid], start_date().isoformat())
             h = (spec_hashes or {}).get(cid) or ""
             n = sum(t["day"] >= start and not (h and t["spec_hash"] and t["spec_hash"] != h) for t in ts)
             row["promotion"] = {"n": n, "of": MIN_TRADES, "since": start}

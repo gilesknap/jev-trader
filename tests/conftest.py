@@ -1,7 +1,7 @@
 """Shared fixtures, and the choice of data the suite runs against (#169).
 
-Which data root the tests use, decided here before anything imports `trader` (config.yaml is
-loaded at import):
+Which data root the tests use, decided here before anything imports `trader` (config.py resolves
+its paths, config.yaml's among them, at import):
 1. TRADER_TEST_DATA_ROOT, if set: a developer's own data checkout (config.yaml, config/mode.yaml,
    state/...), used as both TRADER_DATA_ROOT and TRADER_STRATEGIST_ROOT.
 2. An already-set TRADER_DATA_ROOT (e.g. trading-deploy testing candidate code against candidate
@@ -82,15 +82,20 @@ if TEST_DATA_ROOT is not None:  # render the deploy files a data checkout carrie
         (TEST_DATA_ROOT / _rel).parent.mkdir(parents=True, exist_ok=True)
         (TEST_DATA_ROOT / _rel).write_text(_text)
 
-from trader import golive  # noqa: E402
-from trader import scoreboard as SB  # noqa: E402
 from trader.data import ET  # noqa: E402
 
 # The tests write trades and sessions in October 2026, so they run against a fixed experiment start rather
 # than whatever config.yaml says (a new deployment sets its own date, often in the future). Every consumer
-# reads one of these two module attributes: golive.START_DATE (the gate, runner, `trader validate`) and
-# scoreboard.EXPERIMENT_START (the scoreboard and dashboard).
+# (the gate, promotion, the runner, `trader validate`, the scoreboard and dashboard) reads it through
+# golive.start_date() from config.SETTINGS, so pinning it there pins them all.
 TEST_START_DATE = dt.date(2026, 10, 5)
+
+
+def pin_start_date(monkeypatch, day: dt.date) -> None:
+    """Make config.yaml's experiment.start_date `day` for this test (undone with the monkeypatch)."""
+    s = trader_config.get_settings()
+    experiment = s.experiment.model_copy(update={"start_date": day})
+    monkeypatch.setattr(trader_config, "SETTINGS", s.model_copy(update={"experiment": experiment}))
 
 
 def pytest_configure(config):
@@ -112,8 +117,7 @@ def generous_speed_budget(request, monkeypatch):
 @pytest.fixture(autouse=True)
 def pinned_start_date(request, monkeypatch):
     if request.node.get_closest_marker("config_start_date") is None:
-        monkeypatch.setattr(golive, "START_DATE", TEST_START_DATE)
-        monkeypatch.setattr(SB, "EXPERIMENT_START", TEST_START_DATE)
+        pin_start_date(monkeypatch, TEST_START_DATE)
     return TEST_START_DATE
 
 

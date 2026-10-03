@@ -240,9 +240,9 @@ def _alert_dropped(dropped: dict[str, str], alert=notify) -> None:
 
 def _exclude_prelaunch_specs(specs, session: dt.date, alert=notify):
     """The reserved test_ prefix is plumbing only, never experiment activity."""
-    from trader.golive import START_DATE
+    from trader.golive import start_date
 
-    if session < START_DATE:
+    if session < start_date():
         return specs
     retired = [spec.id for spec in specs if spec.id.startswith("test_")]
     if retired:
@@ -681,6 +681,9 @@ def _record_missed_demotion(golive, session: dt.date) -> None:
 def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
     from trader.jev import JevClient, StubDecider
 
+    # Strictly, before anything else: a malformed config.yaml stops the session here, and never trades
+    # on a wrong start date (#146). Cached, so the whole session reads these same settings.
+    config.get_settings()
     secrets = config.load_secrets()
     from trader import golive
 
@@ -1193,15 +1196,16 @@ def session_info() -> dict | None:
 
 
 POST_CLOSE_GRACE = dt.timedelta(hours=2, minutes=30)
-# The post-close timer runs on the operator's clock (config.yaml schedule: 21:30, retry 22:30 in
-# London, each allowed 50 min), so the deadline is on that clock too: half days and the UK/US
-# DST-mismatch weeks close earlier there, but the retry still can't finish before ~23:20.
-POST_CLOSE_CUTOFF_LOCAL = config.SETTINGS.schedule.postclose_cutoff_time
-LOCAL_TZ = config.SETTINGS.schedule.tz
 
 
 def postclose_deadline(last_close: dt.datetime) -> dt.datetime:
-    return max(last_close + POST_CLOSE_GRACE, dt.datetime.combine(last_close.date(), POST_CLOSE_CUTOFF_LOCAL, LOCAL_TZ))
+    # The post-close timer runs on the operator's clock (config.yaml schedule: 21:30, retry 22:30 in
+    # London, each allowed 50 min), so the deadline is on that clock too: half days and the UK/US
+    # DST-mismatch weeks close earlier there, but the retry still can't finish before ~23:20. Read
+    # here, not at import (#146): `trader stop` imports this module, and must work on a malformed config.yaml.
+    sched = config.SETTINGS.schedule
+    cutoff = dt.datetime.combine(last_close.date(), sched.postclose_cutoff_time, sched.tz)
+    return max(last_close + POST_CLOSE_GRACE, cutoff)
 
 
 def strategist_overdue(stamp_mtime: float, last_close: dt.datetime, now: dt.datetime | None = None) -> bool:
@@ -1239,8 +1243,8 @@ def _last_session_close(now: dt.datetime | None = None) -> dt.datetime | None:
 
 def watchdog(now: dt.datetime | None = None) -> str:
     """Run every ~10 min: alert if the daemon is stale during market hours, if the latest
-    session's post-close strategist run is overdue (once per session), or if the calendar
-    can't be read (so neither check is silently skipped). Other alerts repeat hourly at most.
+    session's post-close strategist run is overdue (once per session), or if the calendar or
+    config.yaml can't be read (so no check is silently skipped). Other alerts repeat hourly at most.
     `now` drives the overdue check and throttles; session_info() still reads the wall clock
     (identical in production; tests patch it)."""
     now = now or dt.datetime.now(ET)
@@ -1259,7 +1263,20 @@ def watchdog(now: dt.datetime | None = None) -> str:
         last_close = _last_session_close(now)
     except Exception as e:
         last_close, calendar_error = None, e
-    if last_close and strategist_overdue(_postclose_stamp_mtime(), last_close, now):
+    try:
+        config.get_settings()  # the deadline needs schedule.*; a broken file is news in itself (#146)
+        config_error = None
+    except config.SettingsError as e:
+        config_error = e
+        problems.append(
+            (
+                "config",
+                "config.yaml unreadable, post-close check skipped (the runner won't start a new session "
+                "until it's fixed): " + "; ".join(line.strip() for line in str(e).splitlines() if line.strip()),
+                3600,
+            )
+        )
+    if last_close and config_error is None and strategist_overdue(_postclose_stamp_mtime(), last_close, now):
         problems.append(
             (
                 f"strategist-{last_close:%Y-%m-%d}",

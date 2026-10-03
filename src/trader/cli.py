@@ -69,13 +69,13 @@ def cmd_validate(a):
         labels = [p for p in (s.family_problem() for s in specs) if p]
         if labels:
             raise ValueError("; ".join(labels))
-        from trader.golive import START_DATE
+        from trader.golive import start_date
 
         plumbing = [s.id for s in specs if s.id.startswith("test_")]
-        if plumbing and config.ny_today() >= START_DATE:  # the runner drops these: say so before it happens
+        if plumbing and config.ny_today() >= start_date():  # the runner drops these: say so before it happens
             raise ValueError(
                 f"the test_ prefix is reserved for pre-launch plumbing and the runner ignores it "
-                f"from {START_DATE}: rename or remove {plumbing}"
+                f"from {start_date()}: rename or remove {plumbing}"
             )
         print(f"classifiers OK: {[s.id for s in specs]}")
     except Exception as e:
@@ -243,7 +243,7 @@ def cmd_config_render_deploy(a):
     """Regenerate the deploy files that can't read config.yaml, or --check that they match. Templates
     come from the code root; config.yaml is read, and the files written, under the data root
     (--data-root, else TRADER_DATA_ROOT, else the code root). The settings are loaded from that
-    root's config.yaml, never from the import-time SETTINGS."""
+    root's config.yaml, never from config.SETTINGS (the default data root's)."""
     root = Path(a.data_root) if a.data_root else config.DATA_ROOT
     try:
         files = config.render_deploy(config.CODE_ROOT, root)
@@ -368,6 +368,7 @@ def cmd_daily_returns(a):
     import csv
 
     from trader import scoreboard as SB
+    from trader.golive import start_date
 
     def rows(p: Path) -> list[dict]:
         try:
@@ -378,7 +379,7 @@ def cmd_daily_returns(a):
 
     books = config.RUNTIME_DIR / "books"
     bench = rows(config.RUNTIME_DIR / "benchmark.csv")
-    since = a.since or SB.EXPERIMENT_START.isoformat()
+    since = a.since or start_date().isoformat()
     out = {}
     for d in sorted(p for p in books.glob("*") if (p / "equity.csv").exists()):
         out[d.name] = SB.daily(rows(d / "equity.csv"), bench, rows(d / "trades.csv"), since)
@@ -558,6 +559,15 @@ def main(argv=None):
         a.fn is cmd_compact and a.scope == "runtime"
     ):
         _require_runtime(stop=a.fn is cmd_stop)
+    # config.yaml loads lazily (#146), so check it here: a malformed file stops every command up front,
+    # `trader validate` and `trader run` included, except the last resorts (STOP flags and flattens, and
+    # the watchdog runs its checks and alerts about the file, without it) and render-deploy, which
+    # validates the data root's own file just as strictly.
+    if a.fn not in (cmd_stop, cmd_watchdog, cmd_config_render_deploy):
+        try:
+            config.get_settings()
+        except config.SettingsError as e:
+            sys.exit(str(e))
     a.fn(a)
 
 
