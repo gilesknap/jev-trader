@@ -61,7 +61,7 @@ flowchart LR
   runner drives it with live bars, `trader replay` with historical ones.
 - **Jev** is a typed-decision model on OpenRouter. It never sees dates or absolute prices: the
   engine sends it dimensionless features and the classifier's question, and gets back
-  probabilities over the classifier's criteria (see [How a decision is made](decisions.md)).
+  probabilities over the classifier's criteria (see [How a decision is made](how-a-decision-is-made.md)).
 - **The dashboard** is a FastAPI app that reads the runtime files and the strategist's notes. Its
   only controls are STOP and HOLD LIVE.
 

@@ -1,7 +1,7 @@
 # Classifier schema
 
 `state/classifiers.yaml` in the strategist checkout holds the classifiers for the next session.
-It is validated by `src/trader/classifier.py`; [How a decision is made](../explanations/decisions.md)
+It is validated by `src/trader/classifier.py`; [How a decision is made](../explanations/how-a-decision-is-made.md)
 explains what the fields do at run time.
 
 ```yaml
