@@ -96,7 +96,11 @@ addopts = """
     --tb=native --doctest-modules --doctest-glob="*.rst"
     """
 # https://iscinumpy.gitlab.io/post/bound-version-constraints/#watch-for-warnings
-filterwarnings = "error"
+filterwarnings = [
+    "error",
+    # alpaca-py's stream client imports websockets.legacy (third-party; nothing to fix here).
+    "ignore:websockets.legacy is deprecated:DeprecationWarning",
+]
 # Doctest python code in src docstrings, test functions in tests. Not docs (the template's third
 # path): it has no .rst, and collecting docs/conf.py would import it, which repoints
 # TRADER_DATA_ROOT in os.environ for every later subprocess in the run.

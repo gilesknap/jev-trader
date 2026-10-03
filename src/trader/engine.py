@@ -15,6 +15,7 @@ import io
 import json
 import math
 import time
+import weakref
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -587,6 +588,8 @@ class Engine:
         if self._decisions_fh:
             self._decisions_fh.close()
         self._decisions_fh = (ddir / f"{day.isoformat()}.jsonl").open("a")
+        # end_day closes it; an engine dropped without one (a crash, a test) closes it when collected.
+        weakref.finalize(self, self._decisions_fh.close)
 
     def _read_equity(self, b: Book) -> float | None:
         """Equity, retried briefly; None (alerted) if it still can't be read. Never raises (#119)."""
