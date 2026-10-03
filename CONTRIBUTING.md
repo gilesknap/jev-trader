@@ -22,6 +22,9 @@ tutorial uses `../my-data`), and check your diff before you push.
   `tests/conftest.py`), unless `TRADER_DATA_ROOT` is already set, in which case they use that
   directory: hence the `env -u`, in case you exported it for development. To run them against your
   own data checkout on purpose, set `TRADER_TEST_DATA_ROOT` to it.
+- Format and lint with [ruff](https://docs.astral.sh/ruff/) (line length 120):
+  `uvx ruff@0.16.10 format` and `uvx ruff@0.16.10 check --fix`. CI runs these through pre-commit
+  (`.pre-commit-config.yaml`), with its other checks: YAML, file endings and gitleaks.
 - If you changed the docs, build them with warnings as errors:
   `uv run --group docs sphinx-build -W --keep-going docs build/html`.
 - Keep changes to the guardrails (`src/trader/guardrails.py`, `src/trader/allocator.py`) and the
