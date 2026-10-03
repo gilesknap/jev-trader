@@ -802,3 +802,24 @@ def test_the_first_ledger_is_published(sandbox):
     assert sandbox.run("weekly").returncode == 0
     assert "trials" not in sandbox.read("alerts")
     assert origin_show(sandbox, "logs/trials.csv") == "time,kind\n"
+
+
+# ---- the trading day is the New York date ----
+
+def ny_dates():
+    """Today's New York date, and the dates either side in case the run straddles midnight there."""
+    import datetime as dt
+    from zoneinfo import ZoneInfo
+
+    today = dt.datetime.now(ZoneInfo("America/New_York")).date()
+    return {(today + dt.timedelta(days=d)).isoformat() for d in (-1, 0, 1)}
+
+
+def test_trading_day_is_the_new_york_date(sandbox):
+    before = ny_dates()
+    assert sandbox.run("premarket").returncode == 0
+    dates = before | ny_dates()
+    stamps = [p.name for p in sandbox.logdir.glob("done-premarket-*")]
+    assert len(stamps) == 1 and stamps[0].removeprefix("done-premarket-") in dates
+    assert origin_log(sandbox)[0].split(" strategist: premarket ")[1] in dates
+    assert any(f"the trading day (New York date) is {d}" in sandbox.read("claude_args") for d in dates)
