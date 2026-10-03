@@ -458,11 +458,39 @@ def resolve_mode(notify, live_equity=None, session: dt.date | None = None) -> st
     return "live" if st["status"] == "live" else "paper"
 
 
-def after_session(notify, live_book_halted: bool = False, session: dt.date | None = None) -> dict:
+def _held_back(live_equity) -> str | None:
+    """What would keep the next session start on paper although go-live is due (resolve_mode's
+    checks, as they stand now), and what clears it; None if nothing would. Never raises."""
+    then = "it goes live at the next session start (after a final gate check)"
+    why = live_book_unready()
+    if why == "the live book is halted":
+        return f"{why}: staying on paper (still armed). Clear it with `trader clear-halt live` and {then}"
+    if why:  # its risk.json can't be read
+        return f"{why}: staying on paper (still armed). Once it reads cleanly, {then}"
+    if live_equity is None:
+        return None
+    try:
+        eq = live_equity()
+    except Exception as e:
+        return (
+            f"the live equity lookup failed ({e}): it is checked again at the next session start, and with "
+            f"${MIN_LIVE_EQUITY:.0f} or more in the account {then}"
+        )
+    if eq is None or eq < MIN_LIVE_EQUITY:
+        return (
+            f"the live account has ${eq or 0:.2f} (need ${MIN_LIVE_EQUITY:.0f}): staying on paper (still armed). "
+            f"Fund it and {then}"
+        )
+    return None
+
+
+def after_session(notify, live_book_halted: bool = False, session: dt.date | None = None, live_equity=None) -> dict:
     """Called at session end: demote on halt, re-check the gate and count down the veto window
     (disarming if it no longer passes), or arm when the gate passes. Idempotent per session date,
     so a restart can't count one session twice. Alerts go out only once the state is saved, and a
-    HOLD pressed meanwhile wins (compare-and-swap): the stale update is dropped."""
+    HOLD pressed meanwhile wins (compare-and-swap): the stale update is dropped. Once the window
+    has run out, `live_equity` (as for resolve_mode) lets the alert say whether the account is
+    funded: while something holds go-live back, the alert says what, not that it goes live next."""
     if override() != "auto":
         return load_state()
     st = load_state()
@@ -489,8 +517,12 @@ def after_session(notify, live_book_halted: bool = False, session: dt.date | Non
         if reasons:
             _disarm(st, session, reasons, notices)
         else:
-            st["sessions_left"] = st.get("sessions_left", VETO_SESSIONS) - 1
-            if st["sessions_left"] > 0:
+            # never below 0: a due session held on paper (halted, unfunded) is not one more veto session
+            st["sessions_left"] = max(0, st.get("sessions_left", VETO_SESSIONS) - 1)
+            held = None if st["sessions_left"] > 0 else _held_back(live_equity)
+            if held:
+                notices.append(("urgent", f"Go-live is due but {held}. HOLD LIVE on the dashboard to stop it."))
+            elif st["sessions_left"] > 0:
                 notices.append(
                     (
                         "urgent",
