@@ -46,7 +46,7 @@ def test_live_rel_volume_is_about_one_at_a_normal_pace(monkeypatch):
     sip, iex = feeds()
     fetch, calls = fake_fetch(sip, iex)
     monkeypatch.setattr(runner, "fetch_alpaca", fetch)
-    prev = runner.prev_day_bars(["AAA"], DAY, NOW, {}, alert=lambda *a: pytest.fail(a))
+    prev = runner.prev_day_bars(["AAA"], DAY, NOW, {}, alert=lambda *a: pytest.fail(str(a)))
     assert sorted(calls) == ["iex", "sip"]
     today = split_sessions(iex)[DAY].iloc[:40]  # live bars are IEX
     rv = F.compute(["rel_volume_15m"], today, ctx_for(prev["AAA"], today))["rel_volume_15m"]
@@ -59,7 +59,7 @@ def test_live_rel_volume_is_about_one_at_a_normal_pace(monkeypatch):
 def test_prior_day_price_levels_stay_on_sips_official_prices(monkeypatch):
     sip, iex = feeds()
     monkeypatch.setattr(runner, "fetch_alpaca", fake_fetch(sip, iex)[0])
-    prev = runner.prev_day_bars(["AAA"], DAY, NOW, {}, alert=lambda *a: pytest.fail(a))["AAA"]
+    prev = runner.prev_day_bars(["AAA"], DAY, NOW, {}, alert=lambda *a: pytest.fail(str(a)))["AAA"]
     sip_prev = split_sessions(sip)[PREV]
     pd.testing.assert_frame_equal(prev[["open", "high", "low", "close"]], sip_prev[["open", "high", "low", "close"]])
     assert (prev.volume == 200.0).all()
@@ -107,6 +107,7 @@ def test_iex_gaps_count_as_no_volume_and_a_missing_symbol_or_session_is_nan():
     sparse = split_sessions(iex)[PREV].drop(p.index[10:20])
     # The live stream and alpaca-py index in microseconds; history in nanoseconds: still aligned.
     sparse.index = sparse.index.as_unit("us")
+    sparse = pd.concat([sparse, sparse.iloc[[0]]])  # a repeated minute: the last copy counts, once
     prev = prior_sessions({"AAA": {PREV: p}, "BBB": {PREV: p}, "CCC": {PREV: p}}, DAY,
                           volume_from={"AAA": {PREV: sparse}, "CCC": {DAY: sparse}})
     assert (prev["AAA"].volume.iloc[10:20] == 0).all() and prev["AAA"].volume.sum() == 200.0 * (len(p) - 10)
@@ -119,9 +120,25 @@ def test_same_feed_forward_and_replay_give_the_same_feature_vector(monkeypatch):
     """With one feed for both, the runner's context and replay's are identical, feature for feature."""
     sip, _ = feeds()
     monkeypatch.setattr(runner, "fetch_alpaca", fake_fetch(sip, sip)[0])
-    live = runner.prev_day_bars(["AAA"], DAY, NOW, {}, alert=lambda *a: pytest.fail(a))["AAA"]
+    live = runner.prev_day_bars(["AAA"], DAY, NOW, {}, alert=lambda *a: pytest.fail(str(a)))["AAA"]
     replayed = prior_sessions({"AAA": split_sessions(sip)}, DAY)["AAA"]
     today = split_sessions(sip)[DAY].iloc[:60]
     names = sorted(F.REGISTRY)
     a, b = F.compute(names, today, ctx_for(live, today)), F.compute(names, today, ctx_for(replayed, today))
     assert a.keys() == b.keys() and all(a[k] == b[k] or (math.isnan(a[k]) and math.isnan(b[k])) for k in a)
+
+
+def test_a_failure_combining_the_feeds_alerts_and_never_stops_startup(monkeypatch):
+    sip, iex = feeds()
+    monkeypatch.setattr(runner, "fetch_alpaca", fake_fetch(sip, iex)[0])
+    real = runner.prior_sessions
+
+    def flaky(sessions, day, volume_from=None):
+        if volume_from:
+            raise ValueError("cannot reindex")
+        return real(sessions, day, volume_from)
+    monkeypatch.setattr(runner, "prior_sessions", flaky)
+    alerts = []
+    prev = runner.prev_day_bars(["AAA"], DAY, NOW, {}, alert=lambda level, msg: alerts.append(msg))["AAA"]
+    assert len(alerts) == 1 and "IEX volume" in alerts[0]
+    assert prev.volume.isna().all() and (prev.close == split_sessions(sip)[PREV].close).all()

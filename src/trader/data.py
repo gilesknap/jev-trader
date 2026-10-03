@@ -96,7 +96,8 @@ def prior_sessions(sessions: dict[str, dict[dt.date, pd.DataFrame]], day: dt.dat
     `sessions`' (SIP's, with the official close). When today's bars come from another feed (live
     IEX), pass that feed's sessions as `volume_from`: the volume column is then taken from it, so
     a volume ratio never divides one feed's volume by another's. A minute that feed has no bar
-    for has volume 0; a symbol or session it lacks gets NaN volume, never the other feed's."""
+    for has volume 0 (nothing traded on it), so the mean is per session minute; a symbol or
+    session it lacks gets NaN volume, never the other feed's."""
     out = {}
     for s, per in sessions.items():
         earlier = [d for d in per if d < day]
@@ -106,6 +107,8 @@ def prior_sessions(sessions: dict[str, dict[dt.date, pd.DataFrame]], day: dt.dat
         prev = per[d]
         if volume_from is not None:
             other = volume_from.get(s, {}).get(d)
+            if other is not None:
+                other = other[~other.index.duplicated(keep="last")]  # as the live stream keeps a repeated minute
             prev = prev.assign(volume=float("nan") if other is None
                                else other.volume.reindex(prev.index, fill_value=0).astype(float))
         out[s] = prev

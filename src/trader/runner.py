@@ -305,7 +305,11 @@ def prev_day_bars(symbols: list[str], day: dt.date, now: dt.datetime, secrets, a
         alert("urgent", f"could not fetch recent IEX history at startup: {e}; prior-session volume is NaN today "
                         "(rel_volume_15m and the like); price levels are unaffected")
         iex = {}
-    return prior_sessions(sip, day, volume_from=iex)
+    try:
+        return prior_sessions(sip, day, volume_from=iex)
+    except Exception as e:  # never a startup crash loop over context data
+        alert("urgent", f"could not combine prior-session prices and IEX volume: {e!r}; prior-session volume is NaN today")
+        return prior_sessions(sip, day, volume_from={})
 
 
 def _last_resort_flatten(engine: Engine, tick: dt.datetime, bars: dict, minutes_to_close: float) -> None:
