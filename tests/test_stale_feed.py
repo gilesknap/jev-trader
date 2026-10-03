@@ -39,13 +39,15 @@ def rows_of(bars, until):
 class Fetch:
     """Fake REST IEX fetch over the full day's bars, recording each call."""
 
-    def __init__(self, day_bars, fail=None, delay=0.0):
-        self.day_bars, self.fail, self.delay, self.calls = day_bars, fail, delay, []
+    def __init__(self, day_bars, fail=None, delay=0.0, hold=None):
+        self.day_bars, self.fail, self.delay, self.hold, self.calls = day_bars, fail, delay, hold, []
 
     def __call__(self, syms, start, end):
         self.calls.append((tuple(syms), start, end))
         if self.delay:
             time.sleep(self.delay)
+        if self.hold is not None:  # a hung call: answers only once the test releases it
+            self.hold.wait(30)
         if self.fail:
             raise self.fail
         return {s: b[(b.index >= start) & (b.index <= end)] for s, b in self.day_bars.items() if s in syms}
@@ -125,15 +127,18 @@ def test_fetch_failure_falls_back_without_raising_and_alerts_once(tmp_path, sess
 
 def test_a_hung_fetch_is_cut_off_at_the_timeout(tmp_path, session):
     spy = session(path=[100.0] * 120)
-    fetch, alerts = Fetch({"XLV": spy}, delay=1.0), Alerts()
+    release = threading.Event()
+    fetch, alerts = Fetch({"XLV": spy}, hold=release), Alerts()
     rest = RestBars(fetch, OPEN, alerts.every, timeout=0.1)
     tick = at(10, 10)
     live = stream_bars({"SPY": rows_of(spy, at(10, 0))}, tick)
-    t0 = time.monotonic()
-    rest.poll(tick, live, {"XLV"})
-    rest.poll(tick + dt.timedelta(minutes=1), live, {"XLV"})  # still running: not started twice
-    assert time.monotonic() - t0 < 0.5 and len(fetch.calls) == 1
-    assert len(alerts.sent) == 1 and not rest.bars
+    try:
+        rest.poll(tick, live, {"XLV"})  # returns although the fetch never answers: cut off at the timeout
+        rest.poll(tick + dt.timedelta(minutes=1), live, {"XLV"})  # still running: not started twice
+        assert not release.is_set() and len(fetch.calls) == 1
+        assert len(alerts.sent) == 1 and "no answer in 0.1 s" in alerts.sent[0] and not rest.bars
+    finally:
+        release.set()
 
 
 def test_no_duplicate_or_future_bars_when_the_stream_resumes(session):

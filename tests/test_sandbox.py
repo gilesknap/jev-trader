@@ -426,8 +426,8 @@ def test_stdout_writes_cannot_corrupt_the_protocol(tmp_path, session):
     injection is covered by test_out_of_sequence_reply_fails_closed."""
     d = tmp_path / "custom"
     d.mkdir()
-    # An empty frame's info() still writes several lines to stdout, at ~0.25 ms a call: far enough under the
-    # gate's 5 ms limit that machine load can't fail the gate (a full bars.info() sat right at it).
+    # An empty frame's info() still writes several lines to stdout. The gate's speed budget is relaxed
+    # in tests (conftest), so only the protocol is under test here, not how fast the host is.
     (d / "noisy.py").write_text(GOOD.replace('b = bars.iloc[-1]', 'pd.DataFrame().info()\n    b = bars.iloc[-1]')
                                 .replace("import numpy as np", "import numpy as np\nimport pandas as pd"))
     s = session()

@@ -76,10 +76,33 @@ def test_custom_feature_loads_and_evaluates(tmp_path, session):
     names, errors = load_custom_inprocess(tmp_path)
     assert names == ["test_last_bar_range_pct"] and not errors
     s = session()
-    errors = evaluate(names, [(s, s, s)])
-    # The 5 ms/call budget is wall-clock: under a concurrent load it can trip, and that isn't what this tests.
-    assert all(v.startswith("too slow") for v in errors.values())
+    errors = evaluate(names, [(s, s, s)])  # the speed budget is relaxed here (conftest): this isn't about speed
     F.REGISTRY.pop("test_last_bar_range_pct")
+    assert not errors
+
+
+@pytest.mark.speed_gate
+def test_the_gate_rejects_a_slow_feature(session):
+    """The one test of the real per-call budget. Its feature takes 4x the budget, and load only
+    makes it slower, so the verdict can't flip on a busy host."""
+    import time
+
+    from trader.features import feature, harness
+
+    assert harness.SPEED_BUDGET_S == 0.005
+
+    @feature("test_slow_feature", source="custom")
+    def slow(bars, ctx):
+        time.sleep(0.02)
+        return 1.0
+
+    s = session(n=40)  # 10 calls
+    try:
+        errors = evaluate(["test_slow_feature"], [(s, s, s)])
+    finally:
+        F.REGISTRY.pop("test_slow_feature")
+        F.SOURCES.pop("test_slow_feature", None)
+    assert errors["test_slow_feature"].startswith("too slow")
 
 
 def test_unquoted_yaml_date_is_accepted(tmp_path):
