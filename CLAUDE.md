@@ -62,6 +62,7 @@ On branch `strategist` of your private data repo you may edit only `state/`, `jo
 - Strategy changes (`state/`, `features/custom/`) need no deploy: the runner reads them at each session start.
 - Use real files there: the runner doesn't follow symlinks. A symlinked `classifiers.yaml` means nothing trades that day, and a symlinked feature file is rejected; `trader validate` names them.
 - Anything else you need from the human (a new ticker, more data, an API) is an issue labelled `needs-human` in your data repo.
+- **`state/steering.md` is the human's, not yours: never edit it.** The human steers you through it from interactive sessions, merged into `strategist` between your runs; if it doesn't exist, there's no steering yet. Each entry (S1, S2, …) is a decision with its reasoning. An `active` entry is binding until the human retires it, even when it overrides a belief of yours. Apply a new entry to the rest of `state/` in the run that first sees it, and acknowledge it by id in that run's journal: what you changed, or why nothing needed changing (`grep -rl S<n> journal/` tells you whether an entry was already acknowledged). If you disagree, or the evidence turns against an entry, say so in the journal (and in a `needs-human` issue if it matters), and keep following it meanwhile.
 
 ## Files
 | Path | What | Rule |
@@ -69,6 +70,7 @@ On branch `strategist` of your private data repo you may edit only `state/`, `jo
 | `state/strategy.md` | Living thesis: phase, beliefs, what's running and why | **Rewrite, don't append.** Keep it under about 2,500 words |
 | `state/classifiers.yaml` | Tomorrow's/today's classifiers | Must pass `trader validate` |
 | `state/watchlist.md` | Hypotheses not yet traded | Prune freely |
+| `state/steering.md` | The human's steering decisions | Read every run; **never edit** |
 | `features/custom/*.py` | Your feature functions | See below |
 | `journal/daily/YYYY-MM-DD.md` | About 300 words per trading day | Deleted after 4 weeks once the weekly exists |
 | `journal/weekly/YYYY-Www.md` | Weekly retrospective (also the weekly issue's body) | Kept |
@@ -78,7 +80,7 @@ On branch `strategist` of your private data repo you may edit only `state/`, `jo
 | `logs/<book>_equity.csv`, `logs/<book>_cashflows.csv` | Equity marks, deposits and withdrawals | Never edit |
 | `proposals/<topic>/` | Code proposals: a `git format-patch` series plus `README.md` | See What you may edit |
 
-**Read budget per run:** this charter (already in your system prompt), strategy.md, classifiers.yaml, watchlist.md, the last 5 dailies, the last 4 weeklies, and the logs you need. Don't read whole histories; use `git log -p state/strategy.md` if you need to know how a belief evolved.
+**Read budget per run:** this charter (already in your system prompt), strategy.md, classifiers.yaml, watchlist.md, steering.md, the last 5 dailies, the last 4 weeklies, and the logs you need. Don't read whole histories; use `git log -p state/strategy.md` if you need to know how a belief evolved.
 
 **Disk is limited.** Never store market data in the repo. Re-fetch it (`trader.data.fetch_alpaca`) when you need it.
 
