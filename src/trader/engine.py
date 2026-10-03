@@ -612,7 +612,8 @@ class Engine:
             data = json.loads(f.read_text()) if f.exists() else {}
             if not isinstance(data, dict):
                 raise ValueError("not a JSON object")
-            if data.get("day") != today:
+            if data.get("day") != today:  # nothing saved today: start fresh, matched to what is held
+                self._resume_fresh()
                 return
             states = data.get("states", {})
             if not isinstance(states, dict) or not all(isinstance(v, dict) for v in states.values()):
@@ -622,10 +623,7 @@ class Engine:
                 f.replace(f.with_name(f.name + ".unreadable"))  # kept for a look; rewritten each tick
             except OSError:
                 pass
-            for cs in self.states:
-                for sym, st in cs.symbols.items():
-                    if not cs.spec.probe:
-                        self._resume_symbol(cs, sym, st, "armed", 0)
+            self._resume_fresh()
             self._alert_every("classifier-state", "urgent", f"{f.name} is unreadable ({ex}), so the rules start fresh: if the runner "
                                  "restarted mid-session, today's trade counts (max_trades) and stand-downs are "
                                  "lost and a rule may trade again today. Open positions are still managed. "
@@ -657,6 +655,14 @@ class Engine:
             self._alert_every("classifier-state", "urgent", f"{self._classifier_state_file().name} had damaged entries for "
                                  f"{', '.join(damaged)}: they start fresh, so today's trade count and any "
                                  "stand-down for them are lost. Open positions are still managed.")
+
+    def _resume_fresh(self) -> None:
+        """Every rule starts armed with no trades today, matched to the positions and resting
+        orders its book holds now (one opened before the first save is resumed as holding)."""
+        for cs in self.states:
+            for sym, st in cs.symbols.items():
+                if not cs.spec.probe:
+                    self._resume_symbol(cs, sym, st, "armed", 0)
 
     def _floor_trades_from_ledger(self, today: str) -> None:
         """A rule's trade count can never be below what its book's trades.csv shows it opened today:

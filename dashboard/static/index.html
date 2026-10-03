@@ -1126,7 +1126,7 @@ function renderHealth(d, h) {
     ["Jev cost today", "$" + fmt(st.decision_cost_usd, 4)],
     ["Jev errors", errs > 0 ? `<span class="neg">${errs}</span>` : esc(errs ?? "–")],
     ...(st.probe_errors != null ? [["probe errors (no effect on trading)", st.probe_errors > 0 ? `<span class="warn">${esc(st.probe_errors)}</span>` : "0"]] : []),
-    ["strategist last ran", esc(h.strategist_last_run ? h.strategist_last_run.replace("T", " ") : "not yet")],
+    ["strategist last ran", esc(h.strategist_last_run ? String(h.strategist_last_run).slice(0, 16).replace("T", " ") + " New York time" : "not yet")],
     ["disk free", `${esc(h.disk_free_gb)} GB`],
   ];
   $("health").innerHTML = items.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("");

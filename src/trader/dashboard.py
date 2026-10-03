@@ -407,7 +407,7 @@ def scoreboard(source: str = "live", all_days: bool | None = None):
     if source == "live":  # the runner's promotion record remembers retired classifiers' families
         promo = _json(config.RUNTIME_DIR / "promotion.json") or {}
         families = {k: v.get("family") for k, v in promo.items() if isinstance(v, dict)} | families
-        since = {k: v["since"] for k, v in promo.items() if isinstance(v, dict) and v.get("since")}
+        since = {k: v["since"] for k, v in promo.items() if isinstance(v, dict) and isinstance(v.get("since"), str) and v["since"]}
         hashes = {k: v["hash"] for k, v in promo.items() if isinstance(v, dict) and isinstance(v.get("hash"), str)}
     sim_ids = {c["id"] for c in today if c.get("mode") == "sim"}
     if all_days is None:
@@ -560,9 +560,7 @@ def journal(kind: str, name: str):
 
 def _ny_today() -> str:
     """Today's New York date: trading days, trade times and journal entries are all New York dates."""
-    from zoneinfo import ZoneInfo
-
-    return dt.datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+    return config.ny_today().isoformat()
 
 
 DAILY_SECTIONS = {"premarket": "Pre-market", "postclose": "Post-close"}  # pinned in prompts/premarket.md, postclose.md
@@ -612,7 +610,9 @@ def health():
     status = _json(config.RUNTIME_DIR / "status.json") or {}
     stamp = _strategist_stamp()
     try:
-        last_run = dt.datetime.fromtimestamp(stamp.stat().st_mtime).isoformat(timespec="minutes")
+        from zoneinfo import ZoneInfo  # New York time with its offset, like every other time on the page
+
+        last_run = dt.datetime.fromtimestamp(stamp.stat().st_mtime, ZoneInfo("America/New_York")).isoformat(timespec="minutes")
     except OSError:
         last_run = None
     disk = shutil.disk_usage(config.RUNTIME_DIR if config.RUNTIME_DIR.exists() else config.CODE_ROOT)
