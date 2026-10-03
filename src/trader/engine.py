@@ -1235,11 +1235,12 @@ class Engine:
 
     def _fill_price(self, b: Book, sym, p: Pending, o, now, wait: bool = True) -> tuple[float, bool]:
         """(average price of the order's fill so far, whether it is a guess). A limit buy never
-        fills above its limit, so an unpriced one is protected at the limit, as a guess. A market
-        fill Alpaca hasn't priced after UNPRICED_FILL_WAIT (or at once, when the order is settled:
-        `wait` False) takes the position's average cost, which is real; failing that the last
-        price, or else the price the order was sized at (#134), as a guess, so the shares get a
-        stop and their round trip is recorded, but isn't evidence. 0: wait."""
+        fills above its limit (a simulated one only by its slippage), so an unpriced one is
+        protected at the limit, as a guess. A market fill Alpaca hasn't priced after
+        UNPRICED_FILL_WAIT (or at once, when the order is settled: `wait` False) takes the
+        position's average cost, which is real; failing that the last price, or else the price
+        the order was sized at (#134), as a guess, so the shares get a stop and their round trip
+        is recorded, but isn't evidence. 0: wait."""
         if o.price > 0 or p.limit:
             return (o.price if o.price > 0 else p.limit), o.price <= 0
         if wait and now - p.placed < UNPRICED_FILL_WAIT:

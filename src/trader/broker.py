@@ -134,6 +134,8 @@ class SimBroker:
             hit = b[(b.index >= pd.Timestamp(o["placed"])) & (b.low < o["limit"])]
             if len(hit):
                 px = min(float(hit.open.iloc[0]), o["limit"]) * (1 + SLIPPAGE)
+                # The haircut can spend up to 0.05% more than the engine reserved (qty * limit):
+                # cents on a small account, and the next entry is sized from the cash left.
                 self.cash -= o["qty"] * px
                 self.positions[o["symbol"]] = Position(o["symbol"], o["qty"], px)
                 o["state"] = OrderState("filled", o["qty"], px, hit.index[0].to_pydatetime())
@@ -271,6 +273,8 @@ class PersistentSimBroker(SimBroker):
 
 
 class AlpacaBroker:
+    limit_slippage = 0.0  # a real limit buy never fills above its limit (see SimBroker.limit_slippage)
+
     def __init__(self, key: str, secret: str, paper: bool):
         from alpaca.trading.client import TradingClient
 
