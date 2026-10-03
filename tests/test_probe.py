@@ -259,3 +259,45 @@ def test_report_is_strict_json():
     text = json.dumps(out, allow_nan=False)
     assert json.loads(text)["p"]["p_enter_spread"] is None
     assert probe.finite({"a": [float("nan"), 1.0, float("inf")]}) == {"a": [None, 1.0, None]}
+
+
+def _ticker_rows(n_days=10, per_sym=8, seed=1):
+    """Forward returns driven only by which stock it is; Jev's P(ENTER) knows the stock and nothing else."""
+    rng = np.random.default_rng(seed)
+    effect = {"AAA": 0.3, "BBB": 0.1, "CCC": -0.1, "DDD": -0.3}
+    out = []
+    for d in range(n_days):
+        day = (dt.date(2026, 9, 1) + dt.timedelta(days=d)).isoformat()
+        for s, e in effect.items():
+            for _ in range(per_sym):
+                out.append({"day": day, "t": "10:00", "c": "p", "s": s, "p_enter": 0.5 + e + rng.normal(0, 0.01),
+                            "f:noise": rng.normal(), "fwd_15": e + rng.normal(0, 0.2)})
+    return pd.DataFrame(out)
+
+
+def test_a_ticker_effect_earns_jev_no_incremental_credit():
+    h = probe.score(_ticker_rows(), [15])["p"]["horizons"][15]
+    assert h["jev_ic"]["mean"] > 0.4  # Jev does rank the returns...
+    assert h["wf_inputs_only"]["mean"] > 0.4  # ...but so does a baseline that knows the symbol
+    inc = h["jev_increment"]
+    assert inc["days"] == 7 and abs(inc["mean"]) < 0.05 and not inc["verdict"].startswith("Jev adds")
+
+
+def test_increment_is_paired_and_can_be_inconclusive():
+    good = probe.score(_rows(n_days=10), [15])["p"]["horizons"][15]["jev_increment"]
+    assert good["days"] == 7 and good["verdict"] == "Jev adds to its inputs: 95% interval above zero"
+    bad = probe.score(_rows(n_days=10, informative=False), [15])["p"]["horizons"][15]["jev_increment"]
+    assert bad["verdict"].startswith("inconclusive") and bad["ci95"] is not None
+    few = probe.score(_rows(), [15])["p"]["horizons"][15]["jev_increment"]
+    assert few == {**few, "days": 3, "ci95": None, "verdict": "inconclusive: too few days (3)"}
+
+
+def test_missing_inputs_drop_the_row_from_both_models():
+    rows = _rows(n_days=10)
+    holes = rows.copy()
+    holes.loc[holes.index % 7 == 0, "f:noise"] = np.nan
+    a = probe.score(holes, [15])["p"]["horizons"][15]
+    b = probe.score(rows[rows.index % 7 != 0], [15])["p"]["horizons"][15]
+    for k in ("wf_inputs_only", "wf_inputs_plus_jev", "jev_increment"):
+        assert a[k] == b[k]
+    assert a["wf_inputs_only"]["days"] == a["wf_inputs_plus_jev"]["days"] == a["jev_increment"]["days"]
