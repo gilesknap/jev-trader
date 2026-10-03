@@ -259,3 +259,54 @@ def test_report_is_strict_json():
     text = json.dumps(out, allow_nan=False)
     assert json.loads(text)["p"]["p_enter_spread"] is None
     assert probe.finite({"a": [float("nan"), 1.0, float("inf")]}) == {"a": [None, 1.0, None]}
+
+
+def _ticker_rows(n_days=10, n_syms=24, per_sym=6, n_inputs=12, seed=1):
+    """Forward returns driven only by which stock it is; Jev's P(ENTER) knows the stock and nothing
+    else. Many symbols and a realistic dozen inputs, so a baseline that shrinks a rare symbol's
+    dummy harder than it shrinks P(ENTER) would be caught."""
+    rng = np.random.default_rng(seed)
+    effect = {f"S{k:02d}": e for k, e in enumerate(np.linspace(-0.3, 0.3, n_syms))}
+    view = {s: e + rng.normal(0, 0.1) for s, e in effect.items()}  # Jev's fixed opinion of each stock: right-ish, not exact
+    out = []
+    for d in range(n_days):
+        day = (dt.date(2026, 9, 1) + dt.timedelta(days=d)).isoformat()
+        for s, e in effect.items():
+            for _ in range(per_sym):
+                out.append({"day": day, "t": "10:00", "c": "p", "s": s, "p_enter": 0.5 + view[s] + rng.normal(0, 0.01),
+                            **{f"f:n{i}": rng.normal() for i in range(n_inputs)}, "fwd_15": e + rng.normal(0, 0.2)})
+    return pd.DataFrame(out)
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3])
+def test_a_ticker_effect_earns_jev_no_incremental_credit(seed):
+    h = probe.score(_ticker_rows(seed=seed), [15])["p"]["horizons"][15]
+    assert h["jev_ic"]["mean"] > 0.4  # Jev does rank the returns...
+    assert h["wf_inputs_only"]["mean"] > 0.4  # ...but so does a baseline that knows the symbol
+    inc = h["jev_increment"]
+    assert inc["days"] == 7 and inc["mean"] < 0.01 and not inc["verdict"].startswith("Jev adds")
+
+
+def test_increment_handles_identical_deltas():
+    inc = probe._increment([0.1] * 6)
+    assert inc == {"mean": 0.1, "ci95": None, "days": 6, "verdict": "inconclusive: no spread across days"}
+
+
+def test_increment_is_paired_and_can_be_inconclusive():
+    good = probe.score(_rows(n_days=10), [15])["p"]["horizons"][15]["jev_increment"]
+    assert good["days"] == 7 and good["verdict"] == "Jev adds to its inputs: 95% interval above zero"
+    bad = probe.score(_rows(n_days=10, informative=False), [15])["p"]["horizons"][15]["jev_increment"]
+    assert bad["verdict"].startswith("inconclusive") and bad["ci95"] is not None
+    few = probe.score(_rows(), [15])["p"]["horizons"][15]["jev_increment"]
+    assert few == {**few, "days": 3, "ci95": None, "verdict": "inconclusive: too few days (3)"}
+
+
+def test_missing_inputs_drop_the_row_from_both_models():
+    rows = _rows(n_days=10)
+    holes = rows.copy()
+    holes.loc[holes.index % 7 == 0, "f:noise"] = np.nan
+    a = probe.score(holes, [15])["p"]["horizons"][15]
+    b = probe.score(rows[rows.index % 7 != 0], [15])["p"]["horizons"][15]
+    for k in ("wf_inputs_only", "wf_inputs_plus_jev", "jev_increment"):
+        assert a[k] == b[k]
+    assert a["wf_inputs_only"]["days"] == a["wf_inputs_plus_jev"]["days"] == a["jev_increment"]["days"]

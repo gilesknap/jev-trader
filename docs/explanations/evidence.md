@@ -137,10 +137,14 @@ and horizon (15, 30 and 60 minutes by default, cut at the flatten, 15 minutes be
    correlation between P(ENTER) and the forward return, computed within each day and averaged
    across days. The day is the unit of evidence, and no t-statistic is shown under 5 days.
 2. **Does Jev add anything over its own inputs?** A ridge regression on everything Jev was shown
-   (the features, minutes since open and the last ten 1-minute returns) is fitted walk-forward
-   (on earlier days only, scored on the next), with and without P(ENTER) as an extra input. If
-   adding Jev doesn't lift the out-of-sample IC, its inputs carry whatever signal there is, and a
-   plain trigger would do. A lift is weaker evidence: beating a linear model is a low bar.
+   (the symbol, the features, minutes since open and the last ten 1-minute returns) is fitted
+   walk-forward (on earlier days only, scored on the next), with and without P(ENTER) as an extra
+   input, both on exactly the same rows and days. `jev_increment` is the paired per-day IC gain
+   with a 95% interval. Only an interval above zero says Jev adds something its inputs don't;
+   one below zero says Jev does worse than its inputs alone; anything else is "inconclusive: no
+   detectable incremental value", not proof that a plain trigger would do. The test is per probe
+   and horizon, so a few readings will disagree by chance. A lift is weaker evidence than it looks: beating a linear model is a low bar,
+   and ranking returns is not the same as trading them better.
 
 After each close the post-close wrapper writes the last 30 days' report to
 `logs/probe_report.json`, and the dashboard's Probes page shows it. Probe results count towards

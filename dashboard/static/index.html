@@ -763,6 +763,7 @@ function cleanReport(rep) {
       const horizons = Object.entries(obj(pr.horizons)).map(([h, x]) => {
         x = obj(x);
         return { h: num(h), n: num(x.n), jev_ic: stat(x.jev_ic), wf_inputs_only: stat(x.wf_inputs_only), wf_inputs_plus_jev: stat(x.wf_inputs_plus_jev),
+          inc: (i => ({ mean: num(i.mean), ci: num(i.ci95), days: num(i.days), verdict: typeof i.verdict === "string" ? i.verdict : null }))(obj(x.jev_increment)),
           enter_n: num(x.enter_n), enter_mean_net_pct: num(x.enter_mean_net_pct), all_mean_net_pct: num(x.all_mean_net_pct),
           by_p_enter: Array.isArray(x.by_p_enter) ? x.by_p_enter.map(b => { b = obj(b); return { lo: num(b.p_enter_min), hi: num(b.p_enter_max), n: num(b.n), bps: num(b.mean_gross_bps) }; })
             .filter(b => b.lo != null && b.hi != null && b.bps != null) : [],
@@ -795,19 +796,20 @@ function renderProbeToday(st) {
 const ic = s => !s || s.mean == null ? "–" : (s.mean >= 0 ? "+" : "−") + Math.abs(s.mean).toFixed(3);
 const tval = s => !s || s.t == null ? "" : ` <span class="muted">t ${s.t >= 0 ? "" : "−"}${Math.abs(s.t).toFixed(1)}</span>`;
 // A deliberately cautious one-line reading of the main horizon (30 min when present). It never
-// turns green: at these sample sizes nothing here is more than a hint, and the gap between the two
-// baselines has no significance test of its own.
+// turns green: at these sample sizes nothing here is more than a hint. The two baselines are compared
+// by the report's paired per-day test (jev_increment), shown for the main horizon; an older report
+// without it reads as "needs a few more days".
 function probeVerdict(pr, h) {
   const j = h && h.jev_ic, plain = h && h.wf_inputs_only, plus = h && h.wf_inputs_plus_jev;
   const d = j && j.days != null ? j.days : pr.days;
   if (!h || !j || j.t == null) return ["", `Too early to say: ${nstr(d)} day${d === 1 ? "" : "s"} with enough answers to score, and no reading is shown under 5.`];
   if (Math.abs(j.t) < 2) return ["", `No sign yet that Jev's answer predicts the next move (IC ${ic(j)}, t ${j.t.toFixed(1)} over ${nstr(j.days)} days).`];
   if (j.mean < 0) return ["neg", `So far Jev's answer has pointed the <b>wrong way</b> (IC ${ic(j)}, t ${j.t.toFixed(1)} over ${nstr(j.days)} days): stocks it liked did worse.`];
-  const adds = plus && plain && plus.mean != null && plain.mean != null ? plus.mean - plain.mean : null;
+  const inc = h.inc || {};
   return ["", `So far Jev's answer has ranked the next move (IC ${ic(j)}, t ${j.t.toFixed(1)} over ${nstr(j.days)} days), which is still weak evidence at this sample size. ` +
-    (adds == null ? "The plain-formula comparison needs a few more days."
-      : adds > 0.01 ? `With Jev the formula scored higher (${ic(plain)} → ${ic(plus)}), but that gap isn't tested and may be noise.`
-      : `The plain formula did about as well (${ic(plain)} without Jev, ${ic(plus)} with), so a simple rule might do.`)];
+    (inc.verdict == null || inc.mean == null ? "The comparison with a plain formula on the same inputs needs a few more days."
+      : `Against a plain formula on the same inputs and rows (${ic(plain)} without Jev, ${ic(plus)} with), Jev's gain per day is ${ic(inc)}` +
+        (inc.ci == null ? "" : ` ± ${Math.abs(inc.ci).toFixed(3)}`) + `: ${esc(inc.verdict)}.`)];
 }
 function binChart(bins) {
   if (!bins || !bins.length) return '<p class="muted">Not enough answers to split by confidence yet.</p>';
