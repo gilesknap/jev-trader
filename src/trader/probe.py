@@ -36,7 +36,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from trader.market_calendar import Calendar, Session
+from trader.data import ET
+from trader.features.lib import STALE_MIN
+from trader.market_calendar import Calendar
 from trader.stats import t95
 
 SLIPPAGE_ROUND_TRIP_PCT = 0.1  # 0.05% a side, as everywhere else
@@ -78,40 +80,54 @@ def load_rows(paths: list[Path], only: set[str] | None = None) -> pd.DataFrame:
     return df
 
 
-def flatten_bar(session: Session) -> dt.time:
-    """The bar whose close the end-of-day flatten gets: the one completed at the flatten tick."""
-    return (session.flatten_at - dt.timedelta(minutes=1)).time()
-
-
 def forward_returns(rows: pd.DataFrame, sessions: dict, horizons: list[int],
-                    calendar: Calendar | None = None) -> pd.DataFrame:
-    """Add fwd_<h> (% return) and cut_<h> (the flatten shortened the horizon) columns. `sessions`:
-    {symbol: {date: bars}} (SIP, from replay.load_sessions). `calendar`: the exchange calendar
-    for the days (regular 16:00 closes without one). A question asked at t saw bars up to t-1
-    (a bar labelled 09:30 completes at 09:31)."""
+                    calendar: Calendar | None = None, data_end: dt.datetime | None = None) -> pd.DataFrame:
+    """Add, per horizon h: fwd_<h> (% return), cut_<h> (the flatten shortened the horizon),
+    len_<h> (the minutes actually scored) and why_<h> (why fwd_<h> is missing, else "").
+    `sessions`: {symbol: {date: bars}} (SIP, from replay.load_sessions). `calendar`: the
+    exchange calendar for the days (regular 16:00 closes without one). `data_end`: when the
+    fetched bars end; a horizon whose endpoint bar hadn't completed by then is left unlabelled
+    ("immature") and labelled by a later run, never scored on the minutes there were.
+
+    A question asked at t saw bars up to t-1 (a bar labelled 09:30 completes at 09:31). The
+    start price is the one logged with the question (`px`, what Jev was shown), else the close
+    of bar t-1. A price is carried over missing minutes for at most STALE_MIN minutes: an
+    endpoint with no bar that recent is "missing endpoint", not the last price before a gap."""
     calendar = calendar or Calendar()
     rows = rows.copy()
     for h in horizons:
-        rows[f"fwd_{h}"] = np.nan
-        rows[f"cut_{h}"] = False
+        rows[f"fwd_{h}"], rows[f"cut_{h}"], rows[f"len_{h}"], rows[f"why_{h}"] = np.nan, False, np.nan, ""
+    carry = pd.Timedelta(minutes=STALE_MIN)
     for (day, sym), g in rows.groupby(["day", "s"]):
-        bars = sessions.get(sym, {}).get(dt.date.fromisoformat(day))
-        if bars is None or bars.empty:
-            continue
-        last = flatten_bar(calendar.session(dt.date.fromisoformat(day)))  # once per day, not per row
-        close = bars.close
-        tod = pd.Index([ts.time() for ts in close.index])
+        d = dt.date.fromisoformat(day)
+        last = calendar.session(d).flatten_at - dt.timedelta(minutes=1)  # once per day, not per row
+        bars = sessions.get(sym, {}).get(d)
+        close = bars.close if bars is not None else pd.Series(dtype=float)
+
+        def price(t):
+            j = close.index.searchsorted(t, side="right")
+            return float(close.iloc[j - 1]) if j and close.index[j - 1] >= t - carry else None
+
         for i, r in g.iterrows():
-            asked = (dt.datetime.combine(dt.date.min, dt.time.fromisoformat(r["t"])) - dt.timedelta(minutes=1)).time()
-            ref = close[tod <= asked]
-            if ref.empty or asked >= last:
+            asked = dt.datetime.combine(d, dt.time.fromisoformat(r["t"]), ET) - dt.timedelta(minutes=1)
+            if asked >= last:
+                rows.loc[i, [f"why_{h}" for h in horizons]] = "after flatten"
                 continue
-            p0 = float(ref.iloc[-1])
+            px = r.get("px")
+            p0 = float(px) if isinstance(px, (int, float)) and math.isfinite(px) and px > 0 else price(asked)
             for h in horizons:
-                end = (dt.datetime.combine(dt.date.min, asked) + dt.timedelta(minutes=h)).time()
-                later = close[tod <= min(end, last)]
-                rows.at[i, f"fwd_{h}"] = (float(later.iloc[-1]) / p0 - 1) * 100
-                rows.at[i, f"cut_{h}"] = end > last
+                end = min(asked + dt.timedelta(minutes=h), last)
+                rows.at[i, f"cut_{h}"] = asked + dt.timedelta(minutes=h) > last
+                rows.at[i, f"len_{h}"] = (end - asked).total_seconds() / 60
+                p1 = price(end)
+                if data_end is not None and end + dt.timedelta(minutes=1) > data_end:
+                    rows.at[i, f"why_{h}"] = "immature"
+                elif p0 is None:
+                    rows.at[i, f"why_{h}"] = "no price at ask"
+                elif p1 is None:
+                    rows.at[i, f"why_{h}"] = "missing endpoint"
+                else:
+                    rows.at[i, f"fwd_{h}"] = (p1 / p0 - 1) * 100
     return rows
 
 
@@ -229,6 +245,9 @@ def score(rows: pd.DataFrame, horizons: list[int], thresholds: dict[str, float] 
             out["horizons"][h] = {
                 "n": len(gg),
                 "cut_n": int(gg[f"cut_{h}"].sum()) if f"cut_{h}" in gg else 0,  # horizons shortened by the flatten
+                "mean_len_min": round(float(gg[f"len_{h}"].mean()), 1) if f"len_{h}" in gg else None,
+                "unlabelled": (g[f"why_{h}"][g[f"why_{h}"] != ""].value_counts().to_dict()
+                               if f"why_{h}" in g else {}),  # rows left out, by reason
                 "all_mean_net_pct": round(float(gg[y].mean()) - SLIPPAGE_ROUND_TRIP_PCT, 4),
                 "enter_n": len(hi),
                 "enter_mean_net_pct": round(float(hi[y].mean()) - SLIPPAGE_ROUND_TRIP_PCT, 4) if len(hi) else None,

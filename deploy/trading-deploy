@@ -220,7 +220,7 @@ check_candidate_data() {  # CODE DATA: the candidate code against the candidate 
         echo "REFUSING: the data repo's main has no config/mode.yaml (mode: auto | paper | live); nothing was changed." >&2
         return 1
     fi
-    if ! out=$(cd "$code" && TRADER_CODE_ROOT="$code" TRADER_DATA_ROOT="$data" \
+    if ! out=$(cd "$code" && unset "${!TRADER_@}" && TRADER_CODE_ROOT="$code" TRADER_DATA_ROOT="$data" \
                ./.venv/bin/trader config render-deploy --check --data-root "$data" 2>&1); then
         echo "REFUSING: the data repo's rendered deploy files don't match its config.yaml under the new code; nothing was changed:" >&2
         printf '%s\n' "$out" >&2
@@ -231,7 +231,8 @@ check_candidate_data() {  # CODE DATA: the candidate code against the candidate 
 }
 validate_strategist() {  # CODE DATA: the strategist's live specs and features under the new code; WARN only
     local code=$1 data=$2 out
-    if out=$(cd "$code" && TRADER_CODE_ROOT="$code" TRADER_DATA_ROOT="$data" TRADER_STRATEGIST_ROOT="$STRATEGIST_DIR" \
+    # Only the TRADER_* set here: an inherited one (TRADER_CONFIG, say) would validate against something else.
+    if out=$(cd "$code" && unset "${!TRADER_@}" && TRADER_CODE_ROOT="$code" TRADER_DATA_ROOT="$data" TRADER_STRATEGIST_ROOT="$STRATEGIST_DIR" \
              TRADER_RUNTIME="$RUNTIME_DIR" TRADER_SECRETS="$HOME/.config/trading/env" \
              ./.venv/bin/trader validate --file "$STRATEGIST_DIR/state/classifiers.yaml" 2>&1); then
         echo "the strategist's live classifiers and custom features validate under the new code"
@@ -266,7 +267,8 @@ strategist_units_hint() {  # CODE DATA OLD_CODE OLD_DATA: say when trader should
 # check first, and refuse with the list. A file find can't reach fails the check too.
 foreign_files() {  # DIR...: refuse when anything under the DIRs isn't owned by OWNER
     local out rc=0 n
-    out=$(find "$@" ! -user "$OWNER" -printf '  %u  %p\n' 2>&1) || rc=$?
+    # -H: a checkout that is itself a symlink is checked through it, as chmod -R follows it.
+    out=$(find -H "$@" ! -user "$OWNER" -printf '  %u  %p\n' 2>&1) || rc=$?
     if [[ $rc == 0 && -z $out ]]; then return 0; fi
     n=$(grep -c '' <<< "$out")
     echo "REFUSING: these files under $* aren't owned by $OWNER (or can't be checked), so the switch would fail half way; nothing was changed:" >&2
@@ -346,9 +348,11 @@ fi
 # Test the candidate in a throwaway worktree with its own venv BEFORE touching the live copy:
 # if the tests fail, /srv/trading/main is unchanged and the runner keeps its current code.
 # In the two-repo layout the candidate data is a second throwaway worktree, and the tests and
-# checks read it through TRADER_DATA_ROOT. The tests run with every other TRADER_* variable
-# unset: one inherited from a shell with services.env loaded (TRADER_STRATEGIST_ROOT, say) would
-# point them at live data, since tests/conftest.py respects what is already set.
+# checks read it through TRADER_DATA_ROOT. The tests run in a fixed environment (env -i and the
+# allowlist below), never the caller's: an inherited TRADER_* variable (from a shell with
+# services.env loaded, say) would point them at live data, since tests/conftest.py respects what is
+# already set, and others (PYTHONPATH, VIRTUAL_ENV, UV_*, PYTEST_ADDOPTS, API keys) could change
+# what runs or what it can reach.
 cand=$(mktemp -d -p /var/tmp)  # not /tmp: may be a small tmpfs, and the venv is large
 dcand=""
 switching=0  # 1 from taking the switch lock until the units are reloaded
@@ -384,9 +388,10 @@ partial_switch_help() {  # RC: a step of the switch failed, so the checkouts may
         echo "  systemctl --user daemon-reload"
     } >&2
 }
+TEST_ENV=(HOME="$HOME" USER="$(id -un)" LOGNAME="$(id -un)" PATH="$PATH" LANG=C.UTF-8 XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR")
+if (( SPLIT )); then TEST_ENV+=(TRADER_DATA_ROOT="$dcand"); fi
 echo "testing $what in a temporary checkout..."
-if ! (cd "$cand" && unset "${!TRADER_@}" && { (( ! SPLIT )) || export TRADER_DATA_ROOT="$dcand"; } \
-        && uv sync -q --frozen --extra dev && uv run --frozen pytest -q tests); then
+if ! (cd "$cand" && env -i "${TEST_ENV[@]}" bash -c 'uv sync -q --frozen --extra dev && uv run --frozen pytest -q tests'); then
     if (( SPLIT )); then
         echo "TESTS FAILED: nothing deployed; the runner keeps code ${OLD_CODE:0:7} + data ${OLD_DATA:0:7}" >&2
     else

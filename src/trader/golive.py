@@ -144,9 +144,12 @@ def spec_hash(spec, custom_digest: str = "") -> str:
     return hashlib.sha256(body.encode()).hexdigest()[:16]
 
 
-def shadow_record(classifier: str, since: str, book_dir=PAPER_BOOK) -> tuple[int, float | None]:
+def shadow_record(classifier: str, since: str, book_dir=PAPER_BOOK, spec_hash: str = "") -> tuple[int, float | None]:
     """(closed paper trades since `since`, mean pnl % after round-trip slippage). Like the gate,
-    nothing before the experiment's start date counts, whenever the current spec started."""
+    nothing before the experiment's start date counts, whenever the current spec started. Given
+    the current `spec_hash`, a close stamped with another spec's hash doesn't count: its position
+    opened under an earlier spec, even if it closed after the edit. An unstamped close (written
+    before trade provenance) is judged by its date alone."""
     since = max(since, START_DATE.isoformat())
     closes = []
     tp = book_dir / "trades.csv"
@@ -154,6 +157,9 @@ def shadow_record(classifier: str, since: str, book_dir=PAPER_BOOK) -> tuple[int
         with tp.open() as f:
             for r in csv.DictReader(f):
                 if r["side"] == "sell" and r["classifier"] == classifier and r["pnl_pct"] and r["time"][:10] >= since:
+                    stamped = r.get("spec_hash") or ""
+                    if spec_hash and stamped and stamped != spec_hash:
+                        continue
                     closes.append(float(r["pnl_pct"]) - 2 * SLIPPAGE_PER_SIDE_PCT)
     return len(closes), (statistics.fmean(closes) if closes else None)
 
@@ -177,7 +183,7 @@ def enforce_promotion(specs, notify, account_live: bool, today: dt.date | None =
             state[s.id] = rec = {"hash": h, "since": today}
         rec["family"] = s.family_label  # kept after the classifier is retired, for the scoreboard
         if s.mode == "live" and not s.control:
-            n, exp = shadow_record(s.id, rec["since"], book_dir)
+            n, exp = shadow_record(s.id, rec["since"], book_dir, rec["hash"])
             if n < MIN_TRADES or exp is None or exp <= 0:
                 s.mode = "shadow"
                 if account_live:
@@ -353,7 +359,7 @@ def resolve_mode(notify, live_equity=None, session: dt.date | None = None) -> st
         st.update(status="live", live_since=day.isoformat())
         if not save_state(st, expected):
             return "paper"  # golive.json changed under us (a HOLD, or a release): never go live on a stale read
-        notify("urgent", f"GOING LIVE today with ${eq:.2f} (half size for the first week). Veto any time: HOLD LIVE on the dashboard.")
+        notify("urgent", f"GOING LIVE today with ${eq:.2f} (half size for the first 5 live sessions). To stop today: STOP on the dashboard. HOLD LIVE returns to paper from the next session.")
     return "live" if st["status"] == "live" else "paper"
 
 

@@ -113,3 +113,27 @@ def prior_sessions(sessions: dict[str, dict[dt.date, pd.DataFrame]], day: dt.dat
                                else other.volume.reindex(prev.index, fill_value=0).astype(float))
         out[s] = prev
     return out
+
+
+def gate_samples(sessions_for, lookbacks=(7, 21, 60)) -> list[tuple]:
+    """(bars, prev_day, spy) samples of SPY and QQQ over the last three SPY sessions, for the
+    custom-feature gate. `sessions_for(days)` returns {symbol: {date: bars}} for about the last
+    `days` calendar days. Counts sessions, not days: a run of closed days (or a data gap) can leave
+    a short window with too few, and no samples would reject every custom feature. So the window
+    widens; if even the widest has fewer than three sessions, it raises (a data problem, not a
+    bug in the features)."""
+    for lookback in lookbacks:
+        sessions = sessions_for(lookback)
+        spy = sessions.get("SPY", {})
+        if len(spy) >= 3:
+            break
+    else:
+        raise RuntimeError(f"custom-feature gate: only {len(spy)} SPY session(s) of sample bars in the last {lookback} days")
+    days = sorted(spy)[-3:]
+    samples = []
+    for sym in ("SPY", "QQQ"):
+        per = sessions.get(sym, {})
+        for i, d in enumerate(days[1:], 1):
+            if d in per and days[i - 1] in per:
+                samples.append((per[d], per[days[i - 1]], spy[d]))
+    return samples
