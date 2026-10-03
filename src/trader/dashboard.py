@@ -138,10 +138,10 @@ def _age_seconds(path: Path) -> float | None:
 # ---- overview: useful links -----------------------------------------------------
 
 
-def _git(*args: str) -> str | None:
-    """Output of a read-only git command in the deployed checkout, or None."""
+def _git(*args: str, root: Path | None = None) -> str | None:
+    """Output of a read-only git command in the deployed checkout (or `root`), or None."""
     try:
-        r = subprocess.run(["git", "-C", str(config.CODE_ROOT), *args], capture_output=True, text=True, timeout=5)
+        r = subprocess.run(["git", "-C", str(root or config.CODE_ROOT), *args], capture_output=True, text=True, timeout=5)
     except (OSError, subprocess.SubprocessError):
         return None
     return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else None
@@ -153,18 +153,29 @@ def github_repo(remote: str | None) -> str | None:
     return m.group(1) if m else None
 
 
-def deployed_commit() -> dict | None:
-    """The commit this dashboard (and so the runner) is running."""
-    out = _git("log", "-1", "--format=%H%x1f%cs%x1f%s")
+def deployed_commit(root: Path | None = None) -> dict | None:
+    """The commit this dashboard (and so the runner) is running, or the deployed config's with `root`."""
+    out = _git("log", "-1", "--format=%H%x1f%cs%x1f%s", root=root)
     if not out or out.count("\x1f") != 2:
         return None
     sha, date, subject = out.split("\x1f")
     return {"sha": sha, "short": sha[:7], "date": date, "subject": subject}
 
 
-def links(repo: str | None, sha: str | None) -> list[dict]:
+def data_root() -> Path | None:
+    """The deployed config checkout in the split layout (#169: public code repo, private data repo), or None
+    in the monorepo. Read locally for now; the DATA_ROOT PR (A1) adds a config helper. Set to the code root
+    itself, it is still the monorepo."""
+    root = os.environ.get("TRADER_DATA_ROOT")
+    if not root or Path(root).resolve() == Path(config.CODE_ROOT).resolve():
+        return None
+    return Path(root)
+
+
+def links(repo: str | None, sha: str | None, data: dict | None = None) -> list[dict]:
     """Every external link on the page, grouped as shown. Edit here: (label, url, what it's for).
-    The GitHub group is built from the git remote, so the repo is never typed twice."""
+    The GitHub group is built from the git remote, so the repo is never typed twice. In the split layout,
+    `data` is {"repo", "sha"} for the private data repo and its deployed config commit; `repo` is the code."""
     groups = [
         {"title": "Alpaca (the broker)", "hint": "Positions, orders and activity are in each dashboard's left menu; "
                                                  "Account › Configure and Funds & Wallet are on the live one.", "links": [
@@ -178,7 +189,7 @@ def links(repo: str | None, sha: str | None) -> list[dict]:
             ("API keys", "https://openrouter.ai/settings/keys", "limits and expiry"),
         ]},
     ]
-    if repo:
+    if data is None and repo:  # monorepo: code and notes in one repo
         gh = f"https://github.com/{repo}"
         groups.append({"title": "GitHub (code and the strategist's notes)", "hint": "Your weekly job: merge the weekly PR "
                                                                               "and answer needs-human issues.", "links": [
@@ -189,6 +200,27 @@ def links(repo: str | None, sha: str | None) -> list[dict]:
             ("Weekly journal", f"{gh}/tree/strategist/journal/weekly", "the strategist's retrospectives"),
             ("Current strategy", f"{gh}/blob/strategist/state/strategy.md", "on the strategist branch"),
             *([("Not yet deployed", f"{gh}/compare/{sha}...main", "commits on main the runner isn't running")] if sha else []),
+        ]})
+    if data is not None:
+        if repo:
+            gh = f"https://github.com/{repo}"
+            groups.append({"title": "GitHub: the code", "hint": "Public. Code changes are reviewed and merged here, "
+                                                               "then deployed with trading-deploy.", "links": [
+                ("Repository", gh, repo),
+                ("Docs: operations", f"{gh}/blob/main/docs/how-to/daily-operations.md", "deploying, controls, alerts"),
+                *([("Not yet deployed", f"{gh}/compare/{sha}...main", "code on main the runner isn't running")] if sha else []),
+            ]})
+        dgh = f"https://github.com/{data['repo']}"
+        groups.append({"title": "GitHub: your data (config and the strategist's notes)",
+                       "hint": "Your weekly job: read the weekly issue and answer needs-human issues.", "links": [
+            ("Repository", dgh, data["repo"]),
+            ("Issues: weekly", f"{dgh}/issues?q=is%3Aissue+label%3Aweekly", "the strategist's weekly reports"),
+            ("Issues: needs-human", f"{dgh}/issues?q=is%3Aissue+is%3Aopen+label%3Aneeds-human", "things the strategist asked you for, including code proposals"),
+            ("Pull requests", f"{dgh}/pulls", "config changes to main to review"),
+            ("Weekly journal", f"{dgh}/tree/strategist/journal/weekly", "the strategist's retrospectives"),
+            ("Current strategy", f"{dgh}/blob/strategist/state/strategy.md", "on the strategist branch"),
+            *([("Config not yet deployed", f"{dgh}/compare/{data['sha']}...main", "config on main the runner isn't using")]
+              if data.get("sha") else []),
         ]})
     groups.append({"title": "Other", "hint": "", "links": [
         ("Tailscale admin", "https://login.tailscale.com/admin/machines", "who and what can reach this dashboard"),
@@ -387,9 +419,16 @@ def rules():
 @app.get("/api/overview")
 def overview():
     """Links for the overview card, plus the deployed commit. Local git reads only: no network."""
-    repo = github_repo(_git("config", "--get", "remote.origin.url"))
+    repo = github_repo(_git("config", "--get", "remote.origin.url"))  # the code repo
     deployed = deployed_commit()
-    return {"repo": repo, "deployed": deployed, "links": links(repo, deployed and deployed["sha"])}
+    root = data_root()
+    if root is None:  # monorepo: the data is in the code repo
+        return {"repo": repo, "data_repo": repo, "split": False, "deployed": deployed, "config": None,
+                "links": links(repo, deployed and deployed["sha"])}
+    data_repo = config.SETTINGS.owner.github_repo
+    cfg = deployed_commit(root)
+    return {"repo": repo, "data_repo": data_repo, "split": True, "deployed": deployed, "config": cfg,
+            "links": links(repo, deployed and deployed["sha"], {"repo": data_repo, "sha": cfg and cfg["sha"]})}
 
 
 @app.get("/api/docs")

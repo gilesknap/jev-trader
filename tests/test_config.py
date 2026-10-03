@@ -85,13 +85,13 @@ def test_dashboard_users_come_from_config_env_overrides_and_empty_means_nobody(t
 def test_generated_deploy_files_match_config():
     """The deploy runs the tests first, so a unit, timer or services.env that disagrees with
     config.yaml can never be deployed. Fix: `uv run trader config render-deploy`."""
-    for path, text in config.render_deploy(ROOT).items():
+    for path, text in config.render_deploy(ROOT, ROOT).items():
         assert (ROOT / path).read_text() == text, f"{path} is out of date: run `uv run trader config render-deploy`"
         assert "{{" not in text and "}}" not in text
 
 
 def test_generated_files_carry_the_settings():
-    files = config.render_deploy(ROOT)
+    files = config.render_deploy(ROOT, ROOT)
     s = config.load_settings(ROOT / "config.yaml")
     assert f"OnCalendar=Mon..Fri {s.schedule.runner_start} {s.schedule.local_tz}" in files["deploy/systemd/trader-runner.timer"]
     assert f"TRADER_DASHBOARD_USERS={','.join(s.dashboard.users)}" in files["deploy/systemd/trader.env"]

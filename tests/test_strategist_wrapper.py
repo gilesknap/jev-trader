@@ -1,7 +1,12 @@
-"""scripts/strategist.sh in a sandbox: a bare origin, a clone on `strategist`, fake uv/claude."""
+"""scripts/strategist.sh in a sandbox: a bare origin, a clone on `strategist`, fake uv/trader/claude.
+
+Two layouts (#169). Monorepo mode (TRADER_DATA_ROOT unset, as deployed today): the strategist branch
+carries the code, and the wrapper merges main into it and re-execs the merged copy. Split mode
+(TRADER_DATA_ROOT set): the branch is data only, and the wrapper, prompts and charter come from the
+code checkout at TRADER_CODE_ROOT, with `trader` from PATH.
+"""
 
 import fcntl
-import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -21,6 +26,16 @@ case "$*" in
   *) echo "$*" >> "$HOME/uv_calls" ;;
 esac
 """
+FAKE_TRADER = """#!/bin/bash
+case "$*" in
+  "session") echo '{"minutes_to_open": 45, "minutes_to_close": 400}' ;;
+  "config get models.strategist") echo cfg-model ;;
+  *) echo "$*" >> "$HOME/trader_calls" ;;
+esac
+"""
+FAKE_TRADER_PYTHON = """#!/bin/bash
+echo "${@: -1}" >> "$HOME/alerts"
+"""
 FAKE_CLAUDE = """#!/bin/bash
 env | grep ^STRATEGIST_ >> "$HOME/claude_env"
 echo "$*" >> "$HOME/claude_args"
@@ -34,27 +49,37 @@ def git(cwd, *args, env=None):
     return subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True, text=True).stdout
 
 
-@pytest.fixture
-def sandbox(tmp_path):
+def make_sandbox(tmp_path, split=False, code=ROOT):
     home = tmp_path / "home"
     (home / ".local" / "bin").mkdir(parents=True)
-    for name, body in (("uv", FAKE_UV), ("claude", FAKE_CLAUDE)):
+    fakes = [("uv", FAKE_UV), ("claude", FAKE_CLAUDE), ("trader", FAKE_TRADER), ("trader-python", FAKE_TRADER_PYTHON)]
+    for name, body in fakes:
         f = home / ".local" / "bin" / name
         f.write_text(body)
         f.chmod(0o755)
     (home / ".gitconfig").write_text("[user]\n\tname = t\n\temail = t@t\n[init]\n\tdefaultBranch = main\n")
     env = {"HOME": str(home), "PATH": "/usr/bin:/bin", "TRADER_STRATEGIST_ROOT": str(tmp_path / "repo"),
            "XDG_STATE_HOME": str(tmp_path / "state")}
+    if split:
+        (tmp_path / "config").mkdir()
+        env |= {"TRADER_DATA_ROOT": str(tmp_path / "config"), "TRADER_CODE_ROOT": str(code)}
     git(tmp_path, "init", "-q", "--bare", "origin.git", env=env)
     seed = tmp_path / "seed"
     git(tmp_path, "clone", "-q", "origin.git", "seed", env=env)
-    for d in ("scripts", "prompts", "state"):
-        (seed / d).mkdir()
-    shutil.copy(WRAPPER, seed / "scripts" / "strategist.sh")
-    for kind in ("premarket", "postclose", "weekly"):
-        (seed / "prompts" / f"{kind}.md").write_text(kind)
+    (seed / "state").mkdir()
     (seed / "state" / "s.md").write_text("s")
-    (seed / ".gitignore").write_text(".last_run\n.last_postclose\n")
+    # As in the real checkout. (Without a tracked file under features/, git reports a new
+    # features/custom/x.py as the untracked dir `features/`, which the path check reverts.)
+    (seed / "features" / "custom").mkdir(parents=True)
+    (seed / "features" / "custom" / "README.md").write_text("r")
+    # The real .gitignore, so a test fails if it ever starts hiding new strategy files (#169 section 14.1).
+    shutil.copy(ROOT / ".gitignore", seed / ".gitignore")
+    if not split:   # monorepo: the branch carries the wrapper and the prompts
+        for d in ("scripts", "prompts"):
+            (seed / d).mkdir()
+        shutil.copy(WRAPPER, seed / "scripts" / "strategist.sh")
+        for kind in ("premarket", "postclose", "weekly"):
+            (seed / "prompts" / f"{kind}.md").write_text(kind)
     git(seed, "add", "-A", env=env)
     git(seed, "commit", "-qm", "init", env=env)
     git(seed, "push", "-q", "origin", "HEAD:main", "HEAD:strategist", env=env)
@@ -64,12 +89,12 @@ def sandbox(tmp_path):
         pass
 
     s = S()
-    s.tmp, s.home, s.env, s.seed, s.repo = tmp_path, home, env, seed, tmp_path / "repo"
+    s.tmp, s.home, s.env, s.seed, s.repo, s.code = tmp_path, home, env, seed, tmp_path / "repo", code
     s.logdir = tmp_path / "state" / "trader"
+    s.wrapper = (code if split else s.repo) / "scripts" / "strategist.sh"
 
     def run(kind):
-        return subprocess.run(["bash", str(s.repo / "scripts" / "strategist.sh"), kind], env=env,
-                              capture_output=True, text=True, timeout=60)
+        return subprocess.run(["bash", str(s.wrapper), kind], env=env, capture_output=True, text=True, timeout=60)
 
     def push_main(edit):
         edit(s.seed / "scripts" / "strategist.sh")
@@ -82,6 +107,16 @@ def sandbox(tmp_path):
 
     s.run, s.push_main, s.read = run, push_main, read
     return s
+
+
+@pytest.fixture
+def sandbox(tmp_path):
+    return make_sandbox(tmp_path)
+
+
+@pytest.fixture
+def split(tmp_path):
+    return make_sandbox(tmp_path, split=True)
 
 
 def add_marker(path):
@@ -215,3 +250,183 @@ git commit -q --amend -m amended
     assert sandbox.run("premarket").returncode == 0
     alerts = sandbox.read("alerts")
     assert "NOT reverted" in alerts and "scripts/evil.sh" in alerts.split("NOT reverted")[1]
+
+
+# ---- both modes ----
+
+NEW_FILES = ["journal/daily/2026-10-05.md", "journal/weekly/2026-W41.md", "logs/new_equity.csv",
+             "state/new.md", "features/custom/new_feature.py"]
+
+
+@pytest.mark.parametrize("mode", ["monorepo", "split"])
+def test_new_strategy_files_are_committed_and_published(tmp_path, mode):
+    # #169 section 14.1: a .gitignore entry for these dirs would make `git add -A -- state journal ...`
+    # silently skip new files. The sandbox uses the real .gitignore.
+    s = make_sandbox(tmp_path, split=mode == "split")
+    fake_claude(s, "".join(f"mkdir -p $(dirname {f}) && echo x > {f}\n" for f in NEW_FILES))
+    r = s.run("weekly")
+    assert r.returncode == 0, r.stderr
+    assert s.read("alerts") == ""
+    files = git(s.tmp / "origin.git", "ls-tree", "-r", "--name-only", "strategist").split()
+    assert set(NEW_FILES) <= set(files)
+    assert git(s.repo, "status", "--porcelain") == ""
+
+
+@pytest.mark.parametrize("mode", ["monorepo", "split"])
+def test_run_lock_is_held_for_the_whole_run(tmp_path, mode):
+    # A deploy (#169 section 6.1) refuses while the existing strategist.lock is held; it must be held
+    # while claude runs, not just at the start.
+    s = make_sandbox(tmp_path, split=mode == "split")
+    fake_claude(s, 'flock -n -s "$XDG_STATE_HOME/trader/strategist.lock" true && echo free >> "$HOME/probe" '
+                   '|| echo held >> "$HOME/probe"\n')
+    assert s.run("weekly").returncode == 0
+    assert s.read("probe") == "held\n"
+
+
+def test_monorepo_reverts_proposals(sandbox):
+    fake_claude(sandbox, "mkdir -p proposals/x && echo p > proposals/x/README.md\necho n > state/n.md\n")
+    assert sandbox.run("weekly").returncode == 0
+    assert "touched non-strategy paths (reverted): proposals/" in sandbox.read("alerts")
+    files = git(sandbox.tmp / "origin.git", "ls-tree", "-r", "--name-only", "strategist").split()
+    assert "state/n.md" in files and "proposals/x/README.md" not in files
+
+
+# ---- split mode ----
+
+def test_split_runs_deployed_code_without_merging_main(split):
+    # Something on origin/main must not reach the data branch: there is no merge of main.
+    (split.seed / "code.py").write_text("x")
+    git(split.seed, "add", "-A", env=split.env)
+    git(split.seed, "commit", "-qm", "code on main", env=split.env)
+    git(split.seed, "push", "-q", "origin", "HEAD:main", env=split.env)
+    r = split.run("premarket")
+    assert r.returncode == 0, r.stderr
+    assert split.read("alerts") == ""
+    assert split.read("uv_calls") == ""               # no `uv run`: trader is the shim on PATH
+    assert split.read("claude_runs") == "run\n"
+    args = split.read("claude_args")
+    assert args.startswith("-p " + (ROOT / "prompts" / "premarket.md").read_text()[:200])
+    assert f"--append-system-prompt-file {ROOT / 'CLAUDE.md'} --model cfg-model" in args
+    assert split.read("claude_env") == ""             # internal flags (STRATEGIST_COPIED too) don't leak
+    files = git(split.tmp / "origin.git", "ls-tree", "-r", "--name-only", "strategist").split()
+    assert "state/note.md" in files and "code.py" not in files
+    assert "code on main" not in git(split.tmp / "origin.git", "log", "--oneline", "strategist")
+    assert list(split.logdir.glob("strategist.sh.*")) == []   # the private copy is removed
+
+
+def test_split_pulls_origin_strategist_first(split):
+    (split.seed / "state" / "remote.md").write_text("r")
+    git(split.seed, "add", "-A", env=split.env)
+    git(split.seed, "commit", "-qm", "remote change", env=split.env)
+    git(split.seed, "push", "-q", "origin", "HEAD:strategist", env=split.env)
+    fake_claude(split, 'cat state/remote.md >> "$HOME/seen"\n')
+    assert split.run("weekly").returncode == 0
+    assert split.read("seen") == "r"
+    assert split.read("trader_calls") == "archive\ncompact\n"
+
+
+def test_split_publishes_proposals_and_reverts_code(split):
+    fake_claude(split, "mkdir -p proposals/x scripts && echo p > proposals/x/0001-a.patch && echo e > scripts/evil.sh\n")
+    assert split.run("weekly").returncode == 0
+    alerts = split.read("alerts")
+    assert "touched non-strategy paths (reverted): scripts/" in alerts and "proposals" not in alerts
+    files = git(split.tmp / "origin.git", "ls-tree", "-r", "--name-only", "strategist").split()
+    assert "proposals/x/0001-a.patch" in files and "scripts/evil.sh" not in files
+    assert not (split.repo / "scripts").exists()
+
+
+def code_copy(tmp_path, charter=True):
+    code = tmp_path / "code"
+    shutil.copytree(ROOT / "prompts", code / "prompts")
+    (code / "scripts").mkdir()
+    shutil.copy(WRAPPER, code / "scripts" / "strategist.sh")
+    if charter:
+        shutil.copy(ROOT / "CLAUDE.md", code / "CLAUDE.md")
+    return code
+
+
+@pytest.mark.parametrize("charter", ["missing", "empty"])
+def test_split_without_a_charter_alerts_and_does_not_run(tmp_path, charter):
+    code = code_copy(tmp_path, charter=False)
+    if charter == "empty":
+        (code / "CLAUDE.md").write_text("")
+    s = make_sandbox(tmp_path, split=True, code=code)
+    r = s.run("weekly")
+    assert r.returncode == 1
+    assert "CLAUDE.md or" in s.read("alerts") and "not running" in s.read("alerts")
+    assert s.read("claude_runs") == ""
+    assert s.read("trader_calls") == ""   # refused before archive/compact could touch journal/ or logs/
+    assert git(s.repo, "status", "--porcelain", "--untracked-files=all") == ""
+    assert s.run("housekeeping").returncode == 1   # the charter is checked for every kind
+    assert s.read("trader_calls") == ""
+
+
+def test_split_housekeeping_needs_no_prompt(tmp_path):
+    code = code_copy(tmp_path)
+    shutil.rmtree(code / "prompts")
+    s = make_sandbox(tmp_path, split=True, code=code)
+    assert s.run("housekeeping").returncode == 0
+    assert s.read("trader_calls") == "housekeeping\n" and s.read("alerts") == ""
+    assert s.run("weekly").returncode == 1   # but a strategist run does
+    assert "prompts/weekly.md is missing" in s.read("alerts") and "archive" not in s.read("trader_calls")
+
+
+def test_split_copy_that_does_not_parse_alerts_and_does_not_run(tmp_path):
+    # As if the copy were taken while a deploy was half-way through writing the script: the top
+    # runs, but the file as a whole doesn't parse.
+    code = code_copy(tmp_path)
+    with open(code / "scripts" / "strategist.sh", "a") as f:
+        f.write("\nif then fi (\n")
+    s = make_sandbox(tmp_path, split=True, code=code)
+    r = s.run("weekly")
+    assert r.returncode == 1
+    assert "doesn't parse; not running" in s.read("alerts")
+    assert s.read("claude_runs") == "" and s.read("trader_calls") == ""
+    assert list(s.logdir.glob("strategist.sh.*")) == []
+
+
+@pytest.mark.parametrize("mode", ["monorepo", "split"])
+def test_exit_status_is_the_final_log_sweeps(tmp_path, mode):
+    # As on main, a run's exit status is that of its last command, the done-* sweep.
+    s = make_sandbox(tmp_path, split=mode == "split")
+    fake_find = s.home / ".local" / "bin" / "find"
+    fake_find.write_text('#!/bin/bash\ncase "$*" in *done-*) exit 3 ;; *) exit 0 ;; esac\n')
+    fake_find.chmod(0o755)
+    assert s.run("weekly").returncode == 3
+
+
+def test_split_survives_its_script_being_replaced_mid_run(tmp_path):
+    # A deploy can rewrite the deployed wrapper in place while a run is reading it; the run must carry
+    # on with the copy it started from (path check and publish included).
+    code = code_copy(tmp_path)
+    s = make_sandbox(tmp_path, split=True, code=code)
+    fake_claude(s, f"""echo note >> state/note.md
+printf '%s\\n' 'echo HIJACK >> "$HOME/hijack"; exit 7' "$(head -c 20000 /dev/zero | tr '\\0' '#')" > {code}/scripts/strategist.sh
+""")
+    r = s.run("weekly")
+    assert r.returncode == 0, r.stderr
+    assert s.read("hijack") == "" and s.read("alerts") == ""
+    files = git(s.tmp / "origin.git", "ls-tree", "-r", "--name-only", "strategist").split()
+    assert "state/note.md" in files
+    assert list(s.logdir.glob("strategist.sh.*")) == []
+
+
+def test_split_held_lock_skips_and_removes_its_copy(split):
+    split.logdir.mkdir(parents=True)
+    with open(split.logdir / "strategist.lock", "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        r = split.run("weekly")
+    assert r.returncode == 0
+    assert split.read("claude_runs") == ""
+    assert "another run holds the lock" in "".join(p.read_text() for p in split.logdir.glob("*.log"))
+    assert list(split.logdir.glob("strategist.sh.*")) == []
+
+
+def test_split_housekeeping_leaves_a_busy_checkout_alone(split):
+    git(split.repo, "checkout", "-q", "-b", "proposal/x", env=split.env)
+    (split.repo / "state" / "s.md").write_text("edited")
+    r = split.run("housekeeping")
+    assert r.returncode == 0, r.stderr
+    assert git(split.repo, "branch", "--show-current", env=split.env).strip() == "proposal/x"
+    assert split.read("trader_calls") == "housekeeping\n"
+    assert split.read("uv_calls") == ""

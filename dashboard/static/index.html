@@ -1065,7 +1065,8 @@ function renderRules() {
       </div></details>`;
   };
   const removed = Object.values(score).filter(r => !list.some(c => c.id === r.id));
-  const gh = OVERVIEW && OVERVIEW.repo ? `https://github.com/${OVERVIEW.repo}/commits/strategist/state/classifiers.yaml` : null;
+  const dataRepo = OVERVIEW && (OVERVIEW.data_repo || OVERVIEW.repo);  // the strategist branch lives in the data repo
+  const gh = dataRepo ? `https://github.com/${dataRepo}/commits/strategist/state/classifiers.yaml` : null;
   const open = new Set([...$("rules").querySelectorAll("details[open]")].map(d => d.id));
   $("rules").innerHTML = head + list.map(card).join("") +
     (removed.length ? `<section><h2>Removed <span>on the scoreboard, but no longer in the file</span></h2><p class="note" style="margin:0">${removed.map(r => `<b>${esc(r.id)}</b> ${famBadge(r.family)}`).join(" · ")}. Their settings are in the file's history${gh ? `: <a href="${esc(gh)}" target="_blank" rel="noopener noreferrer">classifiers.yaml commits ↗</a>` : ""}.</p></section>` : "");
@@ -1117,10 +1118,16 @@ function renderOverviewState(h) {
   const code = d ? `<span class="n">${esc(d.short)}</span><span class="d">${esc(d.date)} · ${esc(d.subject)}</span>` +
       (gh ? `<span class="d"><a href="${esc(gh)}/compare/${esc(d.sha)}...main" target="_blank" rel="noopener noreferrer">anything on main not deployed yet?</a></span>` : "")
     : '<span class="n">–</span><span class="d">couldn\'t read the deployed commit</span>';
+  // Split layout (#169): the deployment config is its own checkout of the data repo, deployed with the code.
+  const c = OVERVIEW.config, dgh = OVERVIEW.data_repo ? `https://github.com/${OVERVIEW.data_repo}` : null;
+  const cfg = !OVERVIEW.split ? "" : `<div class="stat"><span class="l" title="The version of config.yaml and mode.yaml the runner is using">config running</span>` +
+    (c ? `<span class="n">${esc(c.short)}</span><span class="d">${esc(c.date)} · ${esc(c.subject)}</span>` +
+      (dgh ? `<span class="d"><a href="${esc(dgh)}/compare/${esc(c.sha)}...main" target="_blank" rel="noopener noreferrer">any config on main not deployed yet?</a></span>` : "")
+    : '<span class="n">–</span><span class="d">couldn\'t read the deployed config commit</span>') + "</div>";
   $("ovstate").innerHTML =
     `<div class="stat"><span class="l">money in use</span><span class="n ${h.mode === "live" ? "neg" : ""}">${h.mode === "live" ? "LIVE" : "paper"}</span><span class="d">${h.mode === "live" ? "real money" : "practice money"}</span></div>` +
     `<div class="stat"><span class="l">switch to real money</span><span class="n small">${esc(h.golive)}</span><span class="d">checked by the runner after each session</span></div>` +
-    `<div class="stat"><span class="l" title="The version of the code the runner and this page are running">code running</span>${code}</div>` +
+    `<div class="stat"><span class="l" title="The version of the code the runner and this page are running">code running</span>${code}</div>` + cfg +
     // The tab's red count is this number: show it here, not only on Today.
     `<div class="stat"><span class="l">Jev errors today</span><span class="n ${h.decision_errors > 0 ? "neg" : ""}">${esc(h.decision_errors ?? "–")}</span>` +
     `<span class="d">${h.decision_errors > 0 ? "failed calls: no decision was made, and new decisions pause for a few minutes after each (details on Today and in the runner log)" : "decision calls that failed"}</span></div>`;

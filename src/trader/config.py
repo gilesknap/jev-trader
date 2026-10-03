@@ -1,9 +1,13 @@
 """Paths, secrets, deployment settings (config.yaml) and run mode.
 
-Three roots, which coincide in development:
+Four roots, which coincide in development and in today's single-repo layout:
 - CODE_ROOT: checkout this code runs from (runner uses /srv/trading/main).
-- STRATEGIST_ROOT: the strategist's checkout holding state/ and features/custom/.
+- DATA_ROOT: the human-owned deployment data: config.yaml, config/mode.yaml and the deploy files
+  rendered from them ($TRADER_DATA_ROOT, default CODE_ROOT). Setting it to another directory is
+  "split mode" (#169): code and data in separate repos.
+- STRATEGIST_ROOT: the strategist's checkout holding state/ and features/custom/ (default DATA_ROOT).
 - RUNTIME_DIR: runner-owned logs, heartbeats and status (read-only to the strategist).
+The universe stays under CODE_ROOT: it must match the allocator's buckets in code.
 """
 
 from __future__ import annotations
@@ -18,16 +22,19 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 CODE_ROOT = Path(os.environ.get("TRADER_CODE_ROOT", Path(__file__).resolve().parents[2]))
-STRATEGIST_ROOT = Path(os.environ.get("TRADER_STRATEGIST_ROOT", CODE_ROOT))
+# Empty = unset, as the wrapper reads it. A relative value is resolved against the cwd once, here, so
+# a later chdir can't move the data root (CODE_ROOT and STRATEGIST_ROOT keep their existing semantics).
+DATA_ROOT = Path(os.environ["TRADER_DATA_ROOT"]).absolute() if os.environ.get("TRADER_DATA_ROOT") else CODE_ROOT
+STRATEGIST_ROOT = Path(os.environ.get("TRADER_STRATEGIST_ROOT", DATA_ROOT))
 RUNTIME_DIR = Path(os.environ.get("TRADER_RUNTIME", CODE_ROOT / "runtime"))
 # Replays are run by the strategist, so they live somewhere it can write.
 REPLAY_DIR = Path(os.environ.get("TRADER_REPLAY_DIR", RUNTIME_DIR / "replay"))
-# First existing file wins: $TRADER_SECRETS, repo .env (dev), ~/.config/trading/env.
+# First existing file wins: $TRADER_SECRETS, the data checkout's .env (dev), ~/.config/trading/env.
 SECRETS_FILES = [
     Path(p)
     for p in (
         os.environ.get("TRADER_SECRETS"),
-        CODE_ROOT / ".env",
+        DATA_ROOT / ".env",
         Path.home() / ".config" / "trading" / "env",
     )
     if p
@@ -44,15 +51,39 @@ STRATEGIST_ALERTS = Path(os.environ.get("TRADER_STRATEGIST_ALERTS", STRATEGIST_R
 
 CLASSIFIERS_FILE = STRATEGIST_ROOT / "state" / "classifiers.yaml"
 CUSTOM_FEATURES_DIR = STRATEGIST_ROOT / "features" / "custom"
-MODE_FILE = CODE_ROOT / "config" / "mode.yaml"
+MODE_FILE = DATA_ROOT / "config" / "mode.yaml"
 UNIVERSE_FILE = CODE_ROOT / "config" / "universe.yaml"
 
 
-# ---- deployment settings (config.yaml at the code root) ----------------------------------
+def split_mode() -> bool:
+    """True when TRADER_DATA_ROOT names a directory other than CODE_ROOT (code and data in separate
+    repos, #169). In split mode the human override file is mandatory: see require_mode_file()."""
+    return not _same_dir(DATA_ROOT, CODE_ROOT)
+
+
+def _same_dir(a: Path, b: Path) -> bool:
+    return a.resolve() == b.resolve()
+
+
+def require_mode_file(data_root: Path | None = None, code_root: Path | None = None) -> None:
+    """The one mode-file rule. When data_root is a separate directory from code_root (split mode), a
+    missing data_root/config/mode.yaml is an error, not a silent `auto`: the data checkout is
+    incomplete (or points at the wrong directory), and the human's paper/live override must never
+    vanish without a word. A no-op when they are the same directory. The roots default to DATA_ROOT
+    and CODE_ROOT, read at call time."""
+    data_root = DATA_ROOT if data_root is None else data_root
+    code_root = CODE_ROOT if code_root is None else code_root
+    mode_file = data_root / "config" / "mode.yaml"
+    if not _same_dir(data_root, code_root) and not mode_file.exists():
+        raise SettingsError(f"{mode_file} is missing: a data checkout separate from the code ({data_root}) "
+                            "must hold config/mode.yaml (mode: auto | paper | live)")
+
+
+# ---- deployment settings (config.yaml at the data root) ----------------------------------
 # Personal and deployment values: who owns it, when the experiment starts, the operator's clock,
 # model ids. Safety rules stay in code. Loaded at import and validated strictly, so a malformed
 # file stops every command (the runner must never trade with a wrong start date).
-SETTINGS_FILE = Path(os.environ.get("TRADER_CONFIG", CODE_ROOT / "config.yaml"))
+SETTINGS_FILE = Path(os.environ.get("TRADER_CONFIG", DATA_ROOT / "config.yaml"))
 _HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
@@ -161,7 +192,11 @@ def load_settings(path: Path | None = None) -> Settings:
     try:
         raw = yaml.safe_load(path.read_text())
     except (OSError, yaml.YAMLError) as e:
-        raise SettingsError(f"{path}: can't read deployment settings: {e}") from e
+        hint = ""
+        if isinstance(e, FileNotFoundError) and not os.environ.get("TRADER_CONFIG"):
+            hint = (f"\nconfig.yaml is read from the data root ({DATA_ROOT}): set TRADER_DATA_ROOT to your "
+                    "data checkout (or TRADER_CONFIG to the file)")
+        raise SettingsError(f"{path}: can't read deployment settings: {e}{hint}") from e
     if not isinstance(raw, dict):
         raise SettingsError(f"{path}: expected a mapping of settings")
     try:
@@ -215,14 +250,17 @@ DEPLOY_TEMPLATES = {
 }
 
 
-def render_deploy(root: Path = CODE_ROOT) -> dict[str, str]:
-    """Generated path -> contents, from root's templates and root's own config.yaml (never another
-    tree's, whatever TRADER_CONFIG says: the files checked in beside it must match it)."""
-    settings = load_settings(root / "config.yaml")
+def render_deploy(code_root: Path = CODE_ROOT, data_root: Path = DATA_ROOT) -> dict[str, str]:
+    """Generated path (relative to data_root) -> contents, from code_root's templates and data_root's
+    own config.yaml (never another tree's, whatever TRADER_CONFIG says: the files checked in beside
+    it must match it). When the two differ (split mode), data_root must also hold config/mode.yaml:
+    the deploy's render step is where a missing override is caught."""
+    settings = load_settings(data_root / "config.yaml")
+    require_mode_file(data_root, code_root)
     out = {}
     for src, dst in DEPLOY_TEMPLATES.items():
         path, _, kind = src.partition("#")  # "#kind": one template rendered per strategist run
-        lines = [ln for ln in (root / path).read_text().splitlines(keepends=True) if not ln.startswith("# TEMPLATE:")]
+        lines = [ln for ln in (code_root / path).read_text().splitlines(keepends=True) if not ln.startswith("# TEMPLATE:")]
         head = f"# GENERATED from {path} and config.yaml by `trader config render-deploy`: edit those, not this file.\n"
         out[dst] = head + render("".join(lines).replace("@KIND@", kind), settings)
     return out
@@ -255,9 +293,11 @@ def load_secrets() -> dict[str, str]:
 
 def account_mode() -> str:
     """Effective mode, 'paper' or 'live': the human override in config/mode.yaml
-    (auto | paper | live), else the runner's go-live state. No side effects."""
+    (auto | paper | live), else the runner's go-live state. No side effects. In split mode a
+    missing mode file raises SettingsError rather than reading as `auto`."""
     from trader import golive
 
+    require_mode_file()
     ov = golive.override()
     if ov != "auto":
         return ov

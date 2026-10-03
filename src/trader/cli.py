@@ -184,20 +184,25 @@ def cmd_config_get(a):
 
 
 def cmd_config_render_deploy(a):
-    """Regenerate the deploy files that can't read config.yaml, or --check that they match."""
+    """Regenerate the deploy files that can't read config.yaml, or --check that they match. Templates
+    come from the code root; config.yaml is read, and the files written, under the data root
+    (--data-root, else TRADER_DATA_ROOT, else the code root). The settings are loaded from that
+    root's config.yaml, never from the import-time SETTINGS."""
+    root = Path(a.data_root) if a.data_root else config.DATA_ROOT
     try:
-        files = config.render_deploy()
+        files = config.render_deploy(config.CODE_ROOT, root)
     except (OSError, config.SettingsError) as e:
         sys.exit(f"render-deploy: {e}")
-    stale = [p for p, text in files.items()
-             if not (config.CODE_ROOT / p).exists() or (config.CODE_ROOT / p).read_text() != text]
+    stale = [p for p, text in files.items() if not (root / p).exists() or (root / p).read_text() != text]
     if a.check:
         if stale:
-            sys.exit("out of date with config.yaml: " + ", ".join(stale) + "\nRun: uv run trader config render-deploy")
+            sys.exit(f"out of date with {root / 'config.yaml'}: " + ", ".join(stale)
+                     + "\nRun: uv run trader config render-deploy" + (f" --data-root {root}" if a.data_root else ""))
         print("deploy files match config.yaml")
         return
     for p in stale:
-        (config.CODE_ROOT / p).write_text(files[p])
+        (root / p).parent.mkdir(parents=True, exist_ok=True)
+        (root / p).write_text(files[p])
     print("updated: " + ", ".join(stale) if stale else "deploy files already match config.yaml")
 
 
@@ -277,6 +282,10 @@ def cmd_golive_status(a):
         gate = golive.evaluate_gate(golive.PAPER_BOOK).__dict__
     except Exception as e:  # bad paper logs: show the state and what broke, not a traceback (#63)
         gate = {"error": f"{golive.EVIDENCE_ERROR} ({type(e).__name__}: {e})"}
+    try:
+        C.require_mode_file()  # split mode: a missing mode.yaml is an error, not a silent "auto"
+    except C.SettingsError as e:
+        sys.exit(str(e))
     print(json.dumps({"override": golive.override(), "effective": C.account_mode(), "state": golive.load_state(),
                       "gate_now": gate}, indent=1, default=str))
 
@@ -404,6 +413,8 @@ def build_parser() -> argparse.ArgumentParser:
     c.set_defaults(fn=cmd_config_get)
     c = cs.add_parser("render-deploy", help="regenerate deploy/ files from deploy/templates/ and config.yaml")
     c.add_argument("--check", action="store_true", help="only report whether they match (exit 1 if not)")
+    c.add_argument("--data-root", help="data checkout holding config.yaml and the rendered files "
+                                       "(default: TRADER_DATA_ROOT, else the code root)")
     c.set_defaults(fn=cmd_config_render_deploy)
 
     s = sub.add_parser("dashboard", help="serve the dashboard")

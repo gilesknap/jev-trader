@@ -3,9 +3,9 @@
 The runner holds live keys and owns the go-live state, so it must never import code the
 strategist wrote. Instead one long-lived worker (`trader.features.worker`) runs under
 bwrap with: no network, a cleared environment, a private /tmp, and only /usr, /etc, the
-code checkout and a runner-owned copy of the custom-feature files mounted read-only (no
-/home, no runtime dir, no secrets). The worker loads and gates the features, then answers compute requests
-over a JSON-lines pipe.
+code checkout, the running interpreter's environment and a runner-owned copy of the
+custom-feature files mounted read-only (no /home, no runtime dir, no secrets). The worker
+loads and gates the features, then answers compute requests over a JSON-lines pipe.
 
 Failure is closed: if the worker dies, times out or can't start, every custom feature
 returns NaN for the rest of the session (triggers fail, so no entries; stops still work).
@@ -54,9 +54,37 @@ def decode_bars(d: dict) -> pd.DataFrame:
                         index=idx, dtype=float)
 
 
-def bwrap_cmd(custom_dir: Path, code_root: Path = config.CODE_ROOT) -> list[str]:
-    """The sandbox command line. Only what Python and the features need is visible."""
+class SandboxError(Exception):
+    pass
+
+
+def _refuse_unsafe_bind(path: Path) -> None:
+    """Raise unless binding `path` read-only keeps home, the runtime dir and secrets hidden."""
+    if path == Path("/"):
+        raise SandboxError(f"refusing to bind {path} into the feature sandbox")
+    protected = [Path.home(), Path(config.RUNTIME_DIR), *map(Path, config.SECRETS_FILES)]
+    for p in protected:
+        if p.resolve().is_relative_to(path):
+            raise SandboxError(f"refusing to bind {path} into the feature sandbox: it would expose {p}")
+
+
+def bwrap_cmd(custom_dir: Path, code_root: Path = config.CODE_ROOT,
+              prefix: Path | None = None, base_prefix: Path | None = None) -> list[str]:
+    """The sandbox command line. Only what Python and the features need is visible.
+
+    The worker runs on the caller's own interpreter environment (`sys.prefix`), so the
+    strategist's venv works as well as the runner's, wherever it lives (#169). That venv is
+    bound read-only only when it isn't already visible (under `code_root` or /usr), and so is
+    its base interpreter (`sys.base_prefix`, where the venv's `bin/python` symlink and the
+    stdlib point). `prefix`/`base_prefix` exist for tests.
+
+    Fail-closed floor: a bind that would expose `/`, the home directory, the runtime dir or
+    a secrets file (the bind is an ancestor of, or equal to, one of them) raises
+    SandboxError, which `start()` turns into "custom features disabled".
+    """
     code_root, custom_dir = Path(code_root).resolve(), Path(custom_dir).resolve()
+    prefix = Path(sys.prefix if prefix is None else prefix).resolve()
+    base_prefix = Path(sys.base_prefix if base_prefix is None else base_prefix).resolve()
     cmd = ["bwrap", "--die-with-parent", "--new-session", "--unshare-all", "--clearenv",
            "--ro-bind", "/usr", "/usr", "--ro-bind", "/etc", "/etc",
            "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp"]
@@ -67,19 +95,21 @@ def bwrap_cmd(custom_dir: Path, code_root: Path = config.CODE_ROOT) -> list[str]
         elif p.exists():
             cmd += ["--ro-bind", str(p), str(p)]
     cmd += ["--ro-bind", str(code_root), str(code_root)]
+    visible = [Path("/usr"), code_root]
+    for env in (prefix, base_prefix):
+        if env.is_dir() and not any(env.is_relative_to(v) for v in visible):
+            _refuse_unsafe_bind(env)
+            cmd += ["--ro-bind", str(env), str(env)]
+            visible.append(env)
     if custom_dir.exists() and not custom_dir.is_relative_to(code_root):
         cmd += ["--ro-bind", str(custom_dir), str(custom_dir)]
     cmd += ["--setenv", "PATH", "/usr/bin", "--setenv", "HOME", "/tmp",
             "--setenv", "PYTHONDONTWRITEBYTECODE", "1", "--setenv", "OMP_NUM_THREADS", "1",
             "--chdir", "/tmp"]
-    python = str(code_root / ".venv" / "bin" / "python")
+    python = str(prefix / "bin" / "python")
     if not Path(python).exists():
         python = sys.executable
     return cmd + [python, "-I", "-m", "trader.features.worker"]
-
-
-class SandboxError(Exception):
-    pass
 
 
 class FeatureSandbox:
