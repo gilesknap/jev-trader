@@ -132,7 +132,7 @@ def cmd_probe_report(a):
     secrets = config.load_secrets()
     calendar = load_calendar(secrets, days[0], days[-1])  # early closes cut horizons at their own flatten
     raw = fetch(sorted(rows.s.unique()), t0, t1, secrets, "alpaca")
-    rows = probe.forward_returns(rows, {s: calendar.trim(split_sessions(b)) for s, b in raw.items()}, horizons, calendar)
+    rows = probe.forward_returns(rows, {s: calendar.trim(split_sessions(b)) for s, b in raw.items()}, horizons, calendar, data_end=t1)
     thresholds = {}
     try:  # each spec on its own, so one bad spec doesn't cost the others their thresholds
         raw = (yaml.safe_load(Path(a.file).read_text()) or {}).get("classifiers") or []
