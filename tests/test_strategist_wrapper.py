@@ -727,3 +727,17 @@ echo human > state/steering.md && git add -A && git commit -qm "human steering" 
     alerts = sandbox.read("alerts")
     assert "NOT reverted" in alerts and "state/steering.md" in alerts
     assert origin_show(sandbox, "state/steering.md") == "human\n"
+
+
+@pytest.mark.parametrize("mode", ["monorepo", "split"])
+def test_renaming_the_last_state_file_onto_steering_keeps_state(tmp_path, mode):
+    # The cleanup of the reverted steering.md must not rmdir the (now empty) allowed state/ dir,
+    # or the deletion of state/s.md is never staged and the checkout is left dirty.
+    s = make_sandbox(tmp_path, split=mode == "split")
+    fake_claude(s, "git mv state/s.md state/steering.md\n")
+    r = s.run("weekly")
+    assert r.returncode == 0, r.stderr
+    assert "(reverted): state/steering.md" in s.read("alerts")
+    assert git(s.repo, "status", "--porcelain") == ""
+    files = origin_files(s)
+    assert "state/steering.md" not in files and "state/s.md" not in files

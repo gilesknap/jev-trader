@@ -218,8 +218,8 @@ origin_note() {
 # Revert them one path at a time, so one failure can't skip the rest (F5: a single `git checkout`
 # of every path failed as a whole on any untracked one). Untracked first: a tracked file replaced
 # by a directory comes back only once that directory is gone, so empty directories an untracked
-# file leaves behind go too (rmdir removes only empty ones; a parent of an outside path is outside
-# too). Literal pathspecs: a name like `*` must not match anything else. Then look again, and
+# file leaves behind go too (rmdir removes only empty ones), up to the first allowed directory: a
+# human-owned file sits inside one (state/), which must stay even if empty. Literal pathspecs: a name like `*` must not match anything else. Then look again, and
 # refuse to publish if anything survived.
 if ! outside_paths; then
     alert "strategist $KIND: could not list changed paths for the path check; not publishing — see $LOG.$(origin_note)"
@@ -230,7 +230,7 @@ if (( ${#OUT_ALL[@]} )); then
     for p in ${OUT_UNTRACKED[@]+"${OUT_UNTRACKED[@]}"}; do
         git --literal-pathspecs clean -qfd -- "$p" >>"$LOG" 2>&1
         d=$(dirname -- "$p")
-        while [[ $d != . && $d != / ]] && rmdir -- "$d" 2>/dev/null; do d=$(dirname -- "$d"); done
+        while [[ $d != . && $d != / ]] && ! is_allowed "$d/" && rmdir -- "$d" 2>/dev/null; do d=$(dirname -- "$d"); done
     done
     for p in ${OUT_TRACKED[@]+"${OUT_TRACKED[@]}"}; do
         git --literal-pathspecs checkout -q HEAD -- "$p" >>"$LOG" 2>&1
