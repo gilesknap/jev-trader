@@ -23,6 +23,7 @@ def _block() -> str:
 
 
 def _run(expr: str):
+    assert NODE is not None  # the tests skip without node
     r = subprocess.run(
         [NODE, "-e", _block() + f"\nconsole.log(JSON.stringify({expr}));"], capture_output=True, text=True, timeout=30
     )

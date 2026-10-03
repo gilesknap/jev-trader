@@ -4,6 +4,7 @@ in the custom-feature gate as live."""
 
 import datetime as dt
 import math
+from typing import Any, cast
 
 import pandas as pd
 import pytest
@@ -47,7 +48,7 @@ def same(a, b):
 
 def test_dense_bars_give_the_same_values_as_counting_rows():
     """On a full minute grid, elapsed time and row counts agree: nothing changes for SIP replays."""
-    bars = make_session(day=DAY, seed=3).assign(volume=lambda d: 1000.0 + d.index.minute * 10.0)
+    bars = make_session(day=DAY, seed=3).assign(volume=lambda d: 1000.0 + pd.DatetimeIndex(d.index).minute * 10.0)
     for n in (1, 5, 14, 15, 16, 31, 60, 200):
         b = bars.iloc[:n]
         got = F.compute(MINUTE_NAMES, b, ctx(b))
@@ -149,7 +150,7 @@ def test_recent_returns_are_one_minute_apart():
     assert len(lib.recent_returns_bps(bars.loc[: at(9, 32)], at(9, 33).to_pydatetime())) == 2
     # The live stream indexes in microseconds.
     us = sparse.copy()
-    us.index = us.index.as_unit("us")
+    us.index = pd.DatetimeIndex(us.index).as_unit("us")
     assert lib.recent_returns_bps(us, now) == got
 
 
@@ -187,18 +188,18 @@ def test_odd_clock_values():
     import numpy as np
 
     bars = make_session(day=DAY, seed=11).loc[: at(9, 59)]
-    stale = F.FeatureContext(bars, bars, np.int64(46), 344)  # 10:15: latest price 16 minutes old
+    stale = F.FeatureContext(bars, bars, cast(Any, np.int64(46)), 344)  # 10:15: latest price 16 minutes old
     assert math.isnan(F.compute(["ret_1m_pct"], bars, stale)["ret_1m_pct"])
     for m in (True, None, "46"):
-        got = F.compute(["ret_1m_pct"], bars, F.FeatureContext(bars, bars, m, 0))["ret_1m_pct"]
+        got = F.compute(["ret_1m_pct"], bars, F.FeatureContext(bars, bars, cast(Any, m), 0))["ret_1m_pct"]
         assert got == pytest.approx((bars.close.iloc[-1] / bars.close.iloc[-2] - 1) * 100)
 
 
 def test_dense_parity_with_a_microsecond_index():
     """The live stream indexes in microseconds: dense values match the row-count definitions there too."""
-    bars = make_session(day=DAY, seed=12).assign(volume=lambda d: 1000.0 + d.index.minute * 10.0)
+    bars = make_session(day=DAY, seed=12).assign(volume=lambda d: 1000.0 + pd.DatetimeIndex(d.index).minute * 10.0)
     us = bars.copy()
-    us.index = us.index.as_unit("us")
+    us.index = pd.DatetimeIndex(us.index).as_unit("us")
     for n in sorted(set(range(1, 391, 13)) | {2, 6, 14, 15, 16, 29, 30, 31, 32, 389, 390}):
         a, b = (
             F.compute(MINUTE_NAMES, bars.iloc[:n], ctx(bars.iloc[:n])),

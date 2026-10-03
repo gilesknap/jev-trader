@@ -71,7 +71,8 @@ def test_gate_passes_and_excludes_control(env):
     write_book(book)
     g = golive.evaluate_gate(book, today=dt.date(2026, 12, 1))
     assert g.passed and g.trades == 20 and g.trading_days == 10
-    assert abs(g.expectancy_pct - 0.2) < 1e-9  # 0.3% minus 0.1% round-trip slippage; control trades ignored
+    # 0.3% minus 0.1% round-trip slippage; control trades ignored
+    assert g.expectancy_pct is not None and abs(g.expectancy_pct - 0.2) < 1e-9
 
 
 @pytest.mark.parametrize(

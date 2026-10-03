@@ -3,6 +3,7 @@ across a restart, and the dashboard's one-line summary of them."""
 
 import datetime as dt
 import json
+from typing import Any, cast
 
 from test_engine import Always, run, spec
 from test_restart_state import make, ticks
@@ -147,9 +148,10 @@ def test_malformed_status_never_breaks_the_page():
         ]
     }
     out = _with_why(status)
+    assert out is not None
     assert out["classifiers"][0]["symbols"]["SPY"]["why"] == ""
     assert "why" not in out["classifiers"][1]["symbols"]["SPY"]
-    assert _with_why(None) is None and _with_why([1]) == [1]
+    assert _with_why(None) is None and _with_why(cast(Any, [1])) == [1]
 
 
 def test_a_non_dict_saved_entry_is_ignored_on_restart(tmp_path, session):

@@ -9,6 +9,7 @@ code checkout at TRADER_CODE_ROOT, with `trader` from PATH.
 import fcntl
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -56,7 +57,23 @@ def git(cwd, *args, env=None):
 TRACKED_ODD = "docs/réad me.md"  # a tracked path git quotes in plain `git status --porcelain`
 
 
-def make_sandbox(tmp_path, split=False, code=ROOT):
+class Sandbox:
+    """A fake home, origin and checkouts for one wrapper run (make_sandbox fills it in)."""
+
+    tmp: Path
+    home: Path
+    env: dict[str, str]
+    seed: Path
+    repo: Path
+    code: Path
+    logdir: Path
+    wrapper: Path
+    run: Callable[[str], subprocess.CompletedProcess[str]]
+    push_main: Callable[[Callable[[Path], object]], None]
+    read: Callable[[str], str]
+
+
+def make_sandbox(tmp_path, split=False, code=ROOT) -> Sandbox:
     home = tmp_path / "home"
     (home / ".local" / "bin").mkdir(parents=True)
     fakes = [("uv", FAKE_UV), ("claude", FAKE_CLAUDE), ("trader", FAKE_TRADER), ("trader-python", FAKE_TRADER_PYTHON)]
@@ -100,10 +117,7 @@ def make_sandbox(tmp_path, split=False, code=ROOT):
     git(seed, "push", "-q", "origin", "HEAD:main", "HEAD:strategist", env=env)
     git(tmp_path, "clone", "-q", "-b", "strategist", "origin.git", "repo", env=env)
 
-    class S:
-        pass
-
-    s = S()
+    s = Sandbox()
     s.tmp, s.home, s.env, s.seed, s.repo, s.code = tmp_path, home, env, seed, tmp_path / "repo", code
     s.logdir = tmp_path / "state" / "trader"
     s.wrapper = (code if split else s.repo) / "scripts" / "strategist.sh"

@@ -24,7 +24,7 @@ class FakeClient:
     def __init__(self):
         self.orders = {}
         self.calls = []
-        self.close_error = None
+        self.close_error: Exception | None = None
         self.positions = {}
 
     def get_order_by_id(self, oid):
@@ -98,10 +98,12 @@ def test_stop_cancelled_before_close_and_filled_stop_is_used():
     c = FakeClient()
     c.orders["s1"] = {"status": "new", "filled_qty": 0}
     fill = broker(c).sell_all("SPY", 100, None, "x", stop_id="s1")
+    assert fill is not None
     assert c.calls[:2] == [("cancel", "s1"), ("close", "SPY")] and fill.price == 99.0
     c = FakeClient()
     c.orders["s1"] = {"status": "filled", "filled_qty": 1.0, "price": 98.5}
     fill = broker(c).sell_all("SPY", 100, None, "x", stop_id="s1")
+    assert fill is not None
     assert fill.price == 98.5 and ("close", "SPY") not in c.calls
 
 
@@ -112,11 +114,11 @@ class FlakySim(SimBroker):
         super().__init__(cash)
         self.fails, self.flatten_calls = fails, 0
 
-    def sell_all(self, symbol, ref, now, cid, stop_id=None):
+    def sell_all(self, symbol, ref_price, now, client_id, stop_id=None):
         if self.fails > 0:
             self.fails -= 1
             raise RuntimeError("503 from broker")
-        return super().sell_all(symbol, ref, now, cid, stop_id)
+        return super().sell_all(symbol, ref_price, now, client_id, stop_id)
 
     def flatten_all(self, now=None):
         self.flatten_calls += 1
@@ -162,7 +164,7 @@ def test_a_fill_whose_price_is_never_reported_is_unknown_not_the_reference_price
     assert broker(c)._settle("o1") == (1.0, 0.0)
     c.orders["o2"] = {"status": "filled", "filled_qty": 1.0, "price": "0", "script": [{}, {"price": 100.2}]}
     assert broker(c)._settle("o2") == (1.0, 100.2)
-    c.submit_order = lambda req: NS(id="o1")
+    monkeypatch.setattr(c, "submit_order", lambda req: NS(id="o1"))
     fill = broker(c).buy_notional("SPY", 100.0, 101.5, None, "t-SPY-10141000")
     assert (fill.qty, fill.price, fill.order_id, fill.estimated) == (1.0, 0.0, "o1", True)
 
@@ -180,6 +182,7 @@ def test_partly_filled_stop_blends_into_exit_price(monkeypatch):
     c = FakeClient()
     c.orders["s1"] = {"status": "canceled", "filled_qty": 1.0, "price": 97.0}
     fill = broker(c).sell_all("SPY", 100, None, "x", stop_id="s1")
+    assert fill is not None
     assert fill.qty == 2.0 and fill.price == 98.0  # 1 @ 97 (stop) + 1 @ 99 (close)
 
 

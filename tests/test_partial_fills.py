@@ -5,6 +5,7 @@ import json
 import pandas as pd
 import pytest
 
+from conftest import broker_of
 from test_engine import Always, spec
 from test_execution_toolkit import make, ticks
 from trader.broker import OrderState, Position, SimBroker
@@ -27,8 +28,8 @@ class PartialSim(SimBroker):
                 self.positions[o["symbol"]] = Position(o["symbol"], q, o["limit"])
                 o["state"] = OrderState("partially_filled", q, o["limit"])
 
-    def cancel_order(self, oid):
-        o = self.orders[oid]
+    def cancel_order(self, order_id):
+        o = self.orders[order_id]
         if o["state"].status in ("new", "partially_filled"):
             o["state"] = OrderState("canceled", o["state"].filled_qty, o["state"].price)
         return o["state"]
@@ -41,7 +42,8 @@ class Scripted(SimBroker):
         super().__init__(250.0)
         self.fill, self.avg, self.status = 0.0, 0.0, "new"
         self.cancel_final = False
-        self.stops, self.stop_cancel = {}, None
+        self.stops: dict = {}
+        self.stop_cancel: OrderState | None = None
 
     def update_bars(self, bars):
         pass
@@ -53,11 +55,11 @@ class Scripted(SimBroker):
         if self.status == "new":
             self.status = "partially_filled"
 
-    def order_state(self, oid):
+    def order_state(self, order_id):
         return OrderState(self.status, self.fill, self.avg)
 
-    def cancel_order(self, oid):
-        if oid in self.stops:
+    def cancel_order(self, order_id):
+        if order_id in self.stops:
             return self.stop_cancel or OrderState("canceled")
         self.status = "canceled" if self.cancel_final else "pending_cancel"
         return OrderState(self.status, self.fill, self.avg)
@@ -78,7 +80,7 @@ def test_partial_fill_followed_by_a_stop_breach_exits_before_expiry(tmp_path, se
     book, eng = make(tmp_path, [spec(entry_order=LIMIT)], br=PartialSim(250.0))
     eng.start_day(bars.index[0].date(), {})
     ticks(eng, bars, 0, 12)
-    placed_qty = book.broker.orders[next(iter(book.broker.orders))]["qty"]
+    placed_qty = broker_of(book, SimBroker).orders[next(iter(broker_of(book, SimBroker).orders))]["qty"]
     e = book.entries["SPY"]
     assert not book.pending and e.qty == pytest.approx(placed_qty / 2)  # the rest was cancelled
     assert book.buys_today == pytest.approx(e.qty * 99.95)  # the reservation shrank to what filled
@@ -86,7 +88,7 @@ def test_partial_fill_followed_by_a_stop_breach_exits_before_expiry(tmp_path, se
     t = rows(tmp_path)
     assert list(t.reason) == ["ENTER", "stop"] and t.qty.iloc[0] == pytest.approx(placed_qty / 2, abs=1e-6)
     assert pd.Timestamp(t.time.iloc[1]) < pd.Timestamp(t.time.iloc[0]) + pd.Timedelta(minutes=30)  # well before expiry
-    assert not book.broker.positions
+    assert not broker_of(book, SimBroker).positions
 
 
 def test_partial_fill_is_protected_while_its_cancel_settles_and_late_fills_count_once(tmp_path, session):
@@ -168,8 +170,8 @@ def test_stop_during_a_settling_cancel_sells_and_records_the_filled_part(tmp_pat
 
 def test_eod_flatten_sells_and_records_a_partial_fill_its_cancel_reveals(tmp_path, session):
     class LateReport(Scripted):
-        def order_state(self, oid):  # the fill shows up only in the cancel's answer
-            return OrderState("new") if self.status == "partially_filled" else super().order_state(oid)
+        def order_state(self, order_id):  # the fill shows up only in the cancel's answer
+            return OrderState("new") if self.status == "partially_filled" else super().order_state(order_id)
 
     bars = session(path=[100.0] * 390)
     br = LateReport()
@@ -193,10 +195,10 @@ def test_eod_flatten_sells_and_records_a_partial_fill_its_cancel_reveals(tmp_pat
 
 def test_a_failing_cancel_still_protects_the_partial_fill_it_saw(tmp_path, session):
     class CancelFails(Scripted):
-        def cancel_order(self, oid):
-            if oid not in self.stops:
+        def cancel_order(self, order_id):
+            if order_id not in self.stops:
                 raise ConnectionError("timeout")
-            return super().cancel_order(oid)
+            return super().cancel_order(order_id)
 
     bars = session(path=[100.0] * 390)
     br = CancelFails()

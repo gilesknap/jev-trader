@@ -4,6 +4,7 @@ import datetime as dt
 
 import pandas as pd
 
+from conftest import broker_of
 from test_engine import Always, spec
 from trader import alerts as alerts_mod
 from trader import config, runner
@@ -46,7 +47,7 @@ def _run_until(eng, bars, close, until: dt.time):
 def test_trade_log_failure_in_window_still_ends_flat(tmp_path, session):
     eng, book, bars, close = _setup(tmp_path, session)
     ts = _run_until(eng, bars, close, dt.time(15, 40))
-    assert book.entries and book.broker.positions
+    assert book.entries and broker_of(book, SimBroker).positions
 
     def disk_full(row):
         raise OSError(28, "No space left on device")
@@ -54,14 +55,14 @@ def test_trade_log_failure_in_window_still_ends_flat(tmp_path, session):
     book.append_trade = disk_full
     for t in bars.index[bars.index >= ts]:
         _tick(eng, bars, close, t)  # never raises in the window
-    assert not book.broker.positions
+    assert not broker_of(book, SimBroker).positions
     assert any("eod flatten failed" in m for _, m in alerts)
 
 
 def test_equity_api_failure_in_window_still_flattens(tmp_path, session):
     eng, book, bars, close = _setup(tmp_path, session)
     ts = _run_until(eng, bars, close, dt.time(15, 40))
-    assert book.broker.positions
+    assert broker_of(book, SimBroker).positions
 
     def down():
         raise ConnectionError("REST down")
@@ -72,10 +73,10 @@ def test_equity_api_failure_in_window_still_flattens(tmp_path, session):
             _tick(eng, bars, close, t)
         except ConnectionError:
             assert t.time() < dt.time(15, 44)  # outside the window the failure still surfaces
-    assert not book.broker.positions and not book.entries
+    assert not broker_of(book, SimBroker).positions and not book.entries
 
 
-def test_one_books_failure_does_not_block_another_books_flatten(tmp_path, session):
+def test_one_books_failure_does_not_block_another_books_flatten(tmp_path, session, monkeypatch):
     alerts.clear()
     bars = session(path=[100.0] * 390)
     bad = Book("paper", SimBroker(250), tmp_path / "paper")
@@ -92,23 +93,26 @@ def test_one_books_failure_does_not_block_another_books_flatten(tmp_path, sessio
     eng.start_day(day, {})
     close = dt.datetime.combine(day, dt.time(16), ET)
     ts = _run_until(eng, bars, close, dt.time(15, 40))
-    assert bad.broker.positions and good.broker.positions
+    assert broker_of(bad, SimBroker).positions and broker_of(good, SimBroker).positions
 
     def boom(*a, **k):
         raise RuntimeError("bug in the first book")
 
-    eng._enforce_exits = lambda b, now, bars_: boom() if b is bad else Engine._enforce_exits(eng, b, now, bars_)
+    monkeypatch.setattr(
+        eng, "_enforce_exits", lambda b, now, bars_: boom() if b is bad else Engine._enforce_exits(eng, b, now, bars_)
+    )
     for t in bars.index[bars.index >= ts]:
         try:
             _tick(eng, bars, close, t)
         except RuntimeError:
             assert t.time() < dt.time(15, 44)
-    assert not good.broker.positions and not bad.broker.positions
+    assert not broker_of(good, SimBroker).positions and not broker_of(bad, SimBroker).positions
 
 
 def test_runner_last_resort_flattens_at_last_price_once(tmp_path, session):
     eng, book, bars, close = _setup(tmp_path, session)
     ts = _run_until(eng, bars, close, dt.time(15, 40))
+    assert ts is not None
     tick = dt.datetime.combine(ts.date(), dt.time(15, 50), ET)
     calls = []
     real = book.broker.flatten_all
@@ -116,7 +120,7 @@ def test_runner_last_resort_flattens_at_last_price_once(tmp_path, session):
     sim_bars = {"SPY": bars.loc[:ts].assign(close=lambda d: d.close.where(d.index < ts, 101.0))}
     eng.prices = {}  # the tick raised before it saw any prices
     runner._last_resort_flatten(eng, tick, sim_bars, 10.0)
-    assert not book.entries and not book.broker.positions
+    assert not book.entries and not broker_of(book, SimBroker).positions
     trades = pd.read_csv(tmp_path / "sim" / "trades.csv")
     assert trades.reason.iloc[-1] == "eod flatten" and float(trades.price.iloc[-1]) > 100.5  # last price, not entry
     assert len(calls) == 1
@@ -145,11 +149,11 @@ def test_raising_alerts_cannot_skip_any_books_flatten(tmp_path, session):
     eng.start_day(day, {})
     close = dt.datetime.combine(day, dt.time(16), ET)
     ts = _run_until(eng, bars, close, dt.time(15, 40))
-    assert first.broker.positions and second.broker.positions
+    assert broker_of(first, SimBroker).positions and broker_of(second, SimBroker).positions
     first.append_trade = _disk_full
     for t in bars.index[bars.index >= ts]:
         _tick(eng, bars, close, t)  # never raises in the window, even with every alert failing
-    assert not first.broker.positions and not second.broker.positions
+    assert not broker_of(first, SimBroker).positions and not broker_of(second, SimBroker).positions
 
 
 def test_runner_last_resort_survives_raising_alerts(tmp_path, session):
@@ -158,9 +162,10 @@ def test_runner_last_resort_survives_raising_alerts(tmp_path, session):
     eng.alert = _disk_full
     book.append_trade = _disk_full
     eng.write_status = _disk_full
+    assert ts is not None
     tick = dt.datetime.combine(ts.date(), dt.time(15, 50), ET)
     runner._last_resort_flatten(eng, tick, {"SPY": bars.loc[:ts]}, 10.0)  # must not raise
-    assert not book.broker.positions
+    assert not broker_of(book, SimBroker).positions
 
 
 def test_notify_survives_an_unwritable_alert_log(tmp_path, monkeypatch):

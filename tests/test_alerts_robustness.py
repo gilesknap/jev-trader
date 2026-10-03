@@ -2,6 +2,7 @@
 
 import datetime as dt
 from types import SimpleNamespace as NS
+from typing import Any, cast
 
 import pandas as pd
 
@@ -65,7 +66,7 @@ def test_cashflows_use_type_for_sign_and_skip_unexecuted(tmp_path, monkeypatch):
         {"id": "c", "date": "2026-10-22", "activity_type": "CSD", "net_amount": "999", "status": "pending"},
     ]
     broker = NS(client=NS(get=lambda path, params=None: acts))
-    runner._apply_cashflows(book, broker)
+    runner._apply_cashflows(book, cast(Any, broker))  # a stand-in with just client.get
     rows = (tmp_path / "live" / "cashflows.csv").read_text().splitlines()
     assert [r.split(",")[3] for r in rows[1:]] == ["100.00", "-50.00"]
     assert abs(book.nav.last_equity - 300.0) < 1e-9  # 250 + 100 - 50; pending 999 ignored
@@ -169,7 +170,7 @@ def test_cashflows_count_corrected_transfers(tmp_path, monkeypatch):
     book.nav.mark(250.0)
     (tmp_path / "live" / "cashflows.csv").write_text("id,date,type,amount,nav_at_flow\n")
     acts = [{"id": "a", "date": "2026-10-20", "activity_type": "CSD", "net_amount": "40", "status": "correct"}]
-    runner._apply_cashflows(book, NS(client=NS(get=lambda path, params=None: acts)))
+    runner._apply_cashflows(book, cast(Any, NS(client=NS(get=lambda path, params=None: acts))))
     assert abs(book.nav.last_equity - 290.0) < 1e-9
 
 

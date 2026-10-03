@@ -122,6 +122,7 @@ def _js(expr: str):
     page = (config.CODE_ROOT / "dashboard" / "static" / "index.html").read_text()
     start = page.index("// ---- SPY line ----")
     block = page[start : page.index("// ---- end SPY line ----", start)]
+    assert NODE is not None  # the tests skip without node
     r = subprocess.run(
         [NODE, "-e", block + f"\nconsole.log(JSON.stringify({expr}));"], capture_output=True, text=True, timeout=30
     )

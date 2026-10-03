@@ -169,3 +169,9 @@ def make_session(day=dt.date(2026, 9, 21), start=100.0, drift=0.0, n=390, seed=0
 @pytest.fixture
 def session():
     return make_session
+
+
+def broker_of[T](book, cls: type[T]) -> T:
+    """The book's broker as the class the test built it with (Book.broker is typed as the Broker protocol)."""
+    assert isinstance(book.broker, cls)
+    return book.broker

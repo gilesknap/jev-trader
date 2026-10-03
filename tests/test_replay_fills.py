@@ -9,6 +9,7 @@ latest close, as paper and sim accounts do), so the two differ only in the fill 
 import pandas as pd
 import pytest
 
+from conftest import broker_of
 from test_engine import Always, run, spec
 from trader.replay import replay
 
@@ -117,6 +118,6 @@ def test_a_market_order_after_the_last_bar_fills_at_the_close(tmp_path, session)
     from trader.engine import Book, Engine
 
     b = Book("sim", SimBroker(250.0), tmp_path / "sim")
-    b.broker.next_open = {"QQQ": 50.0}  # another symbol's next open is no price for SPY
+    broker_of(b, SimBroker).next_open = {"QQQ": 50.0}  # another symbol's next open is no price for SPY
     assert Engine._market_ref(b, "SPY", 100.0) == 100.0
     assert Engine._market_ref(b, "QQQ", 49.0) == 50.0

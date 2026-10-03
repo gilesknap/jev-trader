@@ -248,6 +248,7 @@ def test_a_stop_that_filled_for_fewer_shares_than_are_held_closes_the_rest_too(c
     v.fire("s1", 1.0, 97.0, status="filled")
     v.closes = [(0.5, 99.0)]
     fill = Paper(v).sell_all("SPY", 99.0, T0, "x", stop_id="s1")
+    assert fill is not None
     assert fill.qty == pytest.approx(1.5) and fill.price == pytest.approx((97.0 + 0.5 * 99.0) / 1.5)
     assert [f.order_id for f in fill.legs] == ["s1", "c1"] and not v.positions
 

@@ -1,4 +1,5 @@
 import subprocess
+from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -227,7 +228,7 @@ def test_rules_broken_universe_is_a_problem(tmp_path, monkeypatch, client):
     f = tmp_path / "classifiers.yaml"
     f.write_text("classifiers: []\n")
     monkeypatch.setattr(dashboard.config, "CLASSIFIERS_FILE", f)
-    monkeypatch.setattr(dashboard.config, "universe", lambda: set(5))
+    monkeypatch.setattr(dashboard.config, "universe", lambda: set(cast(Any, 5)))  # TypeError, as from a broken universe
     r = client.get("/api/rules")
     assert r.status_code == 200 and "universe" in r.json()["problems"][0]
 

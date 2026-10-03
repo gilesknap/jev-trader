@@ -158,7 +158,7 @@ def test_sandbox_refuses_a_symlinked_features_directory(checkout, tmp_path, sess
     try:
         sb.start([(session(), session(day=dt.date(2026, 9, 18)), session())])
         assert sb.names == set()
-        assert "custom is a symlink" in sb.broken and alerts
+        assert "custom is a symlink" in (sb.broken or "") and alerts
     finally:
         sb.close()
 
