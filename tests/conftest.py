@@ -12,9 +12,10 @@ loaded at import):
    templates/data/main and templates/data/strategist, with the deploy files rendered into it.
 4. Otherwise (a monorepo checkout with its own config.yaml, as deployed today), nothing changes.
 
-Whatever the data root, the tests never write outside tmp: TRADER_RUNTIME is always a session tmp dir (a
-developer's shell may export the live one), and config.STRATEGIST_ALERTS, which `notify` falls back to when
-the runtime dir is unwritable, points into tmp for every test (the `real_strategist_alerts` marker opts out).
+Whatever the data root, the tests never write outside tmp: TRADER_RUNTIME (with the replay dir and the
+strategist stamps under it) is always a session tmp dir, since a developer's shell may export the live ones,
+and config.STRATEGIST_ALERTS, which `notify` falls back to when the runtime dir is unwritable, points into tmp
+for every test (the `real_strategist_alerts` marker opts out).
 """
 
 import atexit
@@ -66,6 +67,8 @@ TEST_DATA_ROOT = _use_template_data()
 TEST_RUNTIME = _session_tmp("trader-test-runtime-") / "runtime"
 TEST_RUNTIME.mkdir()
 os.environ["TRADER_RUNTIME"] = str(TEST_RUNTIME)
+os.environ.pop("TRADER_REPLAY_DIR", None)  # defaults under TRADER_RUNTIME
+os.environ["TRADER_STRATEGIST_STAMP"] = str(TEST_RUNTIME / ".last_run")
 
 # Only now may trader be imported.
 import numpy as np  # noqa: E402

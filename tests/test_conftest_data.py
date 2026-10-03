@@ -90,4 +90,6 @@ def test_a_data_root_with_its_own_state_is_its_own_strategist_root(public, data_
 def test_the_suite_writes_runtime_files_and_alerts_only_into_tmp():
     """Never the live runtime dir or the strategist checkout's alerts log, whatever the environment."""
     assert config.RUNTIME_DIR == TEST_RUNTIME
+    assert config.REPLAY_DIR == TEST_RUNTIME / "replay"
+    assert config.STRATEGIST_STAMP.parent == TEST_RUNTIME and config.POSTCLOSE_STAMP.parent == TEST_RUNTIME
     assert config.STRATEGIST_ALERTS == TEST_STRATEGIST_ALERTS
