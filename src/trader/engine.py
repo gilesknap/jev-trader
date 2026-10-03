@@ -38,6 +38,9 @@ TICK_DECISION_BUDGET_S = 35.0  # wall-clock seconds per tick for decision calls
 PROBE_TICK_BUDGET_S = 20.0
 # A market fill whose average price Alpaca hasn't reported by then is priced another way (#60).
 UNPRICED_FILL_WAIT = dt.timedelta(minutes=3)
+# An entry fill the broker reports more than this before the engine adopts it happened while the
+# runner wasn't watching (pending orders are polled every minute): its exit may predate adoption.
+OFFLINE_FILL = dt.timedelta(minutes=3)
 # The day-start equity read is retried this often before falling back (#119).
 START_EQUITY_TRIES = 3
 START_EQUITY_RETRY_S = 2.0
@@ -62,6 +65,14 @@ def stale_feed(spy: pd.DataFrame | None, now: dt.datetime) -> tuple[bool, str]:
     return (now - (spy.index[-1] + pd.Timedelta(minutes=1))) > dt.timedelta(minutes=3), f"last SPY bar {spy.index[-1]:%H:%M}"
 
 
+
+def _broker_time(at, now: dt.datetime) -> dt.datetime | None:
+    """A broker timestamp in `now`'s zone; None if absent or unreadable (never raises)."""
+    try:
+        return pd.Timestamp(at).tz_convert(now.tzinfo).to_pydatetime() if at is not None else None
+    except Exception:
+        return None
+
 @dataclass
 class Entry:
     classifier: str
@@ -84,6 +95,9 @@ class Entry:
     banked: float = 0.0  # P&L already realised by a scale-out
     server_stop: float = 0.0  # price of the server-side stop order (when stop_id)
     last_sell: str = ""  # ISO time the last scale-out sell completed (its fill isn't the exit)
+    # ISO time the broker filled the entry, when that was before the engine adopted it (a limit that
+    # filled while the runner was down): its exit may be earlier than `time`, so look from here.
+    filled_at: str = ""
     # Bars before this (ISO) have been checked. Persisted: after a restart, bars from before
     # the trail raised the stop must not be re-tested against the raised stop.
     scanned_to: str = ""
@@ -98,7 +112,9 @@ class Entry:
 
     def exits_since(self) -> dt.datetime:
         """Where to look for this position's exit fills in the broker's order history."""
-        return dt.datetime.fromisoformat(self.last_sell) if self.last_sell else self.time
+        if self.last_sell:
+            return dt.datetime.fromisoformat(self.last_sell)
+        return dt.datetime.fromisoformat(self.filled_at) if self.filled_at else self.time
 
     def __post_init__(self):
         self.init_stop = self.init_stop or self.stop
@@ -489,7 +505,7 @@ class Engine:
                              cash_at_open=b.cash_at_open, buys_today=0.0, account_at_open=snap,
                              start_unverified=b.start_unverified)
             if eq is not None:
-                b.nav.mark(eq)  # never marked with a stand-in: the HWM halt uses only real reads
+                self._mark_nav(b, eq)  # never marked with a stand-in: the HWM halt uses only real reads
             if b.start_unverified is None:  # a stand-in never goes in the log; see _start_equity_readable
                 self._opening_mark(b, opened_at, b.day_start_equity)
             try:  # a damaged trade log must never stop the session from starting
@@ -530,6 +546,20 @@ class Engine:
         self._alert_every(f"start-equity:{b.name}", "urgent", f"[{b.name}] couldn't read equity at session "
                           f"start ({err!r}): no new entries until it can be read; exits, stops and the flatten run")
         return None
+
+    def _mark_nav(self, b: Book, eq: float) -> float:
+        """Mark unit NAV. The mark that issues a book's first units (a new book, or the first after
+        `trader rebase-paper`) is saved at once: nav.json is otherwise saved only at the close, so a
+        restart later that session would issue them again at the restart's equity, and the day's
+        P&L up to the restart would never enter the NAV record. Never raises on the save."""
+        fresh = b.nav.units <= 0
+        nav = b.nav.mark(eq)
+        if fresh and b.nav.units > 0:
+            try:
+                b.nav.save(b.dir / "nav.json")
+            except Exception as ex:
+                self._alert_every(f"nav-save:{b.name}", "urgent", f"[{b.name}] couldn't save the new NAV units: {ex!r}")
+        return nav
 
     def _opening_mark(self, b: Book, at: dt.datetime, equity: float) -> None:
         """The day's first equity row, at the real day-start equity, so the go-live gate's worst
@@ -969,7 +999,7 @@ class Engine:
         eq = b.broker.equity()
         if b.start_unverified:
             self._start_equity_readable(b, eq, now)
-        nav = b.nav.mark(eq)
+        nav = self._mark_nav(b, eq)
         # Still "exact" (settled cash unreadable): nothing is held or bought, so today's loss is 0,
         # not the read against the stand-in; the halt is still checked on the real read.
         base = eq if b.start_unverified == "exact" else b.day_start_equity
@@ -1324,7 +1354,10 @@ class Engine:
         return cs.symbols.get(sym) if cs else None
 
     def _open_entry(self, book: Book, classifier, sym, fill: Fill, now, stop_pct, target_pct, params, cid,
-                    place_stop: bool = True, estimated: bool = False) -> None:
+                    place_stop: bool = True, estimated: bool = False, filled_at: dt.datetime | None = None) -> None:
+        """`filled_at`: the broker's fill time, when it was well before `now` (filled while the runner
+        was down). The ENTER row is stamped then and exits are looked up from then; the engine's own
+        clock (time stop, the first tick's checks) still starts at `now`."""
         if not (fill.price > 0 and fill.qty > 0):  # never track a position with no price: no stop would work
             self.alert("urgent", f"[{book.name}] {sym} filled with no usable price/qty ({fill.qty} @ {fill.price}); "
                                  "not tracked, so the next minute closes it as an untracked position")
@@ -1335,7 +1368,8 @@ class Engine:
                       trail_pct=params.get("trail_pct"), max_hold_min=params.get("max_hold_min"),
                       scale_at=fill.price * (1 + sp / 100) if sp else None,
                       scale_fraction=params.get("scale_fraction", 0.0), scale_breakeven=params.get("scale_breakeven", False),
-                      price_estimated=estimated, spec_hash=book.provenance.specs.get(classifier, ""))
+                      price_estimated=estimated, spec_hash=book.provenance.specs.get(classifier, ""),
+                      filled_at=filled_at.isoformat() if filled_at else "")
         book.entries[sym] = entry
         book.save_entries()
         if place_stop:
@@ -1352,8 +1386,8 @@ class Engine:
             if st.note.startswith("limit ") and " resting" in st.note:  # filled: keep only the allocator's part
                 st.note = st.note.partition(" resting")[2].strip().removeprefix("(").removesuffix(")")
         book.append_trade({
-            "time": now.isoformat(timespec="minutes"), "book": book.name, "classifier": classifier, "symbol": sym,
-            "side": "buy", "qty": f"{fill.qty:.6f}", "price": f"{fill.price:.4f}",
+            "time": (filled_at or now).isoformat(timespec="minutes"), "book": book.name, "classifier": classifier,
+            "symbol": sym, "side": "buy", "qty": f"{fill.qty:.6f}", "price": f"{fill.price:.4f}",
             "notional": f"{fill.qty * fill.price:.2f}", "reason": "ENTER" + (" (price estimated)" if estimated else ""),
             "pnl": "", "pnl_pct": "",
         })
@@ -1452,9 +1486,11 @@ class Engine:
             # (the order is known, so they're adopted, not sold as an orphan).
             fill = Fill(sym, "buy", delta, px, now) if first else \
                 Fill(sym, "buy", p.filled_qty, p.filled_cost / p.filled_qty, now)
+            at = _broker_time(o.filled_at, now)
+            offline = at if first and at is not None and now - at > OFFLINE_FILL else None
             self._open_entry(b, p.classifier, sym, fill, now, p.stop_pct, p.target_pct,
                              p.params, p.client_id if first else f"{p.client_id}-l{now:%H%M}", place_stop,
-                             estimated=p.price_estimated)
+                             estimated=p.price_estimated, filled_at=offline)
             if o.filled_at is not None and sym in b.entries:  # scan the fill's own bar for the stop (conservative)
                 self._set_cursor(b, b.entries[sym], pd.Timestamp(o.filled_at).tz_convert(now.tzinfo).floor("min"))
             return

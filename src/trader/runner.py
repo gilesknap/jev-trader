@@ -870,7 +870,8 @@ def clear_halt(book: str) -> str:
 def rebase_paper() -> str:
     """Human-only, after resetting the Alpaca paper account: restart the paper book's NAV
     at 1.0 from its next mark and clear any halt. Refused for the live book, whose NAV
-    history is the performance record."""
+    history is the performance record. The next session issues the new units at its opening
+    equity and saves them at once, so a restart that day keeps the day's P&L in the NAV."""
     from trader.nav import NavBook
 
     if _runner_live():
