@@ -897,12 +897,12 @@ function scoreError(msg) {
 
 // The book's daily returns vs SPY on the same sessions (scoreboard.daily).
 function dailyBox(d) {
-  if (!d) return '<p class="muted">Appears once the book has marked a full session.</p>';
+  if (!d) return '<p class="muted">Needs the book\'s equity marks: it appears once the book has marked a session (sim accounts don\'t keep them).</p>';
   const bk = d.book_on_spy_days || d.book, row = (n, s, x) => s ? `<tr><td><b>${n}</b></td><td class="num">${s.days}</td><td class="num ${cls(s.total_pct)}">${pp(s.total_pct)}</td>` +
     `<td class="num ${cls(s.mean_pct)}">${pp(s.mean_pct, 3)}</td><td class="num">${s.sd_pct == null ? "–" : s.sd_pct.toFixed(3) + "%"}</td><td class="num neg">${pp(s.max_drawdown_pct)}</td><td class="num">${x}</td></tr>` : "";
   const v = d.vs_spy;
   return `<table><thead><tr><th></th><th class="num">sessions</th><th class="num">total</th><th class="num">mean / day</th><th class="num">sd / day</th><th class="num">max drawdown</th><th class="num">exposure</th></tr></thead><tbody>` +
-    row("this book", bk, `${d.book.exposure_pct.toFixed(1)}% · traded ${d.book.days_traded} of ${d.book.days}`) + row("SPY buy-and-hold", d.spy, "100%") + "</tbody></table>" +
+    row("this book", bk, `${bk.exposure_pct.toFixed(1)}% · traded on ${bk.days_traded} of ${bk.days}`) + row("SPY buy-and-hold", d.spy, "100%") + "</tbody></table>" +
     (v ? `<p class="note">Book minus SPY per session: <b class="${cls(v.mean_diff_pct)}">${ci(v.mean_diff_pct, v.ci_pct)}</b> over ${v.days} sessions <span class="verdict ${vcls(v.verdict)}">${esc(v.verdict)}</span></p>`
        : '<p class="note">No SPY benchmark rows for these sessions yet.</p>');
 }

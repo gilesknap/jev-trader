@@ -442,7 +442,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(fn=cmd_golive_status)
 
     s = sub.add_parser("daily-returns", help="each book's daily returns, drawdown and exposure vs SPY (read-only)")
-    s.add_argument("--since", help="first day to include (default: the experiment's start date)")
+    s.add_argument("--since", type=lambda v: dt.date.fromisoformat(v).isoformat(),
+                   help="first day to include, YYYY-MM-DD (default: the experiment's start date)")
     s.set_defaults(fn=cmd_daily_returns)
     s = sub.add_parser("housekeeping", help="daily checks: API credit, token expiry, undeployed merges, disk")
     s.set_defaults(fn=cmd_housekeeping)

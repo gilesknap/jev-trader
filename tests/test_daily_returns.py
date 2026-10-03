@@ -13,8 +13,9 @@ NAV = [1.0, 1.01, 0.99, 1.0]  # opening mark on day 1, then each day's close
 
 def equity(navs=NAV, equities=None):
     equities = equities or [250 * n for n in navs]
-    rows = [{"time": f"{DAYS[0]}T09:30-04:00", "equity": equities[0], "nav": navs[0]}]
-    for i, d in enumerate(DAYS):
+    rows = []
+    for i, d in enumerate(DAYS):  # the engine's opening mark carries the previous close's NAV
+        rows.append({"time": f"{d}T09:30-04:00", "equity": equities[i], "nav": navs[i]})
         rows.append({"time": f"{d}T12:00-04:00", "equity": equities[i + 1] * 0.999, "nav": navs[i + 1] * 0.999})
         rows.append({"time": f"{d}T16:00-04:00", "equity": equities[i + 1], "nav": navs[i + 1]})
     return [{k: str(v) for k, v in r.items()} for r in rows]
@@ -64,7 +65,7 @@ def test_a_deposit_is_not_a_gain():
     assert d["book"]["total_pct"] == pytest.approx(0.0) and d["book"]["max_drawdown_pct"] == 0.0
 
 
-def test_from_date_starts_from_the_previous_close():
+def test_from_date_keeps_whole_sessions():
     d = SB.daily(equity(), BENCH, from_date=DAYS[1])
     assert [r["day"] for r in d["rows"]] == DAYS[1:]
     assert d["rows"][0]["return_pct"] == pytest.approx((0.99 / 1.01 - 1) * 100, abs=1e-4)
@@ -110,3 +111,31 @@ def test_cli_daily_returns_reads_each_book(tmp_path, monkeypatch, capsys):
     out = json.loads(capsys.readouterr().out)
     assert list(out["books"]) == ["paper"] and out["books"]["paper"]["book"]["days"] == 3
     assert not (rt / "books" / "paper" / "trades.csv").exists()  # read-only
+
+
+def test_a_paper_rebase_between_sessions_is_not_a_return():
+    """rebase-paper resets the NAV to 1 before the next open: each session is measured open to close."""
+    rows = [{"time": f"{d}T{t}-04:00", "equity": str(250 * v), "nav": str(v)}
+            for d, marks in zip(DAYS, ([1.0, 1.0], [1.0, 0.96], [1.0, 1.0]), strict=True)
+            for t, v in zip(("09:30", "16:00"), marks, strict=True)]
+    d = SB.daily(rows, BENCH)
+    assert [r["return_pct"] for r in d["rows"]] == [0.0, -4.0, 0.0]
+    assert d["book"]["total_pct"] == pytest.approx(-4.0)
+
+
+def test_spy_starts_at_the_first_paired_sessions_open():
+    """Earlier benchmark rows (before the experiment) never put an overnight gap into day one."""
+    bench = [{"date": "2026-10-02", "spy_open": "94", "spy_close": "95"}] + BENCH
+    d = SB.daily(equity(), bench)
+    assert d["rows"][0]["spy_pct"] == 1.0 and d["spy"]["total_pct"] == pytest.approx(2.0)
+
+
+def test_mixed_naive_and_aware_times_dont_break_the_board():
+    rows = trades(DAYS[0], 1, 50)
+    rows[1]["time"] = rows[1]["time"][:16]  # the sell lost its offset
+    assert SB.daily(equity(), BENCH, rows)["rows"][0]["exposure_pct"] == 0.0
+
+
+def test_cli_rejects_a_bad_since(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["daily-returns", "--since", "last week"])
