@@ -23,7 +23,7 @@ from trader import features as F
 from trader import guardrails as G
 from trader.alerts import notify
 from trader.broker import AlpacaBroker
-from trader.data import ET, fetch_alpaca, split_sessions
+from trader.data import ET, fetch_alpaca, prior_sessions, split_sessions
 from trader.engine import Book, Engine, stale_feed
 
 BOOKS_DIR = config.RUNTIME_DIR / "books"
@@ -287,6 +287,31 @@ def tick_bars(engine: Engine, rest: RestBars, live: dict[str, pd.DataFrame], tic
     return bars, live.get("SPY", pd.DataFrame())
 
 
+def prev_day_bars(symbols: list[str], day: dt.date, now: dt.datetime, secrets, alert=notify) -> dict[str, pd.DataFrame]:
+    """The features' prev_day for each symbol: the last session before `day`, with SIP's prices
+    (the official close, for gap and prior-day levels) and IEX's volume, the feed the live bars
+    come from, so volume ratios compare like with like. These feed prev-day features only, so a
+    failed fetch is never a reason to leave positions unmanaged: it alerts and those features
+    are NaN today."""
+    start, end = now - dt.timedelta(days=7), now - dt.timedelta(minutes=16)
+    try:
+        sip = {s: split_sessions(b) for s, b in fetch_alpaca(symbols, start, end, secrets).items()}
+    except Exception as e:
+        alert("urgent", f"could not fetch recent history at startup: {e}; prev-day features are NaN today")
+        return {}
+    try:
+        iex = {s: split_sessions(b) for s, b in fetch_alpaca(symbols, start, end, secrets, feed="iex").items()}
+    except Exception as e:
+        alert("urgent", f"could not fetch recent IEX history at startup: {e}; prior-session volume is NaN today "
+                        "(rel_volume_15m and the like); price levels are unaffected")
+        iex = {}
+    try:
+        return prior_sessions(sip, day, volume_from=iex)
+    except Exception as e:  # never a startup crash loop over context data
+        alert("urgent", f"could not combine prior-session prices and IEX volume: {e!r}; prior-session volume is NaN today")
+        return prior_sessions(sip, day, volume_from={})
+
+
 def _last_resort_flatten(engine: Engine, tick: dt.datetime, bars: dict, minutes_to_close: float) -> None:
     """The tick raised inside the flatten window. Unless it got as far as its own flatten this
     minute, close everything from here (once), then keep the heartbeat fresh: a stale status
@@ -405,16 +430,7 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
     base, extra = session_symbols(specs, engine.unique_books())
     symbols = base + extra
     now = dt.datetime.now(ET)
-    try:  # yesterday's bars feed prev-day features only: never a reason to leave positions unmanaged
-        hist = fetch_alpaca(base, now - dt.timedelta(days=7), now - dt.timedelta(minutes=16), secrets)
-    except Exception as e:
-        notify("urgent", f"could not fetch recent history at startup: {e}; prev-day features are NaN today")
-        hist = {}
-    prev = {}
-    for s, b in hist.items():
-        per = {d: g for d, g in split_sessions(b).items() if d < open_.date()}
-        if per:
-            prev[s] = per[max(per)]
+    prev = prev_day_bars(base, open_.date(), now, secrets, notify)
     # The opening equity row is stamped at the open, or now if starting later (#50).
     engine.start_day(open_.date(), prev, settled_at_open, opened_at=max(open_, now))
     engine.write_status(now, (close - now).total_seconds() / 60)

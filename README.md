@@ -7,7 +7,8 @@ and by OS user separation. A permanent control strategy and a scoreboard measure
 it beats doing nothing.
 
 > **Warning: this is an experiment, not a product, and it can lose real money.** It trades a
-> real brokerage account once its go-live gate passes. Nothing here is financial advice, and the
+> real brokerage account by itself once its go-live gate passes and a
+> three-session veto window ends. Nothing here is financial advice, and the
 > design assumes a small balance you can afford to lose. Run it on paper first, read how the
 > [money safety](https://gilesknap.github.io/jev-trader/explanations/money-safety.html) works,
 > and keep the live account small.

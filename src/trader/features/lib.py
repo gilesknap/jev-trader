@@ -125,7 +125,8 @@ def rsi14(bars, ctx):
 
 @feature("rel_volume_15m")
 def rel_volume(bars, ctx):
-    """Volume of the last 15 bars vs the prior session's average per-bar volume."""
+    """Volume of the last 15 bars vs the prior session's average per-bar volume, both from
+    the same feed (live: IEX; replay: SIP), so ~1 means a normal pace whichever feed it is."""
     if len(bars) < 15 or ctx.prev_day.empty:
         return NAN
     base = ctx.prev_day.volume.mean()

@@ -95,7 +95,10 @@ and HOLD LIVE works from any state too, including demoted and corrupt.
   and no automatic transition over it until a human HOLDs or releases.
 - `config/mode.yaml` set to `paper` or `live` overrides all of this.
 
-`trader golive` prints the current state and the gate's numbers.
+`trader golive` prints the current state and the gate's numbers. The
+[rule lifecycle](design.md#rule-lifecycle) table in the design sets these account states beside
+each classifier's modes: who moves each one, on what evidence, where it is stored and when it
+takes effect.
 
 ## Promotion to `mode: live`
 
@@ -147,7 +150,9 @@ Fills are simulated (`src/trader/broker.py`):
 - stops at their level (or the bar's open, if it gapped through), less 0.05%;
 - targets at their level (or the open, if it gapped above), less 0.05%;
 - limit entries only when a later bar trades strictly below the limit, at the limit (or the open,
-  if lower), with no slippage.
+  if lower), plus 0.05%: the same cost a market entry pays, so a limit-entry rule doesn't look
+  better than a market-entry one just because of how it is simulated. The booked price can
+  therefore sit up to 0.05% above the limit, which a real limit order never would.
 
 That flatters a strategy a little, more so on thin names. Sim trades count towards nothing; to
 promote an idea it moves to `mode: shadow`, and only its paper trades count from then on.

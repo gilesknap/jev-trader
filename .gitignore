@@ -13,3 +13,8 @@ replays/
 logs/decisions/*.jsonl.gz
 build/
 docs/_generated/
+# Deploy files rendered from an owner's config.yaml belong in that owner's data repo, never here.
+# By exact name: deploy/systemd/trader-watchdog.timer is a static unit the code ships.
+deploy/systemd/trader-runner.timer
+deploy/systemd/trader.env
+deploy/systemd-trader/*.timer
