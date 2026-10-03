@@ -600,7 +600,7 @@ def test_an_outside_path_that_survives_the_revert_alerts_and_is_not_published(tm
     assert "could NOT revert" in alerts and "not publishing" in alerts
     assert survivor in alerts.split("Still changed: ")[1].split(". Touched")[0]
     assert "(reverted)" not in alerts
-    assert "pushed to origin" not in alerts and "Could not check" not in alerts   # the run pushed nothing
+    assert "differs from the run" not in alerts and "Could not check" not in alerts   # the run pushed nothing
     assert origin_log(s) == before                   # nothing published, not even state/n.md
     assert not list(s.logdir.glob("status.*"))      # the status scratch file is removed
 
@@ -646,8 +646,8 @@ mkdir -p tools/x && git -C tools/x init -q && echo x > tools/x/f
     assert r.returncode == 1
     (line,) = [a for a in s.read("alerts").splitlines() if "could NOT revert" in a]
     assert "no retry today" in line
-    assert "Also pushed to origin/strategist (NOT reverted): scripts/evil.sh" in line
-    assert "state/n.md" not in line.split("Also pushed")[1]   # allowed paths aren't named
+    assert "differs from the run's start outside strategy paths (NOT reverted; pushed by the run, or by a human during it): scripts/evil.sh" in line
+    assert "state/n.md" not in line.split("during it): ")[1]   # allowed paths aren't named
     r = s.run("premarket")                                     # a later tick the same day
     assert r.returncode == 0 and s.read("alerts").count("could NOT revert") == 1
     assert "already ran today" in "".join(p.read_text() for p in s.logdir.glob("*.log"))

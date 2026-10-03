@@ -196,13 +196,14 @@ outside_paths() {
 joined() { local out="" p; for p in "$@"; do out+="${out:+, }$p"; done; printf '%s' "${out:0:300}"; }
 # For the alerts that refuse to publish: those exits skip the publish below, which is what reverts
 # anything outside ALLOWED the run pushed to origin/strategist itself, and the next run starts past
-# it. Name those paths so a human can revert them.
+# it. Name every outside path origin/strategist now differs by from the run's start, so a human
+# can check them: the run's own pushes, or a human push during the run.
 origin_note() {
     local diff out
     if git fetch -q origin strategist >>"$LOG" 2>&1 \
         && diff=$(git diff --name-only --no-renames "$PRE" refs/remotes/origin/strategist 2>>"$LOG"); then
         mapfile -t out < <(printf '%s' "$diff" | grep -Ev "$ALLOWED")
-        (( ${#out[@]} )) && printf ' Also pushed to origin/strategist (NOT reverted): %s' "$(joined "${out[@]}")"
+        (( ${#out[@]} )) && printf ' Also, origin/strategist differs from the run'\''s start outside strategy paths (NOT reverted; pushed by the run, or by a human during it): %s' "$(joined "${out[@]}")"
     else
         printf ' Could not check origin/strategist for pushed non-strategy paths.'
     fi
