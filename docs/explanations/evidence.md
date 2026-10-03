@@ -143,9 +143,9 @@ carries over between days.
 
 Fills are simulated (`src/trader/broker.py`):
 
-- market entries and model exits at the bar close, ± 0.05%;
+- market entries, model exits, targets, scale-outs and time stops at the bar close, ± 0.05%,
+  as on paper (a target is a market sell once the touch is seen, not a resting order);
 - stops at their level (or the bar's open, if it gapped through), less 0.05%;
-- targets at their level (or the open, if it gapped above), less 0.05%;
 - limit entries only when a later bar trades strictly below the limit, at the limit (or the open,
   if lower), with no slippage.
 
@@ -157,6 +157,13 @@ promote an idea it moves to `mode: shadow`, and only its paper trades count from
 `trader replay` runs classifiers through the real engine on historical SIP bars with a simulated
 broker. Every `live`, `shadow` and `sim` spec in a replay trades the same single simulated account;
 probes stay probes, and only log their answers. Backtests never qualify
-anything: only forward paper results count. The strategist's charter adds research hygiene on
+anything: only forward paper results count.
+
+Replay fills follow the sim rules above with one difference. The engine decides on a completed
+bar, so a market order (an entry, a model exit, a target or scale-out, a time stop, a flatten or a
+kill) executes at the **next bar's open**, ± 0.05%, not at the close it has just seen: a gap after
+the signal bar moves the price. Paper and sim accounts fill at the close instead, because the live
+order goes out seconds after it. Stops and limit entries are resting orders, so they fill where a
+bar traded through them, as in sim. No latency beyond that one bar is modelled. The strategist's charter adds research hygiene on
 top: tune on older sessions and confirm on recent ones it didn't look at, log every variant it
 replays, and treat anything under about 30 trades as a hypothesis, not evidence.
