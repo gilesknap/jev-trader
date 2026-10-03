@@ -137,7 +137,9 @@ def spec_hash(spec, custom_digest: str = "") -> str:
 
 
 def shadow_record(classifier: str, since: str, book_dir=PAPER_BOOK) -> tuple[int, float | None]:
-    """(closed paper trades since `since`, mean pnl % after round-trip slippage)."""
+    """(closed paper trades since `since`, mean pnl % after round-trip slippage). Like the gate,
+    nothing before the experiment's start date counts, whenever the current spec started."""
+    since = max(since, START_DATE.isoformat())
     closes = []
     tp = book_dir / "trades.csv"
     if tp.exists():
