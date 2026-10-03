@@ -25,6 +25,7 @@ from trader.alerts import notify
 from trader.broker import AlpacaBroker
 from trader.data import ET, fetch_alpaca, gate_samples, prior_sessions, split_sessions
 from trader.engine import Book, Engine, stale_feed
+from trader.market_calendar import Calendar, fetch_calendar, session_from_row
 
 BOOKS_DIR = config.RUNTIME_DIR / "books"
 # The free IEX websocket takes at most this many symbols. One subscribe over the limit is
@@ -48,12 +49,8 @@ def _session_today(client):
     cal = client.get_calendar(GetCalendarRequest(start=today, end=today))
     if not cal or cal[0].date != today:
         return None
-    c = cal[0]
-
-    def as_et(x):
-        return x.replace(tzinfo=ET) if x.tzinfo is None else x.astimezone(ET)
-
-    return as_et(c.open), as_et(c.close)
+    s = session_from_row(cal[0])
+    return s.open, s.close
 
 
 CALENDAR_TRIES, CALENDAR_RETRY_S = 3, 5.0
@@ -128,13 +125,25 @@ def _session_for_run(client):
     return session
 
 
-def _load_specs(file, secrets):
+def _recent_calendar(client, today: dt.date, alert=notify) -> Calendar:
+    """The last ten days' exchange sessions, read once at startup, so prior sessions that closed
+    early are cut at their close. Unreadable: alerts, and those days count as regular sessions."""
+    try:
+        return fetch_calendar(client, today - dt.timedelta(days=10), today)
+    except Exception as e:
+        alert("info", f"couldn't read the recent exchange calendar ({e!r}): an early close in the last few "
+                      "days is treated as a full session for prior-day features and the feature gate")
+        return Calendar()
+
+
+def _load_specs(file, secrets, calendar: Calendar | None = None):
     """Gate custom features on recent history, then validate the classifier file."""
     from trader.classifier import load_specs_report
     from trader.features.harness import run_gate
 
+    calendar = calendar or Calendar()
     end = dt.datetime.now(ET) - dt.timedelta(minutes=20)
-    samples = gate_samples(lambda days: {s: split_sessions(b) for s, b in fetch_alpaca(
+    samples = gate_samples(lambda days: {s: calendar.trim(split_sessions(b)) for s, b in fetch_alpaca(
         ["SPY", "QQQ"], end - dt.timedelta(days=days), end, secrets).items()})
     report = run_gate(config.CUSTOM_FEATURES_DIR, samples, alert=notify)
     if report.errors:
@@ -285,20 +294,22 @@ def tick_bars(engine: Engine, rest: RestBars, live: dict[str, pd.DataFrame], tic
     return bars, live.get("SPY", pd.DataFrame())
 
 
-def prev_day_bars(symbols: list[str], day: dt.date, now: dt.datetime, secrets, alert=notify) -> dict[str, pd.DataFrame]:
+def prev_day_bars(symbols: list[str], day: dt.date, now: dt.datetime, secrets, alert=notify,
+                  calendar: Calendar | None = None) -> dict[str, pd.DataFrame]:
     """The features' prev_day for each symbol: the last session before `day`, with SIP's prices
     (the official close, for gap and prior-day levels) and IEX's volume, the feed the live bars
     come from, so volume ratios compare like with like. These feed prev-day features only, so a
     failed fetch is never a reason to leave positions unmanaged: it alerts and those features
-    are NaN today."""
+    are NaN today. `calendar` cuts an early-closed prior session at its close."""
+    calendar = calendar or Calendar()
     start, end = now - dt.timedelta(days=7), now - dt.timedelta(minutes=16)
     try:
-        sip = {s: split_sessions(b) for s, b in fetch_alpaca(symbols, start, end, secrets).items()}
+        sip = {s: calendar.trim(split_sessions(b)) for s, b in fetch_alpaca(symbols, start, end, secrets).items()}
     except Exception as e:
         alert("urgent", f"could not fetch recent history at startup: {e}; prev-day features are NaN today")
         return {}
     try:
-        iex = {s: split_sessions(b) for s, b in fetch_alpaca(symbols, start, end, secrets, feed="iex").items()}
+        iex = {s: calendar.trim(split_sessions(b)) for s, b in fetch_alpaca(symbols, start, end, secrets, feed="iex").items()}
     except Exception as e:
         alert("urgent", f"could not fetch recent IEX history at startup: {e}; prior-session volume is NaN today "
                         "(rel_volume_15m and the like); price levels are unaffected")
@@ -355,6 +366,24 @@ def count_live_session(mode: str, day: dt.date, live_dir, alert=None) -> None:
                                     "Set live_sessions to 0 there before the account goes live again.")
 
 
+def _record_missed_demotion(golive, session: dt.date) -> None:
+    """A start after the close never processes the session again, but a crash between the close
+    and after_session would otherwise lose a live-halt demotion: still `live`, the account would go
+    live again once the halt is cleared, with no `release-live`. So if go-live is live and the live
+    book is halted, demote now (after_session is idempotent per session date, so a session already
+    processed is untouched). Nothing else of after_session runs here: a crashed session never counts
+    towards the veto window or arms the gate. Never raises."""
+    try:
+        if golive.load_state()["status"] != "live":
+            return
+        p = BOOKS_DIR / "live" / "risk.json"
+        if p.exists() and json.loads(p.read_text()).get("halted"):
+            golive.after_session(notify, live_book_halted=True, session=session)
+    except Exception as e:
+        notify("urgent", f"post-close check for a missed live-halt demotion failed: {e!r}. If the live book is "
+                         "halted, run `trader hold-live` before clearing it.")
+
+
 def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
     from trader.jev import JevClient, StubDecider
 
@@ -387,6 +416,7 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
                                          f"{sorted(held)}. The runner closes them after tomorrow's open; check Alpaca now.")
                 except Exception as e:
                     notify("urgent", f"[{kind.lower()}] post-close position check failed: {e}")
+        _record_missed_demotion(golive, open_.date())
         print("session already over")
         return 0
     mode = golive.resolve_mode(notify, live_equity, session=open_.date())
@@ -410,8 +440,9 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
         }))
         time.sleep(30)
 
+    recent = _recent_calendar(paper.client, open_.date(), notify)
     try:
-        specs = _load_specs(file, secrets)
+        specs = _load_specs(file, secrets, recent)
     except Exception as e:
         notify("urgent", f"classifiers.yaml invalid, trading nothing today: {e}")
         specs = []
@@ -451,7 +482,7 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
     base, extra = session_symbols(specs, engine.unique_books())
     symbols = base + extra
     now = dt.datetime.now(ET)
-    prev = prev_day_bars(base, open_.date(), now, secrets, notify)
+    prev = prev_day_bars(base, open_.date(), now, secrets, notify, recent)
     # The opening equity row is stamped at the open, or now if starting later (#50).
     engine.start_day(open_.date(), prev, settled_at_open, opened_at=max(open_, now))
     engine.write_status(now, (close - now).total_seconds() / 60)
@@ -742,6 +773,10 @@ def clear_halt(book: str) -> str:
         return f"{book} is not halted: nothing changed"
     if _runner_live():
         return "the runner is running (it holds NAV in memory): retry after it exits after the close; nothing changed"
+    if book == "live":  # first, so a failure leaves the halt in place: never back to live unreleased
+        from trader import golive
+
+        golive.demote_on_halt_cleared(notify)  # a demotion lost to a crash after the close
     risk.update(halted=False)
     risk.pop("reason", None)
     if book == "live":  # a live halt ends the stint: whatever the path back (even mode.yaml), half size again

@@ -353,7 +353,7 @@ def resolve_mode(notify, live_equity=None, session: dt.date | None = None) -> st
         st.update(status="live", live_since=day.isoformat())
         if not save_state(st, expected):
             return "paper"  # golive.json changed under us (a HOLD, or a release): never go live on a stale read
-        notify("urgent", f"GOING LIVE today with ${eq:.2f} (half size for the first week). Veto any time: HOLD LIVE on the dashboard.")
+        notify("urgent", f"GOING LIVE today with ${eq:.2f} (half size for the first 5 live sessions). To stop today: STOP on the dashboard. HOLD LIVE returns to paper from the next session.")
     return "live" if st["status"] == "live" else "paper"
 
 
@@ -397,6 +397,22 @@ def after_session(notify, live_book_halted: bool = False, session: dt.date | Non
     for n in notices:
         notify(*n)
     return st
+
+
+def demote_on_halt_cleared(notify) -> bool:
+    """Called when a human clears a live halt. A live halt always demotes (after_session), so a
+    `live` state here means that session's after_session never ran (a crash after the close). Demote
+    now, so going live again still needs `trader release-live`. True if it demoted. Under the lock;
+    a non-live state is left alone."""
+    with _state_lock():
+        st = load_state()
+        if st["status"] != "live":
+            return False
+        st.update(status="demoted", demoted_on=session_date().isoformat(), demoted_by="clear-halt")
+        _write_state(st)
+    notify("urgent", "Go-live was still LIVE when the live halt was cleared (the halted session's end was never "
+                     "processed): demoted to paper now. Going live again needs `trader release-live`.")
+    return True
 
 
 def hold(notify, by: str = "cli") -> str:
