@@ -161,6 +161,7 @@ FAKE_UV = r"""#!/bin/bash
 mode=""; [[ -n "${TRADER_DATA_ROOT:-}" ]] && mode=$(cat "$TRADER_DATA_ROOT/config/mode.yaml" 2>/dev/null)
 echo "uv $* | cwd=$PWD | TRADER_DATA_ROOT=${TRADER_DATA_ROOT:-} | mode=$mode" >> "$FAKE_LOG"
 [[ "$1" == run ]] && env | grep '^TRADER_' | sort > "$FAKE_LOG.testenv"  # everything TRADER_* the tests see
+[[ "$1" == run ]] && env | cut -d= -f1 | grep -v '^FAKE_' | sort > "$FAKE_LOG.testvars"  # and every other name
 case "$1" in
     sync) [[ "$PWD" == "${FAKE_CODE_DIR:-}" ]] && exit "${FAKE_SWITCH_SYNC_RC:-0}"  # the switch's sync
           mkdir -p .venv/bin && cp "$FAKE_TRADER" .venv/bin/trader ;;
@@ -169,6 +170,7 @@ case "$1" in
 esac
 """
 FAKE_TRADER = r"""#!/bin/bash
+env | grep '^TRADER_' | sort > "$FAKE_LOG.env-$1"  # everything TRADER_* this subcommand sees
 echo "trader $* | TRADER_DATA_ROOT=${TRADER_DATA_ROOT:-} | TRADER_STRATEGIST_ROOT=${TRADER_STRATEGIST_ROOT:-} | TRADER_RUNTIME=${TRADER_RUNTIME:-} | TRADER_SECRETS=${TRADER_SECRETS:-}" >> "$FAKE_LOG"
 case "$1" in
     deploy-plan) [[ -n "${FAKE_PLAN_OUT:-}" ]] && echo "$FAKE_PLAN_OUT"; exit "${FAKE_PLAN_RC:-0}" ;;
@@ -266,6 +268,8 @@ class Rig:
             ("/home/trader/.config/systemd/user", str(self.trader_units)),
             ("-p /var/tmp", f"-p {self.scratch}"),
             ("OWNER=runner ", f"OWNER={getpass.getuser()} "),
+            # The candidate tests' env -i allowlist also passes the fakes' own settings.
+            ("TEST_ENV=(HOME=", "mapfile -d '' -t TEST_ENV < <(env -0 | grep -z '^FAKE_'); TEST_ENV+=(HOME="),
         ]
         for old, new in subs:
             assert old in text, f"the script no longer contains {old!r}: update the test rig"
@@ -361,19 +365,35 @@ LIVE_ENV = {  # what a shell with services.env loaded (or a developer's) might c
     "TRADER_REPLAY_DIR": "/live/replays", "TRADER_SECRETS": "/live/env", "TRADER_CONFIG": "/live/config.yaml",
     "TRADER_CODE_ROOT": "/live/code", "TRADER_TEST_DATA_ROOT": "/live/data", "TRADER_STRATEGIST_STAMP": "/live/.last_run",
 }
+OTHER_ENV = {  # not TRADER_*, but they could still change what the candidate's tests run or reach
+    "PYTHONPATH": "/live/code/src", "VIRTUAL_ENV": "/live/code/.venv", "UV_PROJECT_ENVIRONMENT": "/live/code/.venv",
+    "PYTEST_ADDOPTS": "-p no:randomly", "ALPACA_API_KEY": "live-key",
+}
+TEST_ENV_NAMES = {"HOME", "USER", "LOGNAME", "PATH", "LANG", "XDG_RUNTIME_DIR", "TRADER_DATA_ROOT"}
 
 
 @pytest.mark.parametrize("two_repo", [False, True])
 def test_candidate_tests_run_with_a_clean_trader_environment(tmp_path, two_repo):
     rig = Rig(tmp_path, split=two_repo)
     rig.push(rig.code_origin, {"src/app.py": "VERSION = 2\n"})
-    r = rig.run(FAKE_PLAN_OUT="PR 0123456789 #9 merged", **LIVE_ENV)
+    r = rig.run(FAKE_PLAN_OUT="PR 0123456789 #9 merged", **LIVE_ENV, **OTHER_ENV)
     assert r.returncode == 0, r.stdout + r.stderr
     seen = (tmp_path / "log.testenv").read_text().splitlines()
     if two_repo:  # only the candidate data, set explicitly
         assert len(seen) == 1 and seen[0].startswith(f"TRADER_DATA_ROOT={rig.scratch}/")
     else:
         assert seen == []
+    # A fixed allowlist (bash and uv add a few of their own, like PWD and SHLVL), never the caller's environment.
+    names = set((tmp_path / "log.testvars").read_text().split())
+    assert names.isdisjoint(OTHER_ENV) and names >= TEST_ENV_NAMES - {"TRADER_DATA_ROOT"}
+    assert names - TEST_ENV_NAMES <= {"PWD", "SHLVL", "OLDPWD", "_"}, names - TEST_ENV_NAMES
+    if two_repo:  # the candidate data checks see only the TRADER_* they set, none of the caller's
+        checks = {"config": {"TRADER_CODE_ROOT", "TRADER_DATA_ROOT"},
+                  "validate": {"TRADER_CODE_ROOT", "TRADER_DATA_ROOT", "TRADER_STRATEGIST_ROOT", "TRADER_RUNTIME", "TRADER_SECRETS"}}
+        for sub, expected in checks.items():
+            env = dict(ln.split("=", 1) for ln in (tmp_path / f"log.env-{sub}").read_text().splitlines())
+            assert set(env) == expected, sub
+            assert not any(v.startswith("/live/") for v in env.values()), sub
 
 
 # ---- two-repo layout
@@ -617,6 +637,19 @@ def test_ownership_preflight_refuses_what_it_cannot_check(tmp_path):
         r = bash(helpers(OWNER=getpass.getuser()) + f"foreign_files {tmp_path / 'code'}")
     finally:
         (tmp_path / "code" / "locked").chmod(0o700)
+    assert r.returncode == 1 and "REFUSING" in r.stderr and "Permission denied" in r.stderr
+
+
+@needs_non_root
+def test_ownership_preflight_checks_through_a_symlinked_checkout(tmp_path):
+    """chmod -R follows a checkout that is itself a symlink, so the check must look through it too."""
+    write(tmp_path / "real", {"locked/f": "x"})
+    (tmp_path / "code").symlink_to(tmp_path / "real")
+    (tmp_path / "real" / "locked").chmod(0)  # stands in for a file it would refuse: one it can't check
+    try:
+        r = bash(helpers(OWNER=getpass.getuser()) + f"foreign_files {tmp_path / 'code'}")
+    finally:
+        (tmp_path / "real" / "locked").chmod(0o700)
     assert r.returncode == 1 and "REFUSING" in r.stderr and "Permission denied" in r.stderr
 
 

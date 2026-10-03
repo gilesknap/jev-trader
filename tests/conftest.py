@@ -10,7 +10,7 @@ loaded at import):
    root becomes a session copy of templates/data/strategist: never the live strategist checkout.
 3. Otherwise, if this tree has no config.yaml of its own (the public code repo), a session copy of
    templates/data/main and templates/data/strategist, with the deploy files rendered into it.
-4. Otherwise (a monorepo checkout with its own config.yaml, as deployed today), nothing changes.
+4. Otherwise (a pre-split monorepo checkout with its own config.yaml), nothing changes.
 
 Whatever the data root, the tests never write outside tmp: TRADER_RUNTIME (with the replay dir and the
 strategist stamps under it) is always a session tmp dir, since a developer's shell may export the live ones,
