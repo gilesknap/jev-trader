@@ -17,7 +17,7 @@
 # rendered files must match, and the strategist's live specs are validated (a warning only).
 # The switch also refuses while a strategist run is live (it holds its run lock). Without
 # a checkout there (setup leaves the directory empty), everything below behaves as the
-# single-repo deploy always has.
+# single-repo deploy always has, except that it refuses a code-only target (no config.yaml).
 set -euo pipefail
 umask 027
 DRY=0; [[ "${1:-}" == "--dry-run" ]] && DRY=1
@@ -27,6 +27,7 @@ export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 export PATH="/usr/local/bin:/usr/bin:/bin"
 export GIT_PAGER=cat  # #170: git must never page under a pty; the review diff goes through less -R on purpose
 CODE_DIR=/srv/trading/main
+OWNER=runner  # every file in the checkouts must be runner's, or the switch's chmod fails half way
 CONFIG_DIR="${TRADER_DEPLOY_CONFIG_DIR:-/srv/trading/config}"  # a checkout here selects the two-repo layout
 STRATEGIST_DIR=/srv/trading/strategist
 RUNTIME_DIR=/srv/trading/runtime
@@ -156,7 +157,9 @@ inspect_repo() {  # DIR BASE TARGET PLAINFILE LABEL FULL: show, refuse or plan o
         exit 1
     fi
     # Which commits came through a merged PR? Asked of the deployed code and key, never the candidate's.
-    planout=$("$PLAN_TRADER" deploy-plan --repo "$dir" --base "$base" --target "$target" 2>&1) && rc=0 || rc=$?
+    # `trader` loads config.yaml at import: in the two-repo layout it lives only in the deployed data.
+    planout=$(if (( ${SPLIT:-0} )); then export TRADER_DATA_ROOT="$CONFIG_DIR"; fi
+              "$PLAN_TRADER" deploy-plan --repo "$dir" --base "$base" --target "$target" 2>&1) && rc=0 || rc=$?
     case $rc in
         0) echo "=== ${label}merged pull requests (GitHub-signed merge commits; review happened in each PR) ==="
            echo "$planout" | sed 's/^PR /  /' ;;
@@ -255,9 +258,29 @@ strategist_units_hint() {  # CODE DATA OLD_CODE OLD_DATA: say when trader should
     echo "      As trader, reinstall them: bash $CODE_DIR/deploy/setup/2-strategist.sh"
 }
 # --- end two-repo helpers ---
+# --- ownership pre-flight (tests/test_trading_deploy_split.py runs this function) ---
+# The switch resets each checkout and then runs chmod -R on it. A single file there owned by anyone
+# else makes chmod fail after the code has switched and before the data has: a partial switch. So
+# check first, and refuse with the list. A file find can't reach fails the check too.
+foreign_files() {  # DIR...: refuse when anything under the DIRs isn't owned by OWNER
+    local out rc=0 n
+    out=$(find "$@" ! -user "$OWNER" -printf '  %u  %p\n' 2>&1) || rc=$?
+    if [[ $rc == 0 && -z $out ]]; then return 0; fi
+    n=$(grep -c '' <<< "$out")
+    echo "REFUSING: these files under $* aren't owned by $OWNER (or can't be checked), so the switch would fail half way; nothing was changed:" >&2
+    head -n 50 <<< "$out" >&2
+    if (( n > 50 )); then echo "  ... and $(( n - 50 )) more" >&2; fi
+    echo "Find out how they got there. Then, as admin, remove them or give them to $OWNER (sudo chown -h $OWNER <file>), and deploy again." >&2
+    return 1
+}
+# --- end ownership pre-flight ---
 (( DRY )) || runner_idle || exit 1  # fail fast, before the review and the tests
 SPLIT=0; layout=0; split_layout || layout=$?
 case $layout in 0) SPLIT=1 ;; 1) ;; *) exit 1 ;; esac
+CHECKOUTS=("$CODE_DIR"); (( SPLIT )) && CHECKOUTS+=("$CONFIG_DIR")
+if ! foreign_files "${CHECKOUTS[@]}"; then  # fail fast (a dry run only reports it)
+    if (( DRY )); then echo "dry run: the ownership pre-flight would refuse now (see above)"; else exit 1; fi
+fi
 if (( SPLIT )); then  # fail fast on the strategist interlock too (a dry run only reports it)
     if lock_strategist; then unlock_strategist
     elif (( DRY )); then echo "dry run: the strategist interlock would refuse now (see above)"
@@ -273,6 +296,12 @@ if (( SPLIT )); then
     if [[ $OLD_CODE == "$TARGET" && $OLD_DATA == "$TARGET_DATA" ]]; then
         echo "already at origin/main in both repos (code ${OLD_CODE:0:7}, data ${OLD_DATA:0:7}); nothing to deploy"; exit 0
     fi
+elif ! git cat-file -e "$TARGET:config.yaml" 2>/dev/null; then
+    # The public code repo carries no deployment data: deployed alone, the runner would find no
+    # config.yaml and no trader-runner.timer at its next start.
+    echo "REFUSING: origin/main (${TARGET:0:7}) has no config.yaml, so it is code only, and $CONFIG_DIR holds no data checkout; nothing was changed." >&2
+    echo "Clone your data repo's main into $CONFIG_DIR (the two-repo layout, docs/how-to/migrate-to-split.md), or, rolling back, point origin at your private repository again." >&2
+    exit 1
 elif [[ "$(git rev-parse HEAD)" == "$TARGET" ]]; then
     echo "already at origin/main ($(git rev-parse --short HEAD)); nothing to deploy"; exit 0
 fi
@@ -313,7 +342,9 @@ fi
 # Test the candidate in a throwaway worktree with its own venv BEFORE touching the live copy:
 # if the tests fail, /srv/trading/main is unchanged and the runner keeps its current code.
 # In the two-repo layout the candidate data is a second throwaway worktree, and the tests and
-# checks read it through TRADER_DATA_ROOT.
+# checks read it through TRADER_DATA_ROOT. The tests run with every other TRADER_* variable
+# unset: one inherited from a shell with services.env loaded (TRADER_STRATEGIST_ROOT, say) would
+# point them at live data, since tests/conftest.py respects what is already set.
 cand=$(mktemp -d -p /var/tmp)  # not /tmp: may be a small tmpfs, and the venv is large
 dcand=""
 switching=0  # 1 from taking the switch lock until the units are reloaded
@@ -350,7 +381,7 @@ partial_switch_help() {  # RC: a step of the switch failed, so the checkouts may
     } >&2
 }
 echo "testing $what in a temporary checkout..."
-if ! (cd "$cand" && { (( ! SPLIT )) || export TRADER_DATA_ROOT="$dcand"; } \
+if ! (cd "$cand" && unset "${!TRADER_@}" && { (( ! SPLIT )) || export TRADER_DATA_ROOT="$dcand"; } \
         && uv sync -q --frozen --extra dev && uv run --frozen pytest -q tests); then
     if (( SPLIT )); then
         echo "TESTS FAILED: nothing deployed; the runner keeps code ${OLD_CODE:0:7} + data ${OLD_DATA:0:7}" >&2
@@ -365,7 +396,8 @@ if (( SPLIT )); then
     validate_strategist "$cand" "$dcand"
 fi
 # The switch. A session (or, two-repo, a strategist run) that started during the review or the
-# tests wins: refuse, change nothing.
+# tests wins: refuse, change nothing. So does a file runner doesn't own.
+foreign_files "${CHECKOUTS[@]}" || exit 1
 if (( SPLIT )); then
     lock_strategist || { echo "the tests passed, but deploy $what again after the strategist run" >&2; exit 1; }
 fi

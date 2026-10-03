@@ -18,8 +18,7 @@ tutorial uses `../my-data`), and check your diff before you push.
 ## Before you open a pull request
 
 - Run the tests: `env -u TRADER_DATA_ROOT uv run --extra dev pytest -q`. A checkout of the code
-  has no `config.yaml` of its own (once a follow-up removes the placeholder left over from before
-  the split), so the tests run against a temporary copy of `templates/data/` (see
+  has no `config.yaml` of its own, so the tests run against a temporary copy of `templates/data/` (see
   `tests/conftest.py`), unless `TRADER_DATA_ROOT` is already set, in which case they use that
   directory: hence the `env -u`, in case you exported it for development. To run them against your
   own data checkout on purpose, set `TRADER_TEST_DATA_ROOT` to it.
