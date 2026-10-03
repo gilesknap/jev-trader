@@ -9,7 +9,7 @@ import os
 import sys
 from pathlib import Path
 
-from trader import config
+from trader import __version__, config
 from trader import features as F
 
 
@@ -430,6 +430,7 @@ def cmd_features(a):
 def build_parser() -> argparse.ArgumentParser:
     """The `trader` command line (also rendered into the docs' CLI reference)."""
     p = argparse.ArgumentParser(prog="trader", description="Run, inspect and control the trading system.")
+    p.add_argument("--version", action="version", version=__version__)
     sub = p.add_subparsers(required=True)
     default_file = str(config.CLASSIFIERS_FILE)
 

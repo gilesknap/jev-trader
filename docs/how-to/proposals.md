@@ -33,7 +33,7 @@ host), committed and pushed by the wrapper like any other strategist file. The i
    ```bash
    git switch -c <topic> <deployed sha>
    git am /path/to/data-repo/proposals/<topic>/*.patch
-   uv run --extra dev pytest -q
+   uv run pytest -q
    ```
 
    If upstream has moved on, rebase the branch onto it and fix any conflicts yourself.

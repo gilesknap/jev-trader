@@ -1,10 +1,20 @@
+[build-system]
+# The template uses setuptools + setuptools_scm. An editable setuptools build writes into the source
+# tree (src/trader.egg-info, the version file), and the strategist's venv is built from the
+# deployed checkout, which it can't write. hatch-vcs takes the version from git the same way
+# (setuptools_scm) and writes nothing.
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
 [project]
 name = "trader"
-version = "0.1.0"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
 description = "Autonomous Opus day-trading experiment: strategist + Jev classifier runner"
-requires-python = ">=3.12"
-license = "Apache-2.0"
-license-files = ["LICENSE"]
 dependencies = [
     "alpaca-py>=0.40",
     "httpx>=0.27",
@@ -15,13 +25,23 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn>=0.30",
 ]
+dynamic = ["version"]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+readme = "README.md"
+requires-python = ">=3.12"
 
 [project.optional-dependencies]
+# Transitional: a trading-deploy installed before the dependency groups syncs `--extra dev`. Remove
+# once every host has reinstalled trading-deploy (deploy/setup/3-runner.sh install).
 dev = ["pytest>=8", "yfinance>=0.2.50"]
 
 [dependency-groups]
-# The documentation site (docs/). Not installed by the runtime or the deploy:
-#   uv run --group docs sphinx-build -W --keep-going docs build/html
+# The runtime venvs (the runner's, the strategist's) sync with --no-dev, so they get none of these.
+# Running the tests: what trading-deploy's candidate run, trader-test and setup install.
+# httpx2: Starlette's TestClient (the dashboard tests) deprecates plain httpx in favour of it.
+test = ["httpx2", "pytest>=8", "pytest-cov", "yfinance>=0.2.50"]
+# The documentation site (docs/).
 docs = [
     "sphinx>=8",
     "myst-parser>=4",
@@ -30,26 +50,151 @@ docs = [
     "sphinx-design>=0.6",
     "sphinxcontrib-mermaid>=1",
     "sphinx-argparse>=0.5",
+    "sphinx-autobuild",
+]
+# Development: everything (`uv sync` installs it by default).
+dev = [
+    { include-group = "test" },
+    { include-group = "docs" },
+    "pre-commit",
+    "pyright",
+    "ruff",
+    "tox-uv",
+    "types-mock",
 ]
 
 [project.scripts]
 trader = "trader.cli:main"
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[project.urls]
+GitHub = "https://github.com/gilesknap/jev-trader"
+
+[[project.authors]] # Further authors may be added by duplicating this section
+email = "gilesknap@users.noreply.github.com"
+name = "Giles Knap"
+
+[tool.hatch.version]
+source = "vcs"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/trader"]
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
+[tool.uv]
+# Rebuild the editable install when the commit changes, so its version follows git.
+cache-keys = [{ file = "pyproject.toml" }, { git = { commit = true, tags = true } }]
 
 [tool.pyright]
 # The template's default is "strict" (or "standard"). This codebase starts at "basic" and moves up as
 # the type errors are burned down; the type-checking CI job comes on once it is clean.
 typeCheckingMode = "basic"
 reportMissingImports = false # Ignore missing stubs in imported modules
+
+[tool.pytest.ini_options]
+# Don't spam us with massive tracebacks on error. (The template adds -vv; trading-deploy prints the
+# test run, so it stays at pytest's default verbosity here.)
+addopts = """
+    --tb=native --doctest-modules --doctest-glob="*.rst"
+    """
+# https://iscinumpy.gitlab.io/post/bound-version-constraints/#watch-for-warnings
+filterwarnings = [
+    "error",
+    # alpaca-py's stream client imports websockets.legacy (third-party; nothing to fix here).
+    "ignore:websockets.legacy is deprecated:DeprecationWarning",
+]
+# Doctest python code in src docstrings, test functions in tests. Not docs (the template's third
+# path): it has no .rst, and collecting docs/conf.py would import it, which repoints
+# TRADER_DATA_ROOT in os.environ for every later subprocess in the run.
+testpaths = "src tests"
+
+[tool.coverage.run]
+patch = ["subprocess"]
+data_file = "/tmp/trader.coverage"
+
+[tool.coverage.paths]
+# Tests are run from installed location, map back to the src directory
+source = ["src", "**/site-packages/"]
+
+[tool.tox]
+skipsdist = true
+# envs to runs automatically with tox -p
+env_list = ["pre-commit", "type-checking", "tests", "docs"]
+
+[tool.tox.env_run_base]
+# Pass all environment variables to the test environments
+passenv = ["*"]
+
+[tool.tox.env.pre-commit]
+description = "Run pre-commit on all files"
+commands = [
+    [
+        "pre-commit",
+        "run",
+        "--all-files",
+        "--show-diff-on-failure",
+        { replace = "posargs", default = [
+        ], extend = true },
+    ],
+]
+
+[tool.tox.env.type-checking]
+description = "Run pyright"
+commands = [
+    [
+        "pyright",
+        "--pythonpath",
+        "{env:VIRTUAL_ENV}/bin/python",
+        "src",
+        "tests",
+        { replace = "posargs", default = [
+        ], extend = true },
+    ],
+]
+
+[tool.tox.env.tests]
+description = "Run tests with coverage"
+commands = [
+    [
+        "pytest",
+        "--cov=trader",
+        "--cov-report",
+        "term",
+        "--cov-report",
+        "xml:cov.xml",
+        { replace = "posargs", default = [
+        ], extend = true },
+    ],
+]
+
+[tool.tox.env.docs]
+description = "Run docs build with clean environment"
+commands = [
+    [
+        "sphinx-build",
+        "--fresh-env",
+        "--show-traceback",
+        "--fail-on-warning",
+        "--keep-going",
+        "docs",
+        "build/html",
+        { replace = "posargs", default = [
+        ], extend = true },
+    ],
+]
+
+[tool.tox.env.docs-autobuild]
+description = "Run docs with autobuild on change"
+commands = [
+    [
+        "sphinx-autobuild",
+        "--show-traceback",
+        "--watch",
+        "README.md",
+        "docs",
+        "build/html",
+        { replace = "posargs", default = [
+        ], extend = true },
+    ],
+]
 
 [tool.ruff]
 src = ["src", "tests"]

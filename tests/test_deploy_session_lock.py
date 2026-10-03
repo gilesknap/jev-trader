@@ -133,14 +133,14 @@ def test_lock_is_held_only_around_the_switch():
 
     main = at("# --- end session lock ---")
     assert at("runner_idle || exit 1", main) < at("git fetch", main)  # fail fast, holding nothing
-    assert "lock_switch" not in SCRIPT[main : at("uv run --frozen pytest", main)]
-    for step in ("less -R", "read -r -p", "uv run --frozen pytest"):
+    assert "lock_switch" not in SCRIPT[main : at("uv run --frozen --no-dev --group test pytest", main)]
+    for step in ("less -R", "read -r -p", "uv run --frozen --no-dev --group test pytest"):
         assert at(step, main) < at("lock_switch ||", main)
     switch = at("lock_switch ||", main)
     assert (
         switch
         < at("git reset -q --hard", main)
-        < at("uv sync -q --frozen --extra dev\n", switch)
+        < at("uv sync -q --frozen --no-dev\n", switch)
         < at("daemon-reload", switch)
         < at("unlock_switch", switch)
         < at("restart trader-dashboard", switch)
@@ -264,7 +264,10 @@ def test_strategist_lock_is_taken_only_around_the_switch_and_only_in_the_two_rep
     body = SCRIPT[main:]
     take = body.index("lock_strategist || {")
     assert (
-        body.index("uv run --frozen pytest") < take < body.index("lock_switch ||") < body.index("git reset -q --hard")
+        body.index("uv run --frozen --no-dev --group test pytest")
+        < take
+        < body.index("lock_switch ||")
+        < body.index("git reset -q --hard")
     )
     assert body.rfind("if (( SPLIT )); then", 0, take) > body.rfind("fi\n", 0, take), (
         "the switch-time take is split-only"

@@ -65,12 +65,12 @@ if [[ -n $SPLIT ]]; then
     # trader's own venv of the deployed code (#169 section 6.2): runner's venv isn't readable by
     # trader. uv needs no write access to $CODE for this (checked: --frozen leaves uv.lock alone,
     # and UV_PROJECT_ENVIRONMENT keeps it from creating $CODE/.venv). The editable install's .pth
-    # points at $CODE/src, so trader always runs exactly the deployed code. The dev extra is for
-    # trader-test (proposal clones, section 14 item 4).
+    # points at $CODE/src, so trader always runs exactly the deployed code. --no-dev leaves out the
+    # dev tools; the test group (pytest) is for trader-test (proposal clones, section 14 item 4).
     VENV=$HOME/.local/share/trader/venv
     mkdir -p "$(dirname "$VENV")"
     chmod 750 "$(dirname "$VENV")"   # nobody outside trader's group needs it once runner can enter ~
-    UV_PROJECT_ENVIRONMENT=$VENV uv sync -q --frozen --extra dev --project "$CODE"
+    UV_PROJECT_ENVIRONMENT=$VENV uv sync -q --frozen --no-dev --group test --project "$CODE"
     mkdir -p ~/.local/bin
     install -m 755 "$CODE/scripts/trader-shim" ~/.local/bin/trader
     install -m 755 "$CODE/scripts/trader-python" ~/.local/bin/trader-python
@@ -78,7 +78,7 @@ if [[ -n $SPLIT ]]; then
     UNIT_SRC=$CODE/deploy/systemd-trader
     TIMER_SRC=$CONFIG_CHECKOUT/deploy/systemd-trader
 else
-    uv sync -q --extra dev
+    uv sync -q --no-dev --group test
     UNIT_SRC=deploy/systemd-trader
     TIMER_SRC=deploy/systemd-trader
 fi

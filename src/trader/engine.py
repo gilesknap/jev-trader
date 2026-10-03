@@ -15,6 +15,7 @@ import io
 import json
 import math
 import time
+import weakref
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -469,6 +470,7 @@ class Engine:
         self._outage_errors = 0
         self._tick_started = 0.0
         self._decisions_fh = None
+        self._decisions_finalizer: weakref.finalize | None = None
         self.last_tick: dt.datetime | None = None
         self.prices: dict[str, float] = {}  # last closes seen, for a flatten outside the tick
         self.flattened_at: dt.datetime | None = None  # the last minute flatten_for_close ran
@@ -587,9 +589,17 @@ class Engine:
         self._floor_trades_from_ledger(today)
         ddir = self.run_dir / "decisions"
         ddir.mkdir(exist_ok=True)
+        self._close_decisions()
+        self._decisions_fh = (ddir / f"{day.isoformat()}.jsonl").open("a")
+        # end_day closes it; an engine dropped without one (a crash, a test) closes it when collected.
+        self._decisions_finalizer = weakref.finalize(self, self._decisions_fh.close)
+
+    def _close_decisions(self) -> None:
+        if self._decisions_finalizer is not None:
+            self._decisions_finalizer.detach()
+            self._decisions_finalizer = None
         if self._decisions_fh:
             self._decisions_fh.close()
-        self._decisions_fh = (ddir / f"{day.isoformat()}.jsonl").open("a")
 
     def _read_equity(self, b: Book) -> float | None:
         """Equity, retried briefly; None (alerted) if it still can't be read. Never raises (#119)."""
@@ -865,7 +875,7 @@ class Engine:
         self._mark_spy(now, prune=True)
         self._record_benchmark()
         if self._decisions_fh:
-            self._decisions_fh.close()
+            self._close_decisions()
             self._decisions_fh = None
             path = self.run_dir / "decisions" / f"{self.day.isoformat()}.jsonl"
             if path.exists():

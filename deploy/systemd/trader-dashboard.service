@@ -6,7 +6,7 @@ EnvironmentFile=%h/.config/trading/services.env
 WorkingDirectory=/srv/trading/main
 UMask=0027
 ExecStartPre=/bin/rm -f %t/trader-dashboard.sock
-ExecStart=/usr/local/bin/uv run --frozen trader dashboard --uds %t/trader-dashboard.sock
+ExecStart=/usr/local/bin/uv run --frozen --no-dev trader dashboard --uds %t/trader-dashboard.sock
 Restart=always
 
 [Install]

@@ -196,9 +196,23 @@ class FeatureSandbox:
         self.errors |= rep.get("errors", {})
 
     def close(self) -> None:
-        if self._proc and self._proc.poll() is None:
-            self._proc.kill()
-        self._proc = None
+        p, self._proc = self._proc, None
+        if p is None:
+            return
+        if p.poll() is None:
+            p.kill()
+        # Reap it and close the pipes: a killed worker left to the garbage collector is a zombie
+        # until then, with two open pipes.
+        try:
+            p.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+        for f in (p.stdin, p.stdout):
+            try:
+                if f:
+                    f.close()
+            except (OSError, ValueError):  # a broken pipe on the final flush
+                pass
 
     # ---- requests ----------------------------------------------------------------
 

@@ -70,12 +70,12 @@ install)
         [[ -d $CONFIG_CHECKOUT/.git ]] || as_runner bash -c "umask 027 && git clone -q -b main $REPO $CONFIG_CHECKOUT"
         as_runner bash -c "cd $CONFIG_CHECKOUT && git pull -q --ff-only"
         as_runner chmod -R g-w,o-rwx "$CONFIG_CHECKOUT"   # trader reads it; only runner writes it
-        as_runner bash -c "cd /srv/trading/main && git pull -q --ff-only && uv sync -q --frozen --extra dev && TRADER_DATA_ROOT=$CONFIG_CHECKOUT uv run pytest -q tests"
+        as_runner bash -c "cd /srv/trading/main && git pull -q --ff-only && uv sync -q --frozen --no-dev --group test && TRADER_DATA_ROOT=$CONFIG_CHECKOUT uv run --frozen --no-dev --group test pytest -q tests && uv sync -q --frozen --no-dev"
         UNIT_FILES="/srv/trading/main/deploy/systemd/*.service /srv/trading/main/deploy/systemd/trader-watchdog.timer $CONFIG_CHECKOUT/deploy/systemd/trader-runner.timer"
         SERVICES_ENV=$CONFIG_CHECKOUT/deploy/systemd/trader.env
     else
         [[ -d /srv/trading/main/.git ]] || as_runner bash -c "umask 027 && git clone -q $REPO /srv/trading/main"
-        as_runner bash -c 'cd /srv/trading/main && git pull -q --ff-only && uv sync -q --frozen --extra dev && uv run pytest -q tests'
+        as_runner bash -c 'cd /srv/trading/main && git pull -q --ff-only && uv sync -q --frozen --no-dev --group test && uv run --frozen --no-dev --group test pytest -q tests && uv sync -q --frozen --no-dev'
         UNIT_FILES="/srv/trading/main/deploy/systemd/*.service /srv/trading/main/deploy/systemd/*.timer"
         SERVICES_ENV=/srv/trading/main/deploy/systemd/trader.env
     fi
