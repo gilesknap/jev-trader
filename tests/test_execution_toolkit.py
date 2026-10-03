@@ -86,8 +86,38 @@ LIMIT = {"type": "limit", "offset_pct": 0.05, "expire_min": 5}
 def test_limit_entry_fills_below_the_last_price(tmp_path, session):
     path = [100.0] * 10 + [99.9] * 380  # dips through the 99.95 limit at bar 10
     book, t = run(tmp_path, session(path=path), [spec(entry_order=LIMIT)], Always())
-    assert t.side.iloc[0] == "buy" and t.price.iloc[0] == pytest.approx(99.95)
+    assert t.side.iloc[0] == "buy" and t.price.iloc[0] == pytest.approx(99.95 * 1.0005)  # plus slippage
     assert t.time.iloc[0].startswith("2026-09-21T09:41")
+
+
+def test_sim_limit_fill_pays_the_same_slippage_as_a_market_entry():
+    """A limit entry saves the offset, never the cost of trading: the simulated fill, the cash
+    and the position all carry the same 0.05% as a market entry, so neither style looks better
+    in sim and replay just for the way it is simulated."""
+    b = SimBroker(1000.0)
+    t0 = dt.datetime(2026, 10, 5, 10, 0, tzinfo=ET)
+    oid = b.buy_limit("SPY", 2.0, 99.0, t0, "c")
+    idx = pd.date_range(t0, periods=2, freq="1min")
+    b.update_bars({"SPY": pd.DataFrame({"open": [99.5, 98.5], "high": [99.6, 98.6], "low": [99.4, 98.0],
+                                        "close": [99.5, 98.5], "volume": [1, 1]}, index=idx)})
+    st = b.order_state(oid)
+    assert st.status == "filled" and st.price == pytest.approx(98.5 * 1.0005)  # gapped below: the open, plus slippage
+    assert b.positions["SPY"].avg_price == pytest.approx(st.price)
+    assert b.cash == pytest.approx(1000.0 - 2.0 * 98.5 * 1.0005)
+    m = SimBroker(1000.0).buy_notional("SPY", 197.0, 98.5, t0, "m")
+    assert m.price == pytest.approx(st.price)  # the same price as a market entry at that reference
+
+
+def test_a_broker_limit_fill_is_still_booked_no_higher_than_its_limit(tmp_path, session):
+    """Only the simulated broker's haircut may lift a limit fill above the limit: a real broker's
+    fill reported above it (a rounding artefact) is booked at the limit, as before."""
+    class Real(SimBroker):
+        name = "fake-real"
+        limit_slippage = 0.0
+
+    path = [100.0] * 10 + [99.9] * 380  # dips through the 99.95 limit at bar 10
+    book, t = run_with(tmp_path, session(path=path), [spec(entry_order=LIMIT)], Real(250.0), upto=20)
+    assert t.side.iloc[0] == "buy" and t.price.iloc[0] == pytest.approx(99.95)
 
 
 def test_a_filled_limit_drops_its_resting_note(tmp_path, session):
