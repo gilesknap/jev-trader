@@ -16,7 +16,7 @@ import pandas as pd
 from trader import config
 from trader.broker import SimBroker
 from trader.classifier import ClassifierSpec
-from trader.data import ET, fetch, split_sessions
+from trader.data import ET, fetch, prior_sessions, split_sessions
 from trader.engine import Book, Engine
 
 
@@ -62,12 +62,7 @@ def replay(
                     alert=lambda level, msg: day_alerts.append(f"{level}: {msg}"))
     results = {}
     for day in days:
-        prev = {}
-        for s, per in sessions.items():
-            earlier = [d for d in per if d < day]
-            if earlier:
-                prev[s] = per[max(earlier)]
-        engine.start_day(day, prev)
+        engine.start_day(day, prior_sessions(sessions, day))  # one feed throughout: its own volume
         day_alerts.clear()
         today = {s: per[day] for s, per in sessions.items() if day in per}
         stamps = sorted(set().union(*(b.index for b in today.values())))
