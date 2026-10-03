@@ -103,7 +103,9 @@ filled in is checked only against the stop.) Per bar:
 
 1. **Stop:** the bar's low at or below the stop exits. It's tested first, because the order of
    prices inside a bar is unknown, so the engine assumes the worst.
-2. **Target:** the bar's high at or above the target exits.
+2. **Target:** the bar's high at or above the target exits. No profit order rests at the broker,
+   so this is a market sell once the touch has been seen, at the latest price, not a fill at the
+   target: a high that reverses within the minute is not a profit the engine could have taken.
 3. **Scale-out** (`scale_out: {at_pct, fraction, stop_to_breakeven}`): the first time the high
    reaches `at_pct`% above the entry, `fraction` of the position is sold; with
    `stop_to_breakeven`, the stop rises to the entry price.

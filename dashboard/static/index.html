@@ -108,6 +108,7 @@ details.fold > .inner { padding: 0 16px 14px; }
 .table-wrap { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
 th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--rule); white-space: nowrap; vertical-align: baseline; }
+td.wrap { white-space: normal; min-width: 24em; max-width: 40em; }
 th { color: var(--ink2); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; font-stretch: 85%; }
 td.num, th.num { text-align: right; }
 td.num { font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
@@ -278,7 +279,8 @@ code { font-family: var(--mono); font-size: .9em; }
     <div class="table-wrap" id="positions"></div></section>
   <section><h2>Rules right now <span>what each classifier is doing, per stock</span></h2>
     <details class="about"><summary>About the rules</summary>
-      <p>Each classifier watches a few stocks. Every few minutes it asks <b>Jev</b> (a decision model) whether to act, and only acts when Jev's confidence is above the classifier's threshold. The bars show Jev's last answer, tallest first in the label. <b>control_orb</b> is a deliberately simple benchmark the strategist has to beat.</p></details>
+      <p>Each classifier watches a few stocks. Every few minutes it asks <b>Jev</b> (a decision model) whether to act, and only acts when Jev's confidence is above the classifier's threshold. The bars show Jev's last answer, tallest first in the label. <b>control_orb</b> is a deliberately simple benchmark the strategist has to beat.</p>
+      <p>Jev is only asked once a rule's <b>trigger</b> passes (for example, price above the opening range's high). <b>Today so far</b> says how often each stock was checked, how often Jev was asked, and why it wasn't: the trigger didn't pass (with the values the last time it missed), or the check was skipped (stale market data, Jev paused after errors, the account blocked). Hover it for the raw counts. Zero Jev calls on a quiet day is normal when the trigger never passed.</p></details>
     <div class="table-wrap" id="classifiers"></div></section>
 </div>
 
@@ -709,6 +711,8 @@ function render(d) {
           p.map(([k, v]) => `<i class="${v === top ? "top" : ""}" style="height:${Math.max(2, v * 18)}px"></i>`).join("") + "</span>" +
           `<span class="pmeta">${[...p].sort((a, b) => b[1] - a[1]).map(([k, v], i) => i ? `${esc(k)} ${Math.round(v * 100)}%` : `<b>${esc(k)} ${Math.round(v * 100)}%</b>`).join(" · ")}</span>`; } },
     { h: "asked at", v: r => r.x.last_eval || "–", num: 1 }, { h: "note", v: r => r.x.note || "" },
+    // Why Jev was or wasn't asked: the engine's counts for today, summarised by the server.
+    { h: "today so far", raw: 1, cls: () => "wrap", v: r => r.probe || !r.x.why ? "" : `<span class="pmeta" title="${esc(Object.entries(r.x.counts || {}).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(", "))}">${esc(r.x.why)}</span>` },
   ], rows, r => r.first ? "grp" : "", "No rules loaded yet. The runner loads them shortly before the open.");
 
   // The server sends every fill from today (a replay: its last day) and a bounded tail before them, newest first.
@@ -905,7 +909,7 @@ function renderScore(sb) {
   const b = sb.books[scoreBook];
   $("slipnote").textContent = b.slippage_per_side_pct ? "charged here, as the go-live gate does" : "already in the simulated fills";
   $("bookpick").innerHTML = (names.length > 1 ? `<div class="segs">${names.map(n => `<button data-b="${esc(n)}" class="${n === scoreBook ? "on" : ""}">${esc(n)}</button>`).join("")}</div>` : "") +
-    (scoreBook === "sim" && sb.source === "live" ? '<p class="note">Sim rules, each trading its own simulated $250 account on the live prices. Fills are simulated (the bar close with slippage; stops and targets at their own level), so they flatter a strategy a little, and <b>none of this counts towards going live</b>: a rule has to trade on paper for that.</p>' : "");
+    (scoreBook === "sim" && sb.source === "live" ? '<p class="note">Sim rules, each trading its own simulated $250 account on the live prices. Fills are simulated (the bar close with slippage; stops at their own level), so they flatter a strategy a little, and <b>none of this counts towards going live</b>: a rule has to trade on paper for that.</p>' : "");
   $("bookpick").querySelectorAll("button[data-b]").forEach(x => x.onclick = () => { scoreBook = x.dataset.b; renderScore(sb); });
   $("famtiles").innerHTML = b.families.map(f => `<div class="stat family ${esc(f.family)}"><span class="l">${famBadge(f.family)} ${f.classifiers} rule${f.classifiers === 1 ? "" : "s"} · ${f.n} trades</span>` +
     `<span class="n ci ${cls(f.mean_pct)}" title="average per trade after slippage, with 95% interval">${pp(f.mean_pct)}<small> ± ${f.ci_pct == null || !isFinite(f.ci_pct) ? "–" : Math.abs(f.ci_pct).toFixed(2)}</small></span>` +

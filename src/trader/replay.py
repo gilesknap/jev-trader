@@ -70,9 +70,15 @@ def replay(
         for ts in stamps:
             now = ts + pd.Timedelta(minutes=1)  # bar labelled 09:30 is complete at 09:31
             bars = {s: b.loc[:ts] for s, b in today.items()}
+            # The engine decides on bars up to `ts` only. A market order it sends now executes at
+            # the next bar's open, not at the close it just saw; none after the last bar of
+            # the session: the close, as the live runner would.
+            book.broker.next_open = {s: float(b.open.iloc[i]) for s, b in today.items()
+                                     for i in [b.index.searchsorted(ts, side="right")] if i < len(b)}
             engine.tick(now.to_pydatetime(), bars, (close - now).total_seconds() / 60)
             if pace:
                 time.sleep(pace)
+        book.broker.next_open = {}
         results[day.isoformat()] = engine.end_day(close)
         if day_alerts:
             results[day.isoformat()]["alerts"] = list(day_alerts)
