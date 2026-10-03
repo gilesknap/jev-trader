@@ -2,8 +2,8 @@
 
 All data comes from files: the runner's RUNTIME_DIR (status, books, replays) and
 the strategist's state/ and journal/. Every route requires a Tailscale identity in
-TRADER_DASHBOARD_USERS; with no identity header, only TRADER_DASHBOARD_ALLOW_LOCAL=1
-(dev) lets requests through.
+config.yaml's dashboard.users (TRADER_DASHBOARD_USERS overrides it, for development only);
+with no identity header, only TRADER_DASHBOARD_ALLOW_LOCAL=1 (dev) lets requests through.
 """
 
 from __future__ import annotations
