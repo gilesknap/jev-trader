@@ -142,7 +142,7 @@ def test_recent_returns_are_one_minute_apart():
 
 
 def test_minutes_since_open_is_the_same_in_the_gate_as_live(tmp_path, monkeypatch):
-    """Bar n of the session is minute n (the first bar is 1, at the 09:31 tick) in the engine, in
+    """Bar n of a full session is minute n (the first bar is 1, at the 09:31 tick) in the engine, in
     the custom-feature gate and in the probe log's `m`; minutes_to_close agrees too."""
     from trader.features import harness
 
@@ -154,12 +154,13 @@ def test_minutes_since_open_is_the_same_in_the_gate_as_live(tmp_path, monkeypatc
         seen[len(bars)] = (c.minutes_since_open, c.minutes_to_close)
         return 0.0
     monkeypatch.setitem(F.REGISTRY, "clock_probe", record)
-    bars = make_session(day=DAY, n=45)
+    bars = make_session(day=DAY, n=390)
     harness.evaluate(["clock_probe"], [(bars, bars, bars)])
     gate, seen = dict(seen), {}
     _, rows = run(tmp_path, bars, [probe_spec(features=["clock_probe"], cadence_min=1, window=("09:31", "15:30"))],
                   Always(entry="STAND_DOWN"))
     live = dict(seen)
     assert live[2] == (2, 388) and gate[31] == (31, 359)  # the engine asks from the second bar
-    assert {n: live[n] for n in gate} == gate
+    both = sorted(set(gate) & set(live))  # the gate from bar 31, the probe from 09:32 to its 15:30 window end
+    assert len(both) > 300 and {n: live[n] for n in both} == {n: gate[n] for n in both}
     assert rows[0]["t"] == "09:32" and [r["m"] for r in rows][:3] == [2, 3, 4]

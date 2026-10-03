@@ -121,7 +121,7 @@ symbols at a short cadence: thousands of scored predictions a week, against the 
 a traded classifier makes.
 
 `trader probe-report` joins those rows to later SIP minute bars and asks two questions per probe
-and horizon (15, 30 and 60 minutes by default, cut at the 15:45 flatten):
+and horizon (15, 30 and 60 minutes by default, cut at the flatten, 15 minutes before the close: 15:45, or 12:45 on an early close):
 
 1. **Does P(ENTER) rank later returns?** The information coefficient (IC) is the Spearman rank
    correlation between P(ENTER) and the forward return, computed within each day and averaged
