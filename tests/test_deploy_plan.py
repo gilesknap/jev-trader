@@ -26,7 +26,10 @@ def keys(tmp_path_factory):
         fprs[name] = next(line.split(":")[9] for line in out.splitlines() if line.startswith("fpr"))
     pub = home / "github.gpg"
     pub.write_text(sh("gpg", "--homedir", str(home), "--batch", "--armor", "--export", fprs["github"]))
-    return home, fprs, pub
+    yield home, fprs, pub
+    # Key generation and signing start a gpg-agent for this homedir that would outlive the run.
+    if shutil.which("gpgconf"):
+        subprocess.run(["gpgconf", "--homedir", str(home), "--kill", "gpg-agent"], capture_output=True)
 
 
 class Repo:

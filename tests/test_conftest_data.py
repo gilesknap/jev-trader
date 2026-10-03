@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from conftest import TEMPLATE_DATA, _use_template_data
+from conftest import TEMPLATE_DATA, TEST_RUNTIME, TEST_STRATEGIST_ALERTS, _use_template_data
+from trader import config
 
 
 @pytest.fixture
@@ -84,3 +85,9 @@ def test_a_data_root_with_its_own_state_is_its_own_strategist_root(public, data_
     env = {"TRADER_DATA_ROOT": str(data_main)}
     assert _use_template_data(env, public) is None
     assert "TRADER_STRATEGIST_ROOT" not in env
+
+
+def test_the_suite_writes_runtime_files_and_alerts_only_into_tmp():
+    """Never the live runtime dir or the strategist checkout's alerts log, whatever the environment."""
+    assert config.RUNTIME_DIR == TEST_RUNTIME
+    assert config.STRATEGIST_ALERTS == TEST_STRATEGIST_ALERTS
