@@ -147,7 +147,9 @@ Fills are simulated (`src/trader/broker.py`):
   as on paper (a target is a market sell once the touch is seen, not a resting order);
 - stops at their level (or the bar's open, if it gapped through), less 0.05%;
 - limit entries only when a later bar trades strictly below the limit, at the limit (or the open,
-  if lower), with no slippage.
+  if lower), plus 0.05%: the same cost a market entry pays, so a limit-entry rule doesn't look
+  better than a market-entry one just because of how it is simulated. The booked price can
+  therefore sit up to 0.05% above the limit, which a real limit order never would.
 
 That flatters a strategy a little, more so on thin names. Sim trades count towards nothing; to
 promote an idea it moves to `mode: shadow`, and only its paper trades count from then on.

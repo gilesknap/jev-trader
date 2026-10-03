@@ -9,8 +9,8 @@
 #   repo's main (with the deploy key, on the data repo) to /srv/trading/config, tests the code against
 #   that config, and installs the services and trader-watchdog.timer from the code and
 #   trader-runner.timer from the config. TRADER_DATA_ROOT (where config.yaml is read from) is needed
-#   only before /srv/trading/config exists; without it the code's placeholder config.yaml is read,
-#   and its your-github-user/... slug is refused. Once that checkout exists, a re-run is in split mode
+#   only before /srv/trading/config exists; without it there is no config.yaml to read (the code
+#   carries none), and the script stops. Once that checkout exists, a re-run is in split mode
 #   without the flag; without it and without --split, everything runs exactly as before the split.
 set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo "run with sudo" >&2; exit 1; }
