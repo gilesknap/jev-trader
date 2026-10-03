@@ -4,7 +4,8 @@ The strategist designs what to trade; it never decides how much can be lost. Eve
 page is code, in the runner's checkout of the code repository, which the strategist can't write
 and its GitHub token can't reach. Changing one needs a pull request that a human reviews, merges
 and deploys. Whatever `classifiers.yaml` says,
-the runner enforces these.
+the runner enforces these. Compare [beebots](related-work.md#three-camps), which also puts a
+plain-code risk layer under a model that makes each call.
 
 The layers, from a single order up to the whole account:
 

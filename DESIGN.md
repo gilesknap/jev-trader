@@ -17,7 +17,7 @@ not links to this repository's tracker.
 Opus 5.5 strategist gets ~£200 (held as USD) and autonomy to invent and run an intraday strategy.
 - Primary: beat buy-and-hold SPY risk-adjusted, net of slippage (measured on unit NAV).
 - Standing aside is a valid outcome; every classifier needs a written reason.
-- Exploration mandate: ≥1 genuinely novel hypothesis per week, in shadow or sim, or investigated and rejected before trading; each with a falsifiable record and a pre-registered decision checkpoint; failures recorded (charter; `docs/explanations/hypotheses.md`).
+- Exploration mandate: ≥1 genuinely novel hypothesis per week, in shadow or sim, or investigated and rejected before trading; each with a falsifiable record and a pre-registered decision checkpoint; failures recorded (charter; `docs/explanations/hypotheses.md`; compare AQuA in `docs/explanations/related-work.md`).
 - Honest self-assessment in the weekly report ("what I believed that was wrong", paper-vs-live, luck vs edge), published as a weekly issue in the data repo.
 - Quarterly reviews (first at 3 months, mid-point at 6 weeks); runs indefinitely if successful.
 

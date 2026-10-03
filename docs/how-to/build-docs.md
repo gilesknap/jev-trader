@@ -33,5 +33,8 @@ Pages → Source** to **GitHub Actions** on it.
 - Plain text only: the deploy tool refuses binary files and invisible or bidirectional Unicode
   characters. Draw diagrams in Mermaid (a `mermaid` code fence), never as images.
 - Describe the code as it is; check a claim against `src/trader/` before writing it.
+- An issue or pull request that adopts an idea from outside work adds the reference to
+  [Related work](../explanations/related-work.md), and links that entry from the page that
+  documents the feature. Say "from" only when the idea was taken from it, otherwise "compare".
 - Pages follow the [Diátaxis](https://diataxis.fr) split: tutorials, how-to guides, explanations
   and reference.
