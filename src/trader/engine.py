@@ -508,6 +508,7 @@ class Engine:
                                   f"({b.realised_today:.2f}) as today's realised loss")
             b.trades_today, b.wins_today = 0, 0
         self._restore_classifier_state(today)
+        self._floor_trades_from_ledger(today)
         ddir = self.run_dir / "decisions"
         ddir.mkdir(exist_ok=True)
         if self._decisions_fh:
@@ -656,6 +657,36 @@ class Engine:
             self._alert_every("classifier-state", "urgent", f"{self._classifier_state_file().name} had damaged entries for "
                                  f"{', '.join(damaged)}: they start fresh, so today's trade count and any "
                                  "stand-down for them are lost. Open positions are still managed.")
+
+    def _floor_trades_from_ledger(self, today: str) -> None:
+        """A rule's trade count can never be below what its book's trades.csv shows it opened today:
+        every position the engine opens writes an ENTER row at once, while classifier_state.json
+        is saved only at the end of the tick. So a fill booked after the last save, a crash between
+        the row and the save, or an unreadable state file (fresh start) no longer lets a rule
+        exceed max_trades. A rule raised to its limit while armed is retired, as after an exit.
+        Best-effort: an unreadable ledger changes nothing (restore_realised already reported it)."""
+        counts: dict[tuple[str, str], int] = {}
+        for b in self.unique_books():
+            p = b.dir / "trades.csv"
+            try:
+                with p.open(newline="") as f:
+                    for r in csv.DictReader(f):
+                        if (r.get("side") == "buy" and str(r.get("reason") or "").startswith("ENTER")
+                                and not str(r.get("reason")).startswith("ENTER (late fill)")
+                                and str(r.get("time") or "").startswith(today)):
+                            key = (r.get("classifier") or "", r.get("symbol") or "")
+                            counts[key] = counts.get(key, 0) + 1
+            except (OSError, ValueError, csv.Error):
+                continue
+        for cs in self.states:
+            if cs.spec.probe:
+                continue
+            for sym, st in cs.symbols.items():
+                n = counts.get((cs.spec.id, sym), 0)
+                if n > st.trades:
+                    st.trades = n
+                    if st.status == "armed":
+                        cs.on_exit(sym)  # re-arms only if the rule allows another trade today
 
     def _resume_symbol(self, cs: ClassifierState, sym: str, st, status: str, trades: int) -> None:
         """Set a symbol's restored state, matched to what its book holds now."""

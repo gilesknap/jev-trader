@@ -183,3 +183,43 @@ def test_cli_rejects_bad_replay_names():
     for bad in ["..", "../x", "/tmp/x", "a/b", ".hidden"]:
         with pytest.raises(SystemExit):
             main(["replay", "--name", bad, "--decider", "stub"])
+
+
+def test_unreadable_state_file_still_counts_todays_entries_from_the_ledger(tmp_path, session):
+    """A rule that already traded today can't trade again after a restart that lost the state
+    file: its book's trades.csv says it opened a position, and that floors the count."""
+    bars = session(path=[100.0] * 390)
+    day = bars.index[0].date()
+    book, eng = make(tmp_path, [spec(max_trades=1, after_exit="rearm")])
+    eng.start_day(day, {})
+    ticks(eng, bars, 0, 20)
+    assert eng.states[0].symbols["SPY"].trades == 1
+    book.broker.sell_all("SPY", 100.0, None, "x")  # closed while the runner was down
+    (tmp_path / "classifier_state.json").write_text("{not json")
+    alerts = []
+    book2 = Book("sim", book.broker, tmp_path / "sim")
+    book2.entries.clear()
+    eng2 = Engine([spec(max_trades=1, after_exit="rearm")], {"live": book2, "shadow": book2}, Always(), {"SPY"}, tmp_path,
+                  alert=lambda level, msg: alerts.append((level, msg)))
+    eng2.start_day(day, {})
+    st = eng2.states[0].symbols["SPY"]
+    assert st.trades == 1 and st.status == "retired"
+    assert any(level == "urgent" and "unreadable" in msg for level, msg in alerts)
+    ticks(eng2, bars, 20, 60)
+    assert (pd.read_csv(tmp_path / "sim" / "trades.csv").side == "buy").sum() == 1  # no second entry today
+
+
+def test_ledger_floor_rearms_when_the_rule_allows_more_trades(tmp_path, session):
+    bars = session(path=[100.0] * 390)
+    day = bars.index[0].date()
+    book, eng = make(tmp_path, [spec(max_trades=3, after_exit="rearm")])
+    eng.start_day(day, {})
+    ticks(eng, bars, 0, 20)
+    book.broker.sell_all("SPY", 100.0, None, "x")
+    (tmp_path / "classifier_state.json").unlink()  # crashed before the first save
+    book2 = Book("sim", book.broker, tmp_path / "sim")
+    book2.entries.clear()
+    eng2 = Engine([spec(max_trades=3, after_exit="rearm")], {"live": book2, "shadow": book2}, Always(), {"SPY"}, tmp_path)
+    eng2.start_day(day, {})
+    st = eng2.states[0].symbols["SPY"]
+    assert st.trades == 1 and st.status == "armed"

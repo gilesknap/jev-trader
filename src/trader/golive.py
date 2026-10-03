@@ -177,22 +177,33 @@ def enforce_promotion(specs, notify, account_live: bool, today: dt.date | None =
     for s in specs:
         if s.probe:
             continue  # probes never trade: no promotion record, and nothing on the scoreboard
-        h = spec_hash(s, digest)
-        rec = state.get(s.id)
-        if not rec or rec["hash"] != h:
-            state[s.id] = rec = {"hash": h, "since": today}
-        rec["family"] = s.family_label  # kept after the classifier is retired, for the scoreboard
-        if s.mode == "live" and not s.control:
-            n, exp = shadow_record(s.id, rec["since"], book_dir, rec["hash"])
-            if n < MIN_TRADES or exp is None or exp <= 0:
+        try:
+            h = spec_hash(s, digest)
+            rec = state.get(s.id)
+            if not isinstance(rec, dict) or rec.get("hash") != h:
+                state[s.id] = rec = {"hash": h, "since": today}
+            rec["family"] = s.family_label  # kept after the classifier is retired, for the scoreboard
+            if s.mode == "live" and not s.control:
+                n, exp = shadow_record(s.id, rec["since"], book_dir, rec["hash"])
+                if n < MIN_TRADES or exp is None or exp <= 0:
+                    s.mode = "shadow"
+                    if account_live:
+                        notify("urgent", f"{s.id} asked for live but has {n}/{MIN_TRADES} paper trades on its current spec "
+                                         f"(expectancy {'n/a' if exp is None else f'{exp:+.3f}%'}): running it in shadow")
+        except Exception as e:  # fail closed for this rule only: never abort the session for all of them
+            asked_live = s.mode == "live"
+            if asked_live:
                 s.mode = "shadow"
-                if account_live:
-                    notify("urgent", f"{s.id} asked for live but has {n}/{MIN_TRADES} paper trades on its current spec "
-                                     f"(expectancy {'n/a' if exp is None else f'{exp:+.3f}%'}): running it in shadow")
-    state_file.parent.mkdir(parents=True, exist_ok=True)
-    tmp = state_file.with_suffix(".tmp")
-    tmp.write_text(json.dumps(state, indent=1))
-    tmp.replace(state_file)
+            notify("urgent" if asked_live and account_live else "info",
+                   f"{s.id}: its promotion record couldn't be checked ({e!r}); "
+                   + ("running it in shadow" if asked_live else "its record is left as it was"))
+    try:
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp = state_file.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state, indent=1))
+        tmp.replace(state_file)
+    except OSError as e:  # the modes above already hold for today; the record is simply not advanced
+        notify("urgent", f"promotion record {state_file.name} couldn't be saved ({e!r}); today's modes are unaffected")
     return specs
 
 
