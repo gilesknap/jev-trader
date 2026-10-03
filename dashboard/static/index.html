@@ -310,6 +310,8 @@ code { font-family: var(--mono); font-size: .9em; }
       <div class="h2h" id="h2h"></div>
       <p class="note">The strategist labels each rule <span class="fam novel">novel</span> (its own idea) or <span class="fam conventional">conventional</span>. <span class="fam control">control</span> is the benchmark to beat. Rules the strategist removes from the file stay on the board, marked <i>removed</i>; <i>in use</i> means still in today's file, whether or not it's done trading for the day.</p></section>
   </div>
+  <section><h2>The objective <span>the whole book's daily return vs buy-and-hold SPY, quiet days included</span></h2>
+    <div class="table-wrap" id="dailybox"></div></section>
   <section><h2>Every rule</h2>
     <div class="table-wrap" id="scoretable"></div></section>
   <section>
@@ -318,6 +320,7 @@ code { font-family: var(--mono); font-size: .9em; }
       <dt>Race chart</dt><dd>Each rule's running profit or loss after slippage, as a % of the account's starting money, at the end of each trading day. The 1D/7D/1M/1Y buttons count back from the latest trading day, and every line starts the range at zero. Rules take positions of different sizes, so compare the verdicts too, not just the lines.</dd>
       <dt>Promotion</dt><dd>Closed paper trades on the rule's current settings. It needs 20, with positive average after slippage, before it may trade real money. Editing a rule (other than its label, mode or on/off) restarts the count.</dd>
       <dt>Why the intervals are wide</dt><dd>Trades on the same day share that day's market, so ten trades on one day are not ten separate pieces of evidence. The intervals count trading days, not just trades, and no verdict is given before 10 trades over 3 days.</dd>
+      <dt>The objective</dt><dd>The mission is to beat SPY on a risk-adjusted basis, so the whole book's return per session (from its unit NAV, so deposits don't count as gains, and including days nothing traded) is the measure that answers it. The per-trade figures elsewhere on this page describe the rules; they don't say whether the book is beating SPY. <b>Exposure</b> is the average share of the account held in positions during the session. The <b>vs SPY</b> interval treats sessions as independent, so read it as a rough guide.</dd>
       <dt>Family totals</dt><dd>A family's figures pool its trades, so a rule that trades often counts for more than one that trades rarely. Check the table to see whether one rule is carrying its family.</dd>
       <dt>One "ahead" rule among many</dt><dd>Each verdict is a 95% test, so with several rules on the board one will now and then look "ahead" by pure chance. Trust a result more when it holds for a family, not just one rule, and keeps holding as trades accumulate.</dd>
       <dt>Leaning the project one way</dt><dd>Wait until a family shows "ahead" with at least a few dozen trades before steering the strategist towards it. Fewer trades than that is a hypothesis, not evidence.</dd>
@@ -889,7 +892,19 @@ function scopePick(sb) {
 
 function scoreError(msg) {
   $("famtiles").innerHTML = `<div class="stat alert"><span class="l">scoreboard</span><span class="d">It couldn't load: ${esc(msg)}</span></div>`;
-  for (const id of ["bookpick", "h2h", "racerange", "race", "racelegend", "scoretable"]) $(id).innerHTML = "";
+  for (const id of ["bookpick", "h2h", "racerange", "race", "racelegend", "scoretable", "dailybox"]) $(id).innerHTML = "";
+}
+
+// The book's daily returns vs SPY on the same sessions (scoreboard.daily).
+function dailyBox(d) {
+  if (!d) return '<p class="muted">Appears once the book has marked a full session.</p>';
+  const bk = d.book_on_spy_days || d.book, row = (n, s, x) => s ? `<tr><td><b>${n}</b></td><td class="num">${s.days}</td><td class="num ${cls(s.total_pct)}">${pp(s.total_pct)}</td>` +
+    `<td class="num ${cls(s.mean_pct)}">${pp(s.mean_pct, 3)}</td><td class="num">${s.sd_pct == null ? "–" : s.sd_pct.toFixed(3) + "%"}</td><td class="num neg">${pp(s.max_drawdown_pct)}</td><td class="num">${x}</td></tr>` : "";
+  const v = d.vs_spy;
+  return `<table><thead><tr><th></th><th class="num">sessions</th><th class="num">total</th><th class="num">mean / day</th><th class="num">sd / day</th><th class="num">max drawdown</th><th class="num">exposure</th></tr></thead><tbody>` +
+    row("this book", bk, `${d.book.exposure_pct.toFixed(1)}% · traded ${d.book.days_traded} of ${d.book.days}`) + row("SPY buy-and-hold", d.spy, "100%") + "</tbody></table>" +
+    (v ? `<p class="note">Book minus SPY per session: <b class="${cls(v.mean_diff_pct)}">${ci(v.mean_diff_pct, v.ci_pct)}</b> over ${v.days} sessions <span class="verdict ${vcls(v.verdict)}">${esc(v.verdict)}</span></p>`
+       : '<p class="note">No SPY benchmark rows for these sessions yet.</p>');
 }
 
 function renderScore(sb) {
@@ -898,7 +913,7 @@ function renderScore(sb) {
   const names = Object.keys(sb.books);
   if (!names.length) {
     $("famtiles").innerHTML = '<div class="stat"><span class="l">no trades yet</span><span class="d">The board fills in as rules close trades.</span></div>';
-    for (const id of ["bookpick", "h2h", "racerange", "race", "racelegend", "scoretable"]) $(id).innerHTML = ""; return;
+    for (const id of ["bookpick", "h2h", "racerange", "race", "racelegend", "scoretable", "dailybox"]) $(id).innerHTML = ""; return;
   }
   if (!names.includes(scoreBook)) scoreBook = names.includes("paper") ? "paper" : names[0];
   const b = sb.books[scoreBook];
@@ -914,6 +929,7 @@ function renderScore(sb) {
   $("h2h").innerHTML = (h2h(`${famBadge("novel")} vs ${famBadge("conventional")}`, b.novel_vs_conventional) + h2h(`${famBadge("novel")} vs ${famBadge("control")}`, b.novel_vs_control))
     || '<p class="muted">Head-to-head comparisons appear once both sides have at least 2 closed trades.</p>';
   race(b);
+  $("dailybox").innerHTML = dailyBox(b.daily);
   $("scoretable").innerHTML = table([
     { h: "rule", raw: 1, v: r => `<b>${ruleLink(r.id)}</b> ${famBadge(r.family)}` },
     { h: "", raw: 1, v: r => `<span class="pill ${r.active ? "" : "retired"}">${r.active ? "in use" : "removed"}</span>` },

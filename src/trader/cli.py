@@ -315,6 +315,28 @@ def cmd_golive_status(a):
                       "gate_now": gate}, indent=1, default=str))
 
 
+def cmd_daily_returns(a):
+    """Each book's daily returns vs SPY (scoreboard.daily), for the weekly review. Read-only."""
+    import csv
+
+    from trader import scoreboard as SB
+
+    def rows(p: Path) -> list[dict]:
+        try:
+            with p.open(newline="") as f:
+                return list(csv.DictReader(f))
+        except OSError:
+            return []
+
+    books = config.RUNTIME_DIR / "books"
+    bench = rows(config.RUNTIME_DIR / "benchmark.csv")
+    since = a.since or SB.EXPERIMENT_START.isoformat()
+    out = {}
+    for d in sorted(p for p in books.glob("*") if (p / "equity.csv").exists()):
+        out[d.name] = SB.daily(rows(d / "equity.csv"), bench, rows(d / "trades.csv"), since)
+    print(json.dumps({"since": since, "books": out}, indent=1))
+
+
 def cmd_housekeeping(a):
     from trader.housekeeping import run
 
@@ -419,6 +441,9 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("golive", help="show go-live gate and state")
     s.set_defaults(fn=cmd_golive_status)
 
+    s = sub.add_parser("daily-returns", help="each book's daily returns, drawdown and exposure vs SPY (read-only)")
+    s.add_argument("--since", help="first day to include (default: the experiment's start date)")
+    s.set_defaults(fn=cmd_daily_returns)
     s = sub.add_parser("housekeeping", help="daily checks: API credit, token expiry, undeployed merges, disk")
     s.set_defaults(fn=cmd_housekeeping)
 

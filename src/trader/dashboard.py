@@ -353,7 +353,7 @@ def scoreboard(source: str = "live", all_days: bool | None = None):
             _csv(d / "trades.csv"), families, current, _num(eq[0].get("equity")) if eq else None,
             since=since if d.name == "paper" else None,  # the promotion record is kept on paper
             slippage_per_side_pct=SB.SLIPPAGE_PER_SIDE_PCT if source == "live" else 0.0,  # sim fills include it
-            from_date=from_date,
+            from_date=from_date, equity=eq, benchmark=_csv(base / "benchmark.csv"),
         )
     if _sim_dirs(source) or (source == "live" and sim_ids):
         from trader.broker import SIM_START_CASH

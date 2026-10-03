@@ -27,6 +27,14 @@ The dashboard's scoreboard (`src/trader/scoreboard.py`) shows, per classifier an
 dollars and promotion progress. Its race chart plots cumulative net P&L, and it compares novel
 against conventional and novel against the control.
 
+Those per-trade figures describe the rules; they don't say whether the book meets the objective.
+For that the scoreboard also shows each book's **daily return series** from its `equity.csv`
+(unit NAV, so deposits aren't gains; sessions with no trades included): total and mean return,
+volatility, max drawdown and exposure, next to buy-and-hold SPY on the same sessions and the
+paired daily difference with a rough 95% interval (sessions treated as independent). Two books
+with the same daily returns score the same however many trades they took. The strategist gets the
+same numbers from `trader daily-returns` for its weekly review.
+
 Each non-control classifier carries `family: novel` (the strategist's own hypothesis from what it
 observed, not a textbook indicator strategy) or `family: conventional` (anything else). It's an
 honest label, not behaviour: it doesn't change how the classifier trades or restart its record.
