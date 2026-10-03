@@ -11,6 +11,11 @@ loaded at import):
 3. Otherwise, if this tree has no config.yaml of its own (the public code repo), a session copy of
    templates/data/main and templates/data/strategist, with the deploy files rendered into it.
 4. Otherwise (a monorepo checkout with its own config.yaml, as deployed today), nothing changes.
+
+Whatever the data root, the tests never write outside tmp: TRADER_RUNTIME (with the replay dir and the
+strategist stamps under it) is always a session tmp dir, since a developer's shell may export the live ones,
+and config.STRATEGIST_ALERTS, which `notify` falls back to when the runtime dir is unwritable, points into tmp
+for every test (the `real_strategist_alerts` marker opts out).
 """
 
 import atexit
@@ -59,6 +64,11 @@ def _use_template_data(environ=os.environ, root: Path = ROOT) -> Path | None:
 
 
 TEST_DATA_ROOT = _use_template_data()
+TEST_RUNTIME = _session_tmp("trader-test-runtime-") / "runtime"
+TEST_RUNTIME.mkdir()
+os.environ["TRADER_RUNTIME"] = str(TEST_RUNTIME)
+os.environ.pop("TRADER_REPLAY_DIR", None)  # defaults under TRADER_RUNTIME
+os.environ["TRADER_STRATEGIST_STAMP"] = str(TEST_RUNTIME / ".last_run")
 
 # Only now may trader be imported.
 import numpy as np  # noqa: E402
@@ -85,6 +95,7 @@ TEST_START_DATE = dt.date(2026, 10, 5)
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "config_start_date: use config.yaml's experiment.start_date, unpinned")
+    config.addinivalue_line("markers", "real_strategist_alerts: leave config.STRATEGIST_ALERTS at its default")
 
 
 @pytest.fixture(autouse=True)
@@ -93,6 +104,15 @@ def pinned_start_date(request, monkeypatch):
         monkeypatch.setattr(golive, "START_DATE", TEST_START_DATE)
         monkeypatch.setattr(SB, "EXPERIMENT_START", TEST_START_DATE)
     return TEST_START_DATE
+
+
+TEST_STRATEGIST_ALERTS = _session_tmp("trader-test-alerts-") / "strategist-alerts.log"
+
+
+@pytest.fixture(autouse=True)
+def strategist_alerts_in_tmp(request, monkeypatch):
+    if request.node.get_closest_marker("real_strategist_alerts") is None:
+        monkeypatch.setattr(trader_config, "STRATEGIST_ALERTS", TEST_STRATEGIST_ALERTS)
 
 
 def make_session(day=dt.date(2026, 9, 21), start=100.0, drift=0.0, n=390, seed=0, path=None):
