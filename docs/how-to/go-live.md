@@ -54,7 +54,13 @@ uv run trader release-live
 ```
 
 This resets the state to pending; the gate is re-evaluated after each session from then on. Use it
-after a veto, or after clearing a live halt (which demotes go-live to paper).
+after a veto, or after clearing a live halt (which demotes go-live to paper). It's refused, with
+nothing changed, while the live book is still halted (or its `risk.json` can't be read): run
+`trader clear-halt live` after the close first.
+
+Every go-live alert (armed, countdown, disarmed, going live, demoted) is saved in `golive.json`
+with the change it announces until it has been sent, so a runner crash in between can't lose it:
+the next runner start sends it, marked "delayed by a runner restart".
 
 ## A corrupt `golive.json`
 

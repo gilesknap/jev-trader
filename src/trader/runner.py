@@ -555,6 +555,8 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
     secrets = config.load_secrets()
     from trader import golive
 
+    golive.resend_unsent(notify)  # go-live alerts a crash kept from going out (never raises)
+
     def live_equity():
         if not secrets.get("ALPACA_LIVE_KEY"):
             return None

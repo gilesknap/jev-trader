@@ -286,7 +286,10 @@ def cmd_release_live(a):
     from trader import golive
     from trader.alerts import notify
 
-    print(golive.release(notify))
+    msg = golive.release(notify)
+    print(msg)
+    if str(msg).startswith("refused"):
+        sys.exit(1)
 
 
 def cmd_golive_status(a):

@@ -35,6 +35,10 @@ MIN_LIVE_EQUITY = 100.0
 
 STATE_FILE = config.RUNTIME_DIR / "golive.json"
 PAPER_BOOK = config.RUNTIME_DIR / "books" / "paper"
+LIVE_BOOK = config.RUNTIME_DIR / "books" / "live"
+# Alerts saved in golive.json with the state change they announce, until they've been sent: a
+# crash between the save and the send leaves them there for resend_unsent() at the next start.
+UNSENT = "unsent_alerts"
 
 
 def session_date() -> dt.date:
@@ -237,6 +241,10 @@ def load_state() -> dict:
             raise ValueError("not an object with a known status")
         if type(st.get("sessions_left", 0)) is not int:
             raise ValueError("sessions_left is not an integer")
+        un = st.get(UNSENT, [])
+        if not isinstance(un, list) or not all(isinstance(n, list) and len(n) == 2 and all(isinstance(x, str) for x in n)
+                                               for n in un):
+            raise ValueError(f"{UNSENT} is not a list of [level, message]")
         return st
     except Exception as e:
         sha = hashlib.sha256(raw).hexdigest()[:12] if raw is not None else "unreadable"
@@ -367,9 +375,7 @@ def resolve_mode(notify, live_equity=None, session: dt.date | None = None) -> st
         if reasons:
             notices = []
             _disarm(st, day, reasons, notices)
-            if save_state(st, expected):  # a HOLD pressed meanwhile wins: then nothing to say
-                for n in notices:
-                    notify(*n)
+            _save_then_alert(st, expected, notices, notify)  # a HOLD pressed meanwhile wins: then nothing to say
             return "paper"
         try:
             eq = live_equity() if live_equity else None
@@ -380,9 +386,10 @@ def resolve_mode(notify, live_equity=None, session: dt.date | None = None) -> st
             notify("urgent", f"Go-live is due but the live account has ${eq or 0:.2f} (need ${MIN_LIVE_EQUITY:.0f}). Staying on paper; fund it to proceed.")
             return "paper"
         st.update(status="live", live_since=day.isoformat())
-        if not save_state(st, expected):
+        going = ("urgent", f"GOING LIVE today with ${eq:.2f} (half size for the first 5 live sessions). To stop today: "
+                           "STOP on the dashboard. HOLD LIVE returns to paper from the next session.")
+        if not _save_then_alert(st, expected, [going], notify):
             return "paper"  # golive.json changed under us (a HOLD, or a release): never go live on a stale read
-        notify("urgent", f"GOING LIVE today with ${eq:.2f} (half size for the first 5 live sessions). To stop today: STOP on the dashboard. HOLD LIVE returns to paper from the next session.")
     return "live" if st["status"] == "live" else "paper"
 
 
@@ -421,11 +428,49 @@ def after_session(notify, live_book_halted: bool = False, session: dt.date | Non
             g = st["last_gate"]["summary"]
             st.update(status="armed", armed_on=session.isoformat(), sessions_left=VETO_SESSIONS, gate=g)
             notices.append(("urgent", f"Go-live gate PASSED ({g}). Live trading starts after {VETO_SESSIONS} more paper sessions unless you press HOLD LIVE."))
-    if not save_state(st, expected):
+    if not _save_then_alert(st, expected, notices, notify):
         return load_state()
-    for n in notices:
-        notify(*n)
     return st
+
+
+def _save_then_alert(st: dict, expected: dict, notices: list, notify) -> bool:
+    """The compare-and-swap save of an automatic update, with its alerts saved in it (UNSENT); then
+    they're sent and cleared. A crash after the save can't lose them (resend_unsent), and a dropped
+    (stale) update sends nothing. True if saved."""
+    if notices:  # after any left by a failed earlier send, so neither is lost
+        st[UNSENT] = (st.get(UNSENT) or []) + [list(n) for n in notices]
+    if not save_state(st, expected):
+        st.pop(UNSENT, None)
+        return False
+    _send_and_clear(st, notify)
+    return True
+
+
+def _send_and_clear(st: dict, notify, prefix: str = "") -> None:
+    """Send `st`'s unsent alerts, then remove them from golive.json if they're still the ones there
+    (a HOLD or release meanwhile has replaced them). At least once: a crash between sending and
+    clearing re-sends them at the next start."""
+    sent = st.pop(UNSENT, None)
+    if not sent:
+        return
+    for level, msg in sent:
+        notify(level, prefix + msg)
+    with contextlib.suppress(Exception), _state_lock():
+        cur = load_state()
+        if cur.get(UNSENT) == sent:
+            cur.pop(UNSENT)
+            _write_state(cur)
+
+
+def resend_unsent(notify) -> None:
+    """At runner start: go-live alerts a crash stopped from going out after their state change was
+    saved (see _save_then_alert). Never raises."""
+    try:
+        st = load_state()
+        if st.get(UNSENT):
+            _send_and_clear(st, notify, prefix="(delayed by a runner restart) ")
+    except Exception:
+        pass
 
 
 def demote_on_halt_cleared(notify) -> bool:
@@ -437,6 +482,7 @@ def demote_on_halt_cleared(notify) -> bool:
         st = load_state()
         if st["status"] != "live":
             return False
+        st.pop(UNSENT, None)  # superseded (a GOING LIVE never sent): this alert says where things stand
         st.update(status="demoted", demoted_on=session_date().isoformat(), demoted_by="clear-halt")
         _write_state(st)
     notify("urgent", "Go-live was still LIVE when the live halt was cleared (the halted session's end was never "
@@ -452,6 +498,7 @@ def hold(notify, by: str = "cli") -> str:
         if prev == "corrupt":  # replaced by a clean veto, never merged into it (#115)
             aside = _set_aside_corrupt()
             st = {"corrupt_file": aside} if aside else {}
+        st.pop(UNSENT, None)  # superseded: this alert says where things stand now
         st.update(status="vetoed", vetoed_on=session_date().isoformat(), vetoed_by=by, vetoed_from=prev)
         _write_state(st)  # atomic: if it fails, a corrupt file is still in place and still reads corrupt
     notify("urgent", f"Go-live HELD by {by} (was {prev}{f', kept as {aside}' if aside else ''}). "
@@ -460,7 +507,18 @@ def hold(notify, by: str = "cli") -> str:
 
 
 def release(notify) -> str:
-    """Human re-arm after a veto or demotion: restarts the gate evaluation from scratch."""
+    """Human re-arm after a veto or demotion: restarts the gate evaluation from scratch. Refused
+    (nothing changed) while the live book is halted, or its risk state can't be read: clear the
+    halt first, or go-live could arm and switch to a live book that can't trade."""
+    try:
+        risk = LIVE_BOOK / "risk.json"
+        halted = risk.exists() and json.loads(risk.read_text()).get("halted")
+    except Exception as e:
+        return (f"refused: the live book's risk.json can't be read ({type(e).__name__}: {str(e)[:120]}); "
+                "nothing changed. Fix or remove it, then release again.")
+    if halted:
+        return ("refused: the live book is halted. Clear it first with `trader clear-halt live` (after the "
+                "close), then release again. Nothing changed.")
     st = {"status": "pending", "released_on": session_date().isoformat()}
     with _state_lock():
         if load_state()["status"] == "corrupt":
