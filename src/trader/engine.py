@@ -664,7 +664,9 @@ class Engine:
         is saved only at the end of the tick. So a fill booked after the last save, a crash between
         the row and the save, or an unreadable state file (fresh start) no longer lets a rule
         exceed max_trades. A rule raised to its limit while armed is retired, as after an exit.
-        Best-effort: an unreadable ledger changes nothing (restore_realised already reported it)."""
+        Counted across every book on purpose: a rule whose mode changed today (sim to shadow, say)
+        still traded today. Best-effort: an unreadable ledger changes nothing (restore_realised
+        already reported it)."""
         counts: dict[tuple[str, str], int] = {}
         for b in self.unique_books():
             p = b.dir / "trades.csv"

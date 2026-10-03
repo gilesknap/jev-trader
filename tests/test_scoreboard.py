@@ -112,6 +112,21 @@ def test_a_spec_that_cant_be_hashed_fails_closed_alone(tmp_path, monkeypatch):
     assert rec["good"]["since"] == "2026-10-06" and rec["meh"]["since"] == "2026-10-06"
 
 
+def test_corrupt_promotion_record_fails_closed_without_aborting(tmp_path):
+    """An unreadable promotion.json never stops the session: it's set aside, every record restarts
+    today (so nothing can go live on it) and the human is told."""
+    state = tmp_path / "promotion.json"
+    state.write_text("{not json")
+    notes = []
+    s = spec(id="idea", mode="live")
+    out = golive.enforce_promotion([s], lambda level, msg: notes.append((level, msg)), account_live=True,
+                                   today=dt.date(2026, 10, 6), book_dir=tmp_path, state_file=state, custom_dir=tmp_path)
+    assert out[0].mode == "shadow"
+    assert notes[0][0] == "urgent" and "unreadable" in notes[0][1] and "restarts today" in notes[0][1]
+    assert json.loads(state.read_text())["idea"]["since"] == "2026-10-06"
+    assert len(list(tmp_path.glob("promotion.json.corrupt-*"))) == 1
+
+
 def test_unsaveable_promotion_record_does_not_abort(tmp_path):
     notes = []
     state = tmp_path / "nodir" / "promotion.json"

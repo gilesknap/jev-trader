@@ -223,3 +223,25 @@ def test_ledger_floor_rearms_when_the_rule_allows_more_trades(tmp_path, session)
     eng2.start_day(day, {})
     st = eng2.states[0].symbols["SPY"]
     assert st.trades == 1 and st.status == "armed"
+
+
+def test_ledger_floor_counts_only_todays_entries_for_that_rule_and_symbol(tmp_path, session):
+    """A state file that is readable but behind (saved before the fill) is raised to the ledger;
+    late fills, other rules, other symbols and other days don't count."""
+    bars = session(path=[100.0] * 390)
+    day = bars.index[0].date()
+    book, eng = make(tmp_path, [spec(max_trades=2, after_exit="rearm")])
+    row = ("{t},sim,{c},{s},buy,1.000000,100.0000,100.00,{r},,\n")
+    (tmp_path / "sim" / "trades.csv").write_text(
+        "time,book,classifier,symbol,side,qty,price,notional,reason,pnl,pnl_pct\n"
+        + row.format(t=f"{day - dt.timedelta(days=1)}T10:00-04:00", c="t", s="SPY", r="ENTER")  # yesterday
+        + row.format(t=f"{day}T10:00-04:00", c="t", s="SPY", r="ENTER")
+        + row.format(t=f"{day}T10:03-04:00", c="t", s="SPY", r="ENTER (late fill)")  # same position
+        + row.format(t=f"{day}T10:05-04:00", c="other", s="SPY", r="ENTER")  # another rule
+        + row.format(t=f"{day}T10:06-04:00", c="t", s="QQQ", r="ENTER")  # a symbol the rule doesn't watch
+        + row.format(t=f"{day}T11:00-04:00", c="t", s="SPY", r="ENTER"))
+    (tmp_path / "classifier_state.json").write_text(json.dumps({"day": day.isoformat(), "states": {"t": {"SPY": {
+        "status": "armed", "trades": 0}}}}))  # saved before any fill
+    eng.start_day(day, {})
+    st = eng.states[0].symbols["SPY"]
+    assert st.trades == 2 and st.status == "retired"  # at its max_trades: retired, not re-armed

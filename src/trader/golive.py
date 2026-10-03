@@ -172,7 +172,22 @@ def enforce_promotion(specs, notify, account_live: bool, today: dt.date | None =
     shadow. The record is tracked in paper mode too, so it's ready when the account goes live."""
     state_file = state_file or PROMOTION_FILE
     today = (today or session_date()).isoformat()
-    state = json.loads(state_file.read_text()) if state_file.exists() else {}
+    try:
+        state = json.loads(state_file.read_text()) if state_file.exists() else {}
+        if not isinstance(state, dict):
+            raise ValueError("not a JSON object")
+    except (OSError, ValueError, RecursionError) as e:
+        # Fail closed, never abort the session: every record restarts today, so no rule can go live
+        # until it re-earns its paper record. The file is set aside for a look.
+        aside = state_file.with_name(f"{state_file.name}.corrupt-{dt.datetime.now(dt.UTC):%Y%m%dT%H%M%S%fZ}")
+        try:
+            state_file.replace(aside)
+            kept = f"moved to {aside.name}"
+        except OSError:
+            kept = "left in place"
+        notify("urgent", f"promotion record {state_file.name} is unreadable ({e!r}; {kept}): every classifier's "
+                         "record restarts today, so none can go live until it earns a fresh paper record")
+        state = {}
     digest = custom_features_digest(custom_dir)
     for s in specs:
         if s.probe:
@@ -195,8 +210,8 @@ def enforce_promotion(specs, notify, account_live: bool, today: dt.date | None =
             if asked_live:
                 s.mode = "shadow"
             notify("urgent" if asked_live and account_live else "info",
-                   f"{s.id}: its promotion record couldn't be checked ({e!r}); "
-                   + ("running it in shadow" if asked_live else "its record is left as it was"))
+                   f"{s.id}: its promotion check failed ({e!r}); "
+                   + ("running it in shadow" if asked_live else "it can't be promoted until that is fixed"))
     try:
         state_file.parent.mkdir(parents=True, exist_ok=True)
         tmp = state_file.with_suffix(".tmp")
