@@ -84,7 +84,7 @@ def _merge_csv(src, dst) -> int:
 
 def compact(dry_run: bool = False, today: dt.date | None = None, scope: str = "repo") -> dict:
     """scope "repo" runs as the strategist; scope "runtime" as the runner (owns runtime/)."""
-    today = today or dt.date.today()
+    today = today or config.ny_today()
     removed: list[str] = []
 
     def rm(p):

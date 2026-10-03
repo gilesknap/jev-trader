@@ -1075,7 +1075,10 @@ class Engine:
         return False
 
     def _ask(self, spec, sym, now, sb, feats, pos, kind):
-        rets = F.lib.recent_returns_bps(sb, now)
+        try:  # research context only: it must never cost the tick its classifier pass
+            rets = F.lib.recent_returns_bps(sb, now)
+        except Exception:
+            rets = []
         state = {
             "symbol": sym,
             "minutes_since_open": int((now - now.replace(hour=9, minute=30)).total_seconds() // 60),
