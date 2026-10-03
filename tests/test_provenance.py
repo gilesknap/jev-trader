@@ -8,7 +8,7 @@ import json
 import pandas as pd
 
 from test_engine import Always, run, spec
-from trader import compact, config, golive
+from trader import compact, config, golive, provenance
 from trader import scoreboard as SB
 from trader.broker import Fill, SimBroker
 from trader.data import ET
@@ -32,6 +32,21 @@ def test_trade_and_decision_rows_carry_provenance(tmp_path, session):
     with gzip.open(tmp_path / "decisions" / "2026-09-21.jsonl.gz", "rt") as f:
         rows = [json.loads(line) for line in f]
     assert rows and all(r["h"] == h and r["mv"] == "Always" and r["cv"] == code_sha() for r in rows)
+
+
+def test_numeric_looking_ids_stay_text(tmp_path, session, monkeypatch):
+    """A commit or spec hash of digits and one `e` is a valid number to a type-guessing reader:
+    every reader of the trade and decision rows keeps it as the text it was written as."""
+    sha, h = "123e45678901", "1234567890123456"
+    monkeypatch.setattr(provenance, "code_sha", lambda root=None: sha)
+    monkeypatch.setattr(golive, "spec_hash", lambda spec, digest="": h)
+    _, trades = run(tmp_path, session(path=[100.0] * 390), [spec()], Always())
+    assert len(trades) == 2 and set(trades.code_sha) == {sha} and set(trades.spec_hash) == {h}
+    rows = list(csv.DictReader((tmp_path / "sim" / "trades.csv").open()))
+    assert {(r["code_sha"], r["spec_hash"]) for r in rows} == {(sha, h)}
+    assert [t["spec_hash"] for t in SB.closed_trades(rows)] == [h]
+    with gzip.open(tmp_path / "decisions" / "2026-09-21.jsonl.gz", "rt") as f:
+        assert {(r["cv"], r["h"]) for r in map(json.loads, f)} == {(sha, h)}
 
 
 def test_code_sha_and_model_are_best_effort(tmp_path):

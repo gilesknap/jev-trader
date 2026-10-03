@@ -45,7 +45,7 @@ Each book directory holds:
 | `qty`, `price`, `notional` | The fill |
 | `reason` | Why: `ENTER`, `stop`, `stop (raised)`, `target`, `scale out`, `time stop`, `classifier EXIT`, `eod flatten`, `server stop`, `daily kill switch`, `HALT`, `manual STOP` and so on. `(price estimated)` marks a price the runner couldn't get |
 | `pnl`, `pnl_pct` | On `sell` rows, the whole round trip's P&L, in dollars and as % of its cost. Empty `pnl_pct` means the price was estimated: such a trade counts towards nothing |
-| `model`, `code_sha`, `spec_hash` | Provenance, for splitting results into cohorts: the decision model, the code commit (12 hex) and the classifier's spec hash (as in `promotion.json`). A `sell` or `sell_part` row has the spec hash its position opened under. Blank on rows written before these columns existed, or when unknown |
+| `model`, `code_sha`, `spec_hash` | Provenance, for splitting results into cohorts: the decision model, the code commit (12 hex) and the classifier's spec hash (as in `promotion.json`). A `sell` or `sell_part` row has the spec hash its position opened under. Blank on rows written before these columns existed, or when unknown. Read them as text (pandas: `dtype=str`): a hex id such as `123e45678901` otherwise parses as a number |
 
 ## The decisions log
 
