@@ -20,7 +20,8 @@ def make(tmp_path, specs, alerts):
 
 
 @pytest.mark.parametrize("text", ["{trunc", "[1, 2]", '"x"', b"\xff\xfe".decode("latin-1"),
-                                  '{"day": "%s", "states": [1]}', '{"day": "%s", "states": {"t": 5}}'])
+                                  '{"day": "%s", "states": [1]}', '{"day": "%s", "states": {"t": 5}}',
+                                  "[" * 100_000 + "]" * 100_000])
 def test_an_unreadable_file_starts_fresh_with_an_urgent_alert(tmp_path, session, text):
     bars = session(path=[100.0] * 390)
     day = bars.index[0].date()
@@ -53,11 +54,12 @@ def test_a_fresh_start_still_manages_an_open_position(tmp_path, session):
     assert "SPY" in book2.entries and (st.status, st.trades) == ("holding", 1)
 
 
-def test_a_damaged_entry_starts_fresh_and_is_reported(tmp_path, session):
+@pytest.mark.parametrize("trades", ["two", True, -1, 1.5, None])
+def test_a_damaged_entry_starts_fresh_and_is_reported(tmp_path, session, trades):
     bars = session(path=[100.0] * 390)
     day = bars.index[0].date()
     (tmp_path / "classifier_state.json").write_text(json.dumps({"day": day.isoformat(), "states": {
-        "t": {"SPY": {"status": "retired", "trades": "two"}}}}))
+        "t": {"SPY": {"status": "retired", "trades": trades}}}}))
     alerts = []
     _, eng = make(tmp_path, [spec()], alerts)
     eng.start_day(day, {})
@@ -87,3 +89,17 @@ def test_a_good_file_restores_quietly(tmp_path, session):
     eng.start_day(day, {})
     st = eng.states[0].symbols["SPY"]
     assert (st.status, st.trades) == ("retired", 1) and not alerts
+
+
+def test_an_alert_that_cant_be_sent_doesnt_stop_the_session(tmp_path, session):
+    bars = session(path=[100.0] * 390)
+    day = bars.index[0].date()
+    (tmp_path / "classifier_state.json").write_text("{trunc")
+
+    def broken(lvl, msg):
+        raise RuntimeError("push service down")
+
+    book = Book("sim", SimBroker(250.0), tmp_path / "sim")
+    eng = Engine([spec()], {"live": book, "shadow": book}, Always(), {"SPY"}, tmp_path, alert=broken)
+    eng.start_day(day, {})
+    assert eng.states[0].symbols["SPY"].status == "armed"

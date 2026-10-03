@@ -616,7 +616,7 @@ class Engine:
             states = data.get("states", {})
             if not isinstance(states, dict) or not all(isinstance(v, dict) for v in states.values()):
                 raise ValueError("`states` isn't a mapping of rules to stocks")
-        except (OSError, ValueError) as ex:  # ValueError covers bad JSON and bad UTF-8
+        except (OSError, ValueError, RecursionError) as ex:  # ValueError: bad JSON or UTF-8; RecursionError: absurd nesting
             try:
                 f.replace(f.with_name(f.name + ".unreadable"))  # kept for a look; rewritten each tick
             except OSError:
@@ -625,7 +625,7 @@ class Engine:
                 for sym, st in cs.symbols.items():
                     if not cs.spec.probe:
                         self._resume_symbol(cs, sym, st, "armed", 0)
-            self.alert("urgent", f"{f.name} is unreadable ({ex}), so the rules start fresh: if the runner "
+            self._alert_every("classifier-state", "urgent", f"{f.name} is unreadable ({ex}), so the rules start fresh: if the runner "
                                  "restarted mid-session, today's trade counts (max_trades) and stand-downs are "
                                  "lost and a rule may trade again today. Open positions are still managed. "
                                  "Press STOP if that's not acceptable.")
@@ -653,7 +653,7 @@ class Engine:
                     trades, status = 0, "armed"
                 self._resume_symbol(cs, sym, st, status, trades)
         if damaged:
-            self.alert("urgent", f"{self._classifier_state_file().name} had damaged entries for "
+            self._alert_every("classifier-state", "urgent", f"{self._classifier_state_file().name} had damaged entries for "
                                  f"{', '.join(damaged)}: they start fresh, so today's trade count and any "
                                  "stand-down for them are lost. Open positions are still managed.")
 
@@ -664,7 +664,7 @@ class Engine:
         mine = bool(e and e.classifier == cs.spec.id)
         st.trades = trades
         if mine and status in ("armed", "pending"):  # its position is open, whatever was saved
-            st.status, st.trades = "holding", max(trades, 1)
+            st.status, st.trades = "holding", trades + 1  # it filled after the save, uncounted
         elif status == "pending":  # a limit entry was resting
             st.status = "pending" if (o and o.classifier == cs.spec.id) else "armed"
         elif status == "holding" and not mine:
