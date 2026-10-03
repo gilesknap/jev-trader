@@ -27,8 +27,15 @@ def _gate_samples(source: str = "alpaca"):
 
     secrets = config.load_secrets()
     end = dt.date.today() - dt.timedelta(days=1)
-    sessions = load_sessions(["SPY", "QQQ"], end - dt.timedelta(days=7), end, secrets, source)
-    spy = sessions.get("SPY", {})
+    # Count sessions, not calendar days: a run of holidays (or a data gap) can leave a short
+    # window with too few sessions, and an empty sample set would reject every custom feature.
+    for lookback in (7, 21, 60):
+        sessions = load_sessions(["SPY", "QQQ"], end - dt.timedelta(days=lookback), end, secrets, source)
+        spy = sessions.get("SPY", {})
+        if len(spy) >= 3:
+            break
+    else:  # a data outage, not a bug in the features: the caller reports it, nothing is rejected
+        raise RuntimeError(f"only {len(spy)} SPY session(s) in the last {lookback} days")
     days = sorted(spy)[-3:]
     samples = []
     for sym in ("SPY", "QQQ"):
