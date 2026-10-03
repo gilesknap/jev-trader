@@ -41,8 +41,10 @@ REST_HUNG_S = 300.0
 REST_MAX_CALLS = 2
 # Each history fetch on the session-start path (the feature gate's samples, prior-session SIP and
 # IEX bars) gets at most this long. They run about 2 minutes before the open, in turn, before the
-# stream subscribes: a hung call must cost NaN context features or rejected custom features,
-# never a session without bars. Today's bars at a late start get CATCH_UP_TIMEOUT_S.
+# stream subscribes, so a hung call can't hold the start indefinitely. A failed prior-session fetch
+# costs NaN context features; a failed gate-sample fetch fails the classifiers file loudly (as any
+# gate-sample failure does: nothing trades that day, held positions are still managed). Today's
+# bars at a late start get CATCH_UP_TIMEOUT_S.
 STARTUP_FETCH_TIMEOUT_S = 60.0
 CATCH_UP_TIMEOUT_S = 15.0
 BAR_COLS = ["ts", "open", "high", "low", "close", "volume"]
@@ -248,8 +250,8 @@ def catch_up_bars(rows: dict[str, list], lock, base: list[str], extra: list[str]
     tick of a stream that subscribed late (under 90 s before the open). It runs after the subscription, so no minute
     falls between the two; a minute both have is the same bar (stream_bars keeps one). Each fetch
     gets CATCH_UP_TIMEOUT_S. Never raises: a failure alerts and those symbols start from live bars."""
-    for syms, why in ((base, "features and stops start from live bars only"),
-                      (extra, "their stops use live bars only")):  # held from before: a rejected one mustn't stop the rest
+    for syms, why in ((base, "features and stops may be missing today's earlier bars"),
+                      (extra, "their stops may be missing today's earlier bars")):  # held from before: a rejected one mustn't stop the rest
         if not syms:
             continue
         try:

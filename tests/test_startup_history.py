@@ -121,7 +121,7 @@ def test_a_failed_catch_up_alerts_per_group_and_never_raises(monkeypatch, hang):
     alerts, alert = collect()
     runner.catch_up_bars(rows, threading.Lock(), ["AAA"], ["HELD"], OPEN, TICK, {}, alert=alert)
     assert len(rows["AAA"]) == len(b[b.index < TICK]) and not rows["HELD"]
-    assert len(alerts) == 1 and "['HELD']" in alerts[0][1] and "stops use live bars only" in alerts[0][1]
+    assert len(alerts) == 1 and "['HELD']" in alerts[0][1] and "stops may be missing today's earlier bars" in alerts[0][1]
 
     monkeypatch.setattr(runner, "CATCH_UP_TIMEOUT_S", 0.05)
     monkeypatch.setattr(runner, "fetch_alpaca", hang)
