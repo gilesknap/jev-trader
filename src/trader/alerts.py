@@ -11,10 +11,13 @@ import datetime as dt
 import os
 import sys
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import httpx
 
 from trader import config
+
+ET = ZoneInfo("America/New_York")
 
 
 def _append(path: Path, line: str) -> None:
@@ -31,7 +34,7 @@ def _append(path: Path, line: str) -> None:
 
 def notify(level: str, message: str, title: str = "trader") -> None:
     """level: 'urgent' (high priority push) or 'info'."""
-    stamp = dt.datetime.now().isoformat(timespec="seconds")
+    stamp = dt.datetime.now(ET).isoformat(timespec="seconds")  # New York time with its offset, like trades.csv
     line = f"{stamp} {level.upper()} {message}\n"
     try:
         _append(config.RUNTIME_DIR / "alerts.log", line)

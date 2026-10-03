@@ -18,8 +18,9 @@ asks two questions per probe and horizon:
    combines its inputs usefully, not that no rule could, nor that it trades better.
 
 Forward returns run from the close the question was asked at, to the close `h` minutes later,
-cut off at the end-of-day flatten (15:45 ET), since no position could be held past it. The
-cut-off assumes a full session: on an early-close day, rows' horizons can run past the close.
+cut off at the end-of-day flatten (close - 15 min, from the exchange calendar: 15:45 ET, or
+12:45 on a 13:00 early close), since no position could be held past it. `cut_<h>` marks the
+rows whose horizon the flatten shortened.
 """
 
 from __future__ import annotations
@@ -33,8 +34,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from trader.market_calendar import Calendar, Session
+
 SLIPPAGE_ROUND_TRIP_PCT = 0.1  # 0.05% a side, as everywhere else
-FLATTEN_BAR = dt.time(15, 44)  # the close of this bar is what the eod flatten gets
 MIN_DAYS_TO_FIT = 3  # walk-forward baselines start once this many earlier days exist
 DEFAULT_THRESHOLD = 0.6  # Question.threshold's default, for probes scored without their spec
 RIDGE = 0.1  # ridge penalty per training row, on standardised inputs
@@ -73,28 +75,40 @@ def load_rows(paths: list[Path], only: set[str] | None = None) -> pd.DataFrame:
     return df
 
 
-def forward_returns(rows: pd.DataFrame, sessions: dict, horizons: list[int]) -> pd.DataFrame:
-    """Add fwd_<h> (% return) columns. `sessions`: {symbol: {date: bars}} (SIP, from replay.load_sessions).
-    A question asked at t saw bars up to t-1 (a bar labelled 09:30 completes at 09:31)."""
+def flatten_bar(session: Session) -> dt.time:
+    """The bar whose close the end-of-day flatten gets: the one completed at the flatten tick."""
+    return (session.flatten_at - dt.timedelta(minutes=1)).time()
+
+
+def forward_returns(rows: pd.DataFrame, sessions: dict, horizons: list[int],
+                    calendar: Calendar | None = None) -> pd.DataFrame:
+    """Add fwd_<h> (% return) and cut_<h> (the flatten shortened the horizon) columns. `sessions`:
+    {symbol: {date: bars}} (SIP, from replay.load_sessions). `calendar`: the exchange calendar
+    for the days (regular 16:00 closes without one). A question asked at t saw bars up to t-1
+    (a bar labelled 09:30 completes at 09:31)."""
+    calendar = calendar or Calendar()
     rows = rows.copy()
     for h in horizons:
         rows[f"fwd_{h}"] = np.nan
+        rows[f"cut_{h}"] = False
     for (day, sym), g in rows.groupby(["day", "s"]):
         bars = sessions.get(sym, {}).get(dt.date.fromisoformat(day))
         if bars is None or bars.empty:
             continue
+        last = flatten_bar(calendar.session(dt.date.fromisoformat(day)))  # once per day, not per row
         close = bars.close
         tod = pd.Index([ts.time() for ts in close.index])
         for i, r in g.iterrows():
             asked = (dt.datetime.combine(dt.date.min, dt.time.fromisoformat(r["t"])) - dt.timedelta(minutes=1)).time()
             ref = close[tod <= asked]
-            if ref.empty or asked >= FLATTEN_BAR:
+            if ref.empty or asked >= last:
                 continue
             p0 = float(ref.iloc[-1])
             for h in horizons:
                 end = (dt.datetime.combine(dt.date.min, asked) + dt.timedelta(minutes=h)).time()
-                later = close[tod <= min(end, FLATTEN_BAR)]
+                later = close[tod <= min(end, last)]
                 rows.at[i, f"fwd_{h}"] = (float(later.iloc[-1]) / p0 - 1) * 100
+                rows.at[i, f"cut_{h}"] = end > last
     return rows
 
 
@@ -205,6 +219,7 @@ def score(rows: pd.DataFrame, horizons: list[int], thresholds: dict[str, float] 
             hi = gg[gg.p_enter >= thr]
             out["horizons"][h] = {
                 "n": len(gg),
+                "cut_n": int(gg[f"cut_{h}"].sum()) if f"cut_{h}" in gg else 0,  # horizons shortened by the flatten
                 "all_mean_net_pct": round(float(gg[y].mean()) - SLIPPAGE_ROUND_TRIP_PCT, 4),
                 "enter_n": len(hi),
                 "enter_mean_net_pct": round(float(hi[y].mean()) - SLIPPAGE_ROUND_TRIP_PCT, 4) if len(hi) else None,

@@ -18,14 +18,16 @@ from trader.broker import SimBroker
 from trader.classifier import ClassifierSpec
 from trader.data import ET, fetch, prior_sessions, split_sessions
 from trader.engine import Book, Engine
+from trader.market_calendar import Calendar, load_calendar
 
 
-def load_sessions(symbols, start: dt.date, end: dt.date, secrets, source="alpaca"):
-    """{symbol: {date: bars}} for sessions in [start - a few days, end]."""
+def load_sessions(symbols, start: dt.date, end: dt.date, secrets, source="alpaca", calendar: Calendar | None = None):
+    """{symbol: {date: bars}} for sessions in [start - a few days, end], each cut at its close."""
     t0 = dt.datetime.combine(start - dt.timedelta(days=6), dt.time(0), ET)
     t1 = dt.datetime.combine(end + dt.timedelta(days=1), dt.time(0), ET)
+    calendar = calendar or load_calendar(secrets, t0.date(), end)
     raw = fetch(sorted(set(symbols)), t0, t1, secrets, source)
-    return {s: split_sessions(b) for s, b in raw.items()}
+    return {s: calendar.trim(split_sessions(b)) for s, b in raw.items()}
 
 
 def replay(
@@ -40,11 +42,14 @@ def replay(
     cash: float | None = None,  # config.yaml capital.replay_cash
     pace: float = 0.0,
     sessions=None,
+    calendar: Calendar | None = None,  # the exchange calendar (default: Alpaca's, assumed regular without keys)
 ) -> dict:
     if cash is None:
         cash = float(config.SETTINGS.capital.replay_cash)
     symbols = {s for sp in specs for s in sp.symbols} | {"SPY"}
-    sessions = sessions or load_sessions(symbols, start, end, secrets, source)
+    calendar = calendar or load_calendar(secrets, start - dt.timedelta(days=6), end)
+    sessions = sessions or load_sessions(symbols, start, end, secrets, source, calendar)
+    sessions = {s: calendar.trim(per) for s, per in sessions.items()}  # no bars past a (early) close
     days = sorted({d for per in sessions.values() for d in per if start <= d <= end})
     if run_dir.exists():  # a rerun under the same name starts fresh, never resumes old state
         import shutil
@@ -66,7 +71,7 @@ def replay(
         day_alerts.clear()
         today = {s: per[day] for s, per in sessions.items() if day in per}
         stamps = sorted(set().union(*(b.index for b in today.values())))
-        close = dt.datetime.combine(day, dt.time(16, 0), ET)
+        close = calendar.session(day).close  # an early close flattens and stops entries early, as live
         for ts in stamps:
             now = ts + pd.Timedelta(minutes=1)  # bar labelled 09:30 is complete at 09:31
             bars = {s: b.loc[:ts] for s, b in today.items()}
@@ -87,6 +92,7 @@ def replay(
         "decision_calls": getattr(decider, "calls", 0),
         "decision_cost_usd": round(getattr(decider, "total_cost", 0.0), 5),
         "final_equity": round(book.broker.equity(), 2), "start_equity": cash,
+        **({"calendar": "assumed regular 09:30-16:00 sessions (no exchange calendar)"} if calendar.assumed else {}),
     }
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=1))
     return summary
