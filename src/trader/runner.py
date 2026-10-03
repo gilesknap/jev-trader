@@ -306,6 +306,31 @@ def _last_resort_flatten(engine: Engine, tick: dt.datetime, bars: dict, minutes_
         engine._alert_every("eod-status", "urgent", f"status write failed in the flatten window: {e!r}")
 
 
+def count_live_session(mode: str, day: dt.date, live_dir, alert=None) -> None:
+    """The live book's `live_sessions`: the engine trades its first 5 at half size. Every return to
+    live starts a fresh half-size week, whatever the path back (a runner demotion after a live halt,
+    a HOLD LIVE then a re-arm, a `config/mode.yaml` override): a paper session ends the live stint,
+    so it resets the count to 0, and each live session counts once (not once per restart). A failed
+    reset never stops a paper session: it alerts, so the human can fix it before the next live one."""
+    p = live_dir / "risk.json"
+    if mode == "live":
+        risk = json.loads(p.read_text()) if p.exists() else {}
+        if risk.get("last_live_session") != day.isoformat():
+            risk.update(live_sessions=risk.get("live_sessions", 0) + 1, last_live_session=day.isoformat())
+            p.parent.mkdir(parents=True, exist_ok=True)
+            _atomic_json(p, risk)
+        return
+    try:
+        risk = json.loads(p.read_text()) if p.exists() else {}
+        if risk.get("live_sessions") or "last_live_session" in risk:
+            risk["live_sessions"] = 0
+            risk.pop("last_live_session", None)  # a same-day return to live counts as its session 1
+            _atomic_json(p, risk)
+    except Exception as e:
+        (alert or notify)("urgent", f"[live] could not reset the half-size week count in {p}: {e!r}. "
+                                    "Set live_sessions to 0 there before the account goes live again.")
+
+
 def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
     from trader.jev import JevClient, StubDecider
 
@@ -348,11 +373,8 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
         live = AlpacaBroker(secrets["ALPACA_LIVE_KEY"], secrets["ALPACA_LIVE_SECRET"], paper=False)
         live_book = Book("live", live, BOOKS_DIR / "live")
         _apply_cashflows(live_book, live)
-        risk = live_book._read_risk()
-        if risk.get("last_live_session") != open_.date().isoformat():  # once per session, not per restart
-            live_book.write_risk(live_sessions=risk.get("live_sessions", 0) + 1,
-                                 last_live_session=open_.date().isoformat())
         books["live"] = live_book
+    count_live_session(mode, open_.date(), BOOKS_DIR / "live", notify)
 
     # Wait for the open; the pre-market strategist run may still be editing classifiers.
     status = config.RUNTIME_DIR / "status.json"

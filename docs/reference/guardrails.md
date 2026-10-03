@@ -51,7 +51,7 @@ The buckets:
 | `VETO_SESSIONS` | 3 | Paper sessions between arming and going live |
 | `MIN_LIVE_EQUITY` | 100.0 | Live equity needed at the switch |
 
-The account's first 5 live sessions ever trade at half size (`src/trader/engine.py`); the count is in the live book's `risk.json` and isn't reset by a demotion.
+The first 5 live sessions trade at half size (`src/trader/engine.py`); the count is `live_sessions` in the live book's `risk.json`, and any paper session resets it, so every return to live starts a fresh half-size week (`count_live_session` in `src/trader/runner.py`).
 
 ## Runtime limits
 

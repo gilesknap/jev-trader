@@ -25,7 +25,7 @@ gate is close or has armed.
 - **Going live:** at the session start after the window, after a final gate check.
 - **Live account under $100:** the runner stays on paper and alerts until it's funded.
 
-The account's first 5 live sessions ever trade at half size (a later re-arm after a demotion doesn't restart that count).
+The first 5 live sessions trade at half size, and so do the first 5 after every return to live (a re-arm after a demotion or a HOLD LIVE): any paper session restarts that count.
 
 ## Veto
 

@@ -87,8 +87,9 @@ and HOLD LIVE works from any state too, including demoted and corrupt.
   3-session window.
 - If the live account holds less than $100 when the switch is due, the runner stays on paper and
   alerts until it's funded.
-- The account's first 5 live sessions ever trade at **half size**. The count lives in the live
-  book's `risk.json` and isn't reset by a demotion, so going live again later is full size.
+- The first 5 live sessions trade at **half size**, and every return to live starts a fresh
+  half-size week: after a demotion, a HOLD LIVE and re-arm, or a `config/mode.yaml` override, any
+  paper session resets the count (`live_sessions` in the live book's `risk.json`).
 - A HOLD always wins, even one pressed while the runner is re-checking the gate: every automatic
   write to `golive.json` is a compare-and-swap under a lock.
 - An unreadable or invalid `golive.json` reads as a non-live `corrupt` state: paper, one alert,
