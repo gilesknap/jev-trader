@@ -46,20 +46,39 @@ def archive() -> dict:
 
 
 def _merge_csv(src, dst) -> int:
-    with src.open() as f:
-        rows = list(csv.DictReader(f))
-    existing = set()
+    """Rows of `src` not already in `dst`. Columns `src` has that `dst` lacks (new ones added at the
+    end, e.g. trade provenance) are added to `dst` first, blank on its existing rows."""
+    with src.open(newline="") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+        cols = list(reader.fieldnames or [])
+    old_cols, existing = [], []
     if dst.exists():
-        with dst.open() as f:
-            existing = {tuple(r.values()) for r in csv.DictReader(f)}
-    new = [r for r in rows if tuple(r.values()) not in existing]
+        with dst.open(newline="") as f:
+            reader = csv.DictReader(f)
+            existing = list(reader)
+            old_cols = list(reader.fieldnames or [])
+    all_cols = old_cols + [c for c in cols if c not in old_cols]
+
+    def key(r):
+        return tuple(r.get(c) or "" for c in all_cols)
+
+    seen = {key(r) for r in existing}
+    new = [r for r in rows if key(r) not in seen]
     if new:
-        write_header = not dst.exists()
-        with dst.open("a", newline="") as f:
-            w = csv.DictWriter(f, list(rows[0]))
-            if write_header:
+        if old_cols and all_cols != old_cols:  # rewrite under the wider header, atomically
+            tmp = dst.with_name(dst.name + ".tmp")
+            with tmp.open("w", newline="") as f:
+                w = csv.DictWriter(f, all_cols, restval="", extrasaction="ignore")
                 w.writeheader()
-            w.writerows(new)
+                w.writerows(existing + new)
+            tmp.replace(dst)
+        else:
+            with dst.open("a", newline="") as f:
+                w = csv.DictWriter(f, all_cols, restval="", extrasaction="ignore")
+                if not old_cols:
+                    w.writeheader()
+                w.writerows(new)
     return len(new)
 
 
