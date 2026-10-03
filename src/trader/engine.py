@@ -1267,7 +1267,8 @@ class Engine:
         if delta > 1e-9 and price > 0:  # a market fill with no price yet waits for it
             cost = o.filled_qty * price - p.filled_cost
             px = cost / delta if cost > 0 else price  # the average price of just the new shares
-            px = min(p.limit, px) if p.limit else px
+            # A real limit buy never fills above its limit; a simulated one pays its slippage on top.
+            px = min(p.limit * (1 + getattr(b.broker, "limit_slippage", 0.0)), px) if p.limit else px
             p.filled_qty, p.filled_cost = o.filled_qty, p.filled_cost + delta * px
             p.price_estimated = p.price_estimated or guessed
             b.save_pending()  # booked before the position: see below for a crash in between
