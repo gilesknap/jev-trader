@@ -741,3 +741,64 @@ def test_renaming_the_last_state_file_onto_steering_keeps_state(tmp_path, mode):
     assert git(s.repo, "status", "--porcelain") == ""
     files = origin_files(s)
     assert "state/steering.md" not in files and "state/s.md" not in files
+
+
+# ---- the trial ledger is append-only ----
+
+LEDGER_TEXT = "time,kind\n2026-10-01T10:00:00+00:00,replay\n"
+
+
+def push_ledger(s, text=LEDGER_TEXT):
+    git(s.seed, "fetch", "-q", "origin", env=s.env)
+    git(s.seed, "checkout", "-q", "-B", "strategist", "origin/strategist", env=s.env)
+    (s.seed / "logs").mkdir(exist_ok=True)
+    (s.seed / "logs" / "trials.csv").write_text(text)
+    git(s.seed, "add", "-A", env=s.env)
+    git(s.seed, "commit", "-qm", "ledger", env=s.env)
+    git(s.seed, "push", "-q", "origin", "strategist", env=s.env)
+
+
+@pytest.mark.parametrize("mode", ["monorepo", "split"])
+def test_rows_added_to_the_ledger_are_published(tmp_path, mode):
+    s = make_sandbox(tmp_path, split=mode == "split")
+    push_ledger(s)
+    fake_claude(s, "echo 2026-10-02T10:00:00+00:00,replay >> logs/trials.csv\n")
+    assert s.run("weekly").returncode == 0
+    assert "trials" not in s.read("alerts")
+    assert origin_show(s, "logs/trials.csv") == LEDGER_TEXT + "2026-10-02T10:00:00+00:00,replay\n"
+
+
+@pytest.mark.parametrize("change", [
+    "sed -i 's/replay/probe_report/' logs/trials.csv",                  # an edited row
+    "head -c 20 logs/trials.csv > t && mv t logs/trials.csv",           # truncated
+    "rm logs/trials.csv",                                               # removed
+    "printf 'x\\n' > ~/x && rm logs/trials.csv && ln -s ~/x logs/trials.csv",  # a symlink
+    "rm logs/trials.csv && mkdir logs/trials.csv",                      # a directory
+    "echo new > logs/trials.csv && git add -A && git commit -qm c && git push -q origin strategist",
+])
+def test_any_other_change_to_the_ledger_is_reverted_and_alerted(sandbox, change):
+    push_ledger(sandbox)
+    fake_claude(sandbox, change + "\necho n > state/n.md\n")
+    assert sandbox.run("weekly").returncode == 0
+    assert "logs/trials.csv, which is append-only: reverted" in sandbox.read("alerts")
+    assert (sandbox.repo / "logs" / "trials.csv").read_text() == LEDGER_TEXT
+    assert origin_show(sandbox, "logs/trials.csv") == LEDGER_TEXT
+    assert "state/n.md" in origin_files(sandbox)
+    assert git(sandbox.repo, "status", "--porcelain") == ""
+
+
+def test_a_ledger_tampered_in_an_earlier_failed_run_is_caught_by_the_next(sandbox):
+    push_ledger(sandbox)
+    fake_claude(sandbox, "echo edited > logs/trials.csv\nexit 1\n")
+    assert sandbox.run("weekly").returncode == 1
+    fake_claude(sandbox, "true\n")
+    assert sandbox.run("weekly").returncode == 0
+    assert "append-only: reverted" in sandbox.read("alerts")
+    assert origin_show(sandbox, "logs/trials.csv") == LEDGER_TEXT
+
+
+def test_the_first_ledger_is_published(sandbox):
+    fake_claude(sandbox, "mkdir -p logs && printf 'time,kind\\n' > logs/trials.csv\n")
+    assert sandbox.run("weekly").returncode == 0
+    assert "trials" not in sandbox.read("alerts")
+    assert origin_show(sandbox, "logs/trials.csv") == "time,kind\n"

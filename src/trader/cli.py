@@ -116,6 +116,9 @@ def cmd_replay(a):
         specs, start, end, _decider(a.decider, secrets), set(config.universe()), run_dir,
         secrets, a.source, a.cash, a.pace,
     )
+    from trader import trials
+
+    trials.record(lambda: trials.replay_rows(specs, run_dir, summary, stub=a.decider == "stub"))
     print(json.dumps(summary, indent=1))
     print(f"run dir: {run_dir}")
 
@@ -163,6 +166,10 @@ def cmd_probe_report(a):
     out = {"generated": dt.datetime.now(ET).isoformat(timespec="minutes"), "first_day": str(days[0]),
            "last_day": str(days[-1]), "horizons": horizons, "skipped_lines": rows.attrs.get("skipped", 0),
            "probes": probe.score(rows, horizons, thresholds)}
+    if a.replay:
+        from trader import trials
+
+        trials.record(lambda: trials.probe_rows(a.replay, rows, out["probes"], horizons))
     if a.out:  # atomic, so the dashboard never reads half a report
         path = Path(a.out)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -172,6 +179,12 @@ def cmd_probe_report(a):
         print(f"probe report: {len(rows)} rows, {len(days)} days, {sorted(out['probes'])} -> {path}")
     else:
         print(json.dumps(probe.finite(out), indent=1, allow_nan=False))
+
+
+def cmd_trials(a):
+    from trader import trials
+
+    print(trials.report(trials.read(), a.id, a.hash, a.include_stub))
 
 
 SERVICES_ENV = Path.home() / ".config" / "trading" / "services.env"
@@ -391,6 +404,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--file", default=default_file, help="classifiers file for each probe's entry threshold")
     s.add_argument("--out", help="write the report here (JSON) instead of printing it")
     s.set_defaults(fn=cmd_probe_report)
+
+    s = sub.add_parser("trials", help="the trial ledger: distinct specs tried per classifier and family, and on how many days")
+    g = s.add_mutually_exclusive_group()
+    g.add_argument("--id", help="one classifier id: each spec tried under it")
+    g.add_argument("--hash", help="one spec hash (or a prefix of it): where it was tried")
+    s.add_argument("--include-stub", action="store_true", help="count stub-decider replays too")
+    s.set_defaults(fn=cmd_trials)
 
     s = sub.add_parser("run", help="run today's live/paper session (runner daemon)")
     s.add_argument("--file", default=default_file)

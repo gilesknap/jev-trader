@@ -104,6 +104,27 @@ into `logs/trades.csv`, and the paper and live books' equity and cashflow files 
 `logs/<book>_equity.csv` and `logs/<book>_cashflows.csv`. `logs/probe_report.json` is the latest
 probe report.
 
+## The trial ledger
+
+`logs/trials.csv` counts every evaluation of a classifier spec, so a result can be read next to
+the number of attempts behind it. The tools append to it, never the strategist: `trader replay`
+adds a row per classifier in the run, `trader probe-report --replay <name>` a row per probe it
+scores, and the runner a `shadow_start` row the first time a session runs a spec (to
+`trials.csv` in the runtime directory, which `trader archive` copies across). After each run the
+wrapper reverts the file to its last commit, and alerts, unless the run only added rows at its
+end. `trader trials` summarises it.
+
+| Column | Meaning |
+|---|---|
+| `time` | When the row was written (UTC) |
+| `kind` | `replay`, `probe_report` or `shadow_start` |
+| `run_name` | The replay's name, or the session date for `shadow_start` |
+| `classifier_id`, `family` | The classifier and its family label |
+| `spec_hash` | Its spec hash, the same identity as the promotion record's (a `mode`, `enabled` or `family` change keeps it) |
+| `days`, `start`, `end` | Sessions evaluated |
+| `trades`, `net_pct_after_slip` | Closed round trips and their mean net return (%); for a probe, its ENTER answers at the first horizon and their mean forward return |
+| `stub` | 1 for a stub-decider run (a plumbing check, not counted by default) |
+
 Retention (`trader compact`, weekly): daily journals older than 28 days are deleted once the
 week's weekly journal exists; monthlies older than 400 days once the yearly exists; archived
 decision logs after 90 days; replay runs after 14 days, unless their name starts with `keep-`.

@@ -42,7 +42,13 @@ def archive() -> dict:
         for name in ("equity.csv", "cashflows.csv"):
             if book.parent.name != "sim" and (book / name).exists():
                 shutil.copy2(book / name, LOGS / f"{book.name}_{name}")
-    return {"decisions_copied": copied, "trades_added": trades_added}
+    from trader import trials
+
+    try:  # the runner's shadow_start rows; never a reason for the archive to fail
+        trials_added = trials.merge_runtime()
+    except Exception as e:
+        trials_added = f"failed: {type(e).__name__}: {e}"
+    return {"decisions_copied": copied, "trades_added": trades_added, "trials_added": trials_added}
 
 
 def _merge_csv(src, dst) -> int:

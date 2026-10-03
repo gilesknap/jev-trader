@@ -75,6 +75,7 @@ On branch `strategist` of your private data repo you may edit only `state/`, `jo
 | `journal/weekly/YYYY-Www.md` | Weekly retrospective (also the weekly issue's body) | Kept |
 | `journal/monthly/`, `journal/yearly/` | Compressions | Kept |
 | `logs/trades.csv` | Every fill (archived from the runner) | Never edit |
+| `logs/trials.csv` | The trial ledger: a row per classifier per replay, replay probe report and first session of a new spec, added by the tools; `trader trials` counts it | Never edit: the wrapper reverts any change but new rows at the end |
 | `logs/decisions/*.jsonl.gz` | One line per classifier decision | Kept 90 days on disk; not committed |
 | `logs/<book>_equity.csv`, `logs/<book>_cashflows.csv` | Equity marks, deposits and withdrawals | Never edit |
 | `proposals/<topic>/` | Code proposals: a `git format-patch` series plus `README.md` | See What you may edit |

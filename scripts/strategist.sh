@@ -243,6 +243,25 @@ if (( ${#OUT_ALL[@]} )); then
     fi
     alert "strategist $KIND touched non-strategy paths (reverted): $TOUCHED"
 fi
+# The trial ledger is append-only: the tools add rows at its end, and nothing may change or remove
+# one. So the ledger may only have grown since the last commit (PRE), with the committed bytes
+# unchanged at its start (this also covers a dirty checkout left by an earlier failed run). Anything
+# else (an edited, truncated, removed or replaced ledger) goes back to PRE's: the runner's rows come
+# back with the next archive, but rows the tools added since PRE are lost.
+LEDGER=logs/trials.csv
+if OLD_SIZE=$(git cat-file -s "$PRE:$LEDGER" 2>/dev/null); then
+    OLD_SUM=$(git cat-file blob "$PRE:$LEDGER" | sha256sum)
+else
+    OLD_SIZE=-1
+fi
+if (( OLD_SIZE >= 0 )) || [[ -e $LEDGER || -L $LEDGER ]]; then
+    if [[ ! -f $LEDGER || -L $LEDGER ]] \
+        || { (( OLD_SIZE >= 0 )) && [[ $(head -c "$OLD_SIZE" -- "$LEDGER" | sha256sum) != "$OLD_SUM" ]]; }; then
+        rm -rf -- "$LEDGER"
+        (( OLD_SIZE >= 0 )) && git --literal-pathspecs checkout -q "$PRE" -- "$LEDGER" >>"$LOG" 2>&1
+        alert "strategist $KIND changed or removed rows of $LEDGER, which is append-only: reverted it to the last commit (rows added since then are lost)"
+    fi
+fi
 # Only existing dirs: a missing pathspec makes `git add` add nothing at all (and none would add everything).
 DIRS=$(ls -d state journal features/custom logs ${SPLIT:+proposals} 2>/dev/null)
 [[ -n "$DIRS" ]] && git add -A -- $DIRS >>"$LOG" 2>&1
