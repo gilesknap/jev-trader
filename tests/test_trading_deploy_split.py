@@ -142,6 +142,7 @@ def test_unit_sources_refuses_when_the_data_lacks_the_runner_timer(tmp_path):
 FAKE_UV = r"""#!/bin/bash
 mode=""; [[ -n "${TRADER_DATA_ROOT:-}" ]] && mode=$(cat "$TRADER_DATA_ROOT/config/mode.yaml" 2>/dev/null)
 echo "uv $* | cwd=$PWD | TRADER_DATA_ROOT=${TRADER_DATA_ROOT:-} | mode=$mode" >> "$FAKE_LOG"
+[[ "$1" == run ]] && env | grep '^TRADER_' | sort > "$FAKE_LOG.testenv"  # everything TRADER_* the tests see
 case "$1" in
     sync) [[ "$PWD" == "${FAKE_CODE_DIR:-}" ]] && exit "${FAKE_SWITCH_SYNC_RC:-0}"  # the switch's sync
           mkdir -p .venv/bin && cp "$FAKE_TRADER" .venv/bin/trader ;;
@@ -312,6 +313,28 @@ def test_single_repo_review_and_typed_yes_as_before(mono):
 def test_single_repo_up_to_date(mono):
     r = mono.run()
     assert r.returncode == 0 and r.stdout.startswith("already at origin/main (")
+
+
+# ---- the candidate tests' environment, in both layouts
+
+LIVE_ENV = {  # what a shell with services.env loaded (or a developer's) might carry into the deploy
+    "TRADER_DATA_ROOT": "/live/config", "TRADER_STRATEGIST_ROOT": "/live/strategist", "TRADER_RUNTIME": "/live/runtime",
+    "TRADER_REPLAY_DIR": "/live/replays", "TRADER_SECRETS": "/live/env", "TRADER_CONFIG": "/live/config.yaml",
+    "TRADER_CODE_ROOT": "/live/code", "TRADER_TEST_DATA_ROOT": "/live/data", "TRADER_STRATEGIST_STAMP": "/live/.last_run",
+}
+
+
+@pytest.mark.parametrize("two_repo", [False, True])
+def test_candidate_tests_run_with_a_clean_trader_environment(tmp_path, two_repo):
+    rig = Rig(tmp_path, split=two_repo)
+    rig.push(rig.code_origin, {"src/app.py": "VERSION = 2\n"})
+    r = rig.run(FAKE_PLAN_OUT="PR 0123456789 #9 merged", **LIVE_ENV)
+    assert r.returncode == 0, r.stdout + r.stderr
+    seen = (tmp_path / "log.testenv").read_text().splitlines()
+    if two_repo:  # only the candidate data, set explicitly
+        assert len(seen) == 1 and seen[0].startswith(f"TRADER_DATA_ROOT={rig.scratch}/")
+    else:
+        assert seen == []
 
 
 # ---- two-repo layout

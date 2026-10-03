@@ -313,7 +313,9 @@ fi
 # Test the candidate in a throwaway worktree with its own venv BEFORE touching the live copy:
 # if the tests fail, /srv/trading/main is unchanged and the runner keeps its current code.
 # In the two-repo layout the candidate data is a second throwaway worktree, and the tests and
-# checks read it through TRADER_DATA_ROOT.
+# checks read it through TRADER_DATA_ROOT. The tests run with every other TRADER_* variable
+# unset: one inherited from a shell with services.env loaded (TRADER_STRATEGIST_ROOT, say) would
+# point them at live data, since tests/conftest.py respects what is already set.
 cand=$(mktemp -d -p /var/tmp)  # not /tmp: may be a small tmpfs, and the venv is large
 dcand=""
 switching=0  # 1 from taking the switch lock until the units are reloaded
@@ -350,7 +352,7 @@ partial_switch_help() {  # RC: a step of the switch failed, so the checkouts may
     } >&2
 }
 echo "testing $what in a temporary checkout..."
-if ! (cd "$cand" && { (( ! SPLIT )) || export TRADER_DATA_ROOT="$dcand"; } \
+if ! (cd "$cand" && unset "${!TRADER_@}" && { (( ! SPLIT )) || export TRADER_DATA_ROOT="$dcand"; } \
         && uv sync -q --frozen --extra dev && uv run --frozen pytest -q tests); then
     if (( SPLIT )); then
         echo "TESTS FAILED: nothing deployed; the runner keeps code ${OLD_CODE:0:7} + data ${OLD_DATA:0:7}" >&2
