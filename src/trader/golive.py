@@ -399,6 +399,22 @@ def after_session(notify, live_book_halted: bool = False, session: dt.date | Non
     return st
 
 
+def demote_on_halt_cleared(notify) -> bool:
+    """Called when a human clears a live halt. A live halt always demotes (after_session), so a
+    `live` state here means that session's after_session never ran (a crash after the close). Demote
+    now, so going live again still needs `trader release-live`. True if it demoted. Under the lock;
+    a non-live state is left alone."""
+    with _state_lock():
+        st = load_state()
+        if st["status"] != "live":
+            return False
+        st.update(status="demoted", demoted_on=session_date().isoformat(), demoted_by="clear-halt")
+        _write_state(st)
+    notify("urgent", "Go-live was still LIVE when the live halt was cleared (the halted session's end was never "
+                     "processed): demoted to paper now. Going live again needs `trader release-live`.")
+    return True
+
+
 def hold(notify, by: str = "cli") -> str:
     with _state_lock():  # unconditional, under the same lock the automatic updates compare-and-swap in
         st = load_state()
