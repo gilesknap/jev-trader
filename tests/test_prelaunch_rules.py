@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from trader import cli
-from trader.golive import START_DATE
+from conftest import TEST_START_DATE as START_DATE  # what the autouse fixture pins golive.START_DATE to
 from trader.jev import Decision
 from trader.runner import _exclude_prelaunch_specs
 from test_engine import run, spec

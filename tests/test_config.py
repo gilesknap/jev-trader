@@ -24,6 +24,7 @@ def _write(tmp_path, mutate):
     return p
 
 
+@pytest.mark.config_start_date
 def test_the_checked_in_config_loads_and_feeds_the_code():
     s = config.load_settings(ROOT / "config.yaml")
     assert isinstance(s.experiment.start_date, dt.date)

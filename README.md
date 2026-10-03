@@ -41,7 +41,7 @@ All scripts are idempotent, so re-running one is always safe. Run each as a sing
 
 | # | As | Command | Does |
 |---|---|---|---|
-| 0 | trader | `git clone https://github.com/<owner>/<repo> /tmp/trading-setup` (the repo in `config.yaml`) | Gets the scripts before `/srv/trading` exists (a fresh install only) |
+| 0 | trader | `git clone https://github.com/<owner>/<repo> /tmp/trading-setup` (your private repo, as in `config.yaml`) | Gets the scripts before `/srv/trading` exists (a fresh install only) |
 | 1 | admin | `sudo bash /tmp/trading-setup/deploy/setup/1-host.sh` | Creates the `trading` group, the `runner` user (no sudo, lingering) and `/srv/trading/{strategist,main,runtime}` with the right owners and modes |
 | 2 | trader, **from a fresh login** | `bash /tmp/trading-setup/deploy/setup/2-strategist.sh` | Checks out the `strategist` branch, creates `.env` (paper keys only, generated ntfy topic), installs the strategist's systemd timers, links `~/trading` |
 | 3a | admin | `sudo bash /srv/trading/strategist/deploy/setup/3-runner.sh key` | Creates `runner`'s deploy key and prints it. Add it on GitHub → Settings → Deploy keys, **read-only** |

@@ -3,6 +3,7 @@ import datetime as dt
 
 import pytest
 
+from conftest import TEST_START_DATE
 from trader import golive
 
 
@@ -19,7 +20,7 @@ def env(tmp_path, monkeypatch):
 
 
 def write_book(book, days=10, trades_per_day=2, pnl_pct=0.3, classifier="idea", worst=-1.0):
-    start = dt.date(2026, 10, 5)
+    start = TEST_START_DATE  # the date the autouse fixture pins golive.START_DATE to
     sessions = [start + dt.timedelta(days=i) for i in range(40) if (start + dt.timedelta(days=i)).weekday() < 5][:days]
     with (book / "trades.csv").open("w", newline="") as f:
         w = csv.DictWriter(f, ["time", "book", "classifier", "symbol", "side", "qty", "price", "notional", "reason", "pnl", "pnl_pct"])

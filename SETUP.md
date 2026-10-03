@@ -13,9 +13,20 @@ Items marked **TODO** weren't verified when this was written; check them as you 
 
 ## 0. Your copy of the repo and `config.yaml`
 
-1. Create a **private** repository on GitHub and push the snapshot you were given into it (`main` branch). Keep it private: the strategist's journal and your trading results end up in it.
+1. Get the code from the public starter, [github.com/gilesknap/jev-trader](https://github.com/gilesknap/jev-trader), into a **private** repository of your own. Keep it private: the strategist's journal and your trading results end up in it.
+   - Create an empty private repository on GitHub (no README, licence or `.gitignore`).
+   - Clone the starter, keep it as a remote called `upstream`, and push its `main` to your repo:
+     ```bash
+     git clone https://github.com/gilesknap/jev-trader.git trading && cd trading
+     git remote rename origin upstream
+     git remote add origin https://github.com/<you>/<your-repo>.git
+     git push -u origin main
+     ```
+   - Don't use GitHub's "Use this template" button. It copies the files into a new history that shares no commits with the starter, so every later `git merge upstream/main` sees unrelated histories and conflicts on everything. Don't fork it either: a fork of a public repository can't be made private. Later updates come in by a merge: see "Taking updates from the starter" below.
+
+   The starter is already reset for a new owner: `journal/` and `logs/` are empty, `state/` is fresh (`strategy.md`, an empty `watchlist.md`, and the pre-launch pack from `deploy/prelaunch/classifiers.yaml` as `state/classifiers.yaml`), and `config.yaml` holds placeholders.
 2. Edit `config.yaml` at the repo root. It holds everything specific to one deployment. Read the comments in the file itself for what each key does: that file, not this guide, is the reference. The keys you must change:
-   - `owner.name` and `owner.github_repo` (`you/your-repo`): the setup scripts clone from it.
+   - `owner.name` and `owner.github_repo` (`you/your-repo`, your private repo): the setup scripts clone from it.
    - `dashboard.users`: your Tailscale login(s). **Empty means nobody can open the dashboard.**
    - `experiment.start_date`: see point 3.
    - `schedule.*` if you aren't in the UK. `local_tz` is your clock, and `runner_start` and the `strategist` timer specs (systemd `OnCalendar` syntax) are in it. Keep `runner_start` safely before 09:30 New York in every daylight-saving week, and the post-close timer after 16:00 New York.
@@ -29,8 +40,8 @@ Items marked **TODO** weren't verified when this was written; check them as you 
    ```
    A malformed `config.yaml` (an unknown key, a bad date, an unquoted time) stops every `trader` command with a message naming the file, so a typo can't slip through quietly.
 3. Start the experiment fresh:
-   - For now, set `experiment.start_date` to any date comfortably after your install (a few weeks out). You'll set the real one in step 8, when you install the pre-launch pack. The go-live gate and the scoreboard ignore everything before it.
-   - Empty `journal/` and `logs/` (keep the `.gitkeep` files): `logs/` holds the previous owner's `trades.csv`, equity and cashflow files, `probe_report.json` and decision logs, which would otherwise be read as your history. Then reset `state/`: `strategy.md` to a short "Phase: pre-launch, observe starts <date>" note, `watchlist.md` to empty, and `classifiers.yaml` to `control_orb` only (copy it from `deploy/prelaunch/classifiers.yaml` and delete the other rules, or use the whole pack for step 8).
+   - For now, set `experiment.start_date` to any date comfortably after your install (a few weeks out). You'll set the real one in step 8, when you run the pre-launch pack. The go-live gate and the scoreboard ignore everything before it.
+   - **Only if you started from someone's full copy rather than the starter:** empty `journal/` and `logs/` (keep the `.gitkeep` files): `logs/` holds the previous owner's `trades.csv`, equity and cashflow files, `probe_report.json` and decision logs, which would otherwise be read as your history. Then reset `state/`: `strategy.md` to a short "Phase: pre-launch, observe starts <date>" note, `watchlist.md` to empty, and `classifiers.yaml` to `control_orb` only (copy it from `deploy/prelaunch/classifiers.yaml` and delete the other rules, or use the whole pack for step 8).
    - Leave `config/universe.yaml` and `config/mode.yaml` (`paper`) as they are unless you mean to change them.
 4. Create the `strategist` branch from `main` and push it. The strategist commits only there.
 5. Create a label called `needs-human` (Issues → Labels). The strategist uses it when it needs something from you.
@@ -240,6 +251,7 @@ The setup scripts read the repo and the Tailscale port from `config.yaml` (throu
 
 ## 7. First day
 
+- **From the starter**, the pre-launch pack (step 8) is already `state/classifiers.yaml`, so expect its `test_*` rules to trade on paper from the first session; they stop on the start date.
 - **Before the session:** `uv run trader session` (as trader, in `/srv/trading/strategist`) shows today's session times. `uv run trader validate` should say `classifiers OK`.
 - **At the runner's start** (the timer, shortly before the US open): an ntfy "runner started session …". The dashboard's banner switches to "The runner is trading now".
 - **During the session:** watch `decision_errors` and `probe_errors` in the dashboard's At a glance panel. A few Jev timeouts a day pause decisions for 5 minutes each and are harmless; a steady stream means a key or credit problem.
@@ -253,7 +265,7 @@ If something doesn't happen, the logs are in `/srv/trading/runtime/alerts.log` (
 Before the experiment starts, push real orders through every execution path on paper, so a bug shows up while nothing counts.
 
 1. Set `experiment.start_date` in `config.yaml` to **2–3 trading days after the first pre-launch session** (a Monday is tidiest), then render, merge and deploy (see "Changing `config.yaml` later"). This is the one real start date: the pack runs on the days before it.
-2. As trader, on the `strategist` branch, copy the pack into place, set its `date:` to the next session, validate and push:
+2. As trader, on the `strategist` branch, copy the pack into place, set its `date:` to the next session, validate and push (from the starter the pack is already `state/classifiers.yaml`, so the `cp` changes nothing):
    ```bash
    sudo -iu trader
    cd /srv/trading/strategist && git pull
@@ -291,6 +303,16 @@ Edit it, run `uv run trader config render-deploy`, commit through a PR, merge an
 - **A dashboard users change** also needs `TRADER_DASHBOARD_USERS` in `/home/runner/.config/trading/services.env` updated to match, then a dashboard restart. That file is installed once and is never overwritten, and its value wins over `config.yaml`.
 - **A start date change** takes effect at the runner's next session start.
 
+## Taking updates from the starter
+
+When the starter changes, merge it on a branch and bring it in through a PR on your own repo. A checkout without an `upstream` remote (any clone other than the one you made in step 0) needs it added first: `git remote add upstream https://github.com/gilesknap/jev-trader.git`. Then:
+```bash
+git fetch --multiple origin upstream   # both remotes, so origin/main is current too
+git switch -c upstream-sync origin/main
+git merge upstream/main
+```
+Conflicts are usually only in `config.yaml` (keep your values, take any new keys) and the rendered deploy files (take either side, then re-run `uv run trader config render-deploy` to regenerate them from your `config.yaml`). Anything under `state/`, `journal/` or `logs/` is yours: keep your side. Then run the tests, commit, push the branch, open a PR on your repo and merge it with **"Create a merge commit"** (not squash or rebase), so `trading-deploy` sees a GitHub-signed merge and lists it without a diff review. Deploy as usual (README → Deploying). If the merge changed `config.yaml`, the follow-ups in "Changing `config.yaml` later" above apply too. If anything under `deploy/systemd-trader/` changed, reinstall the strategist timers as in "A schedule change" above. Finish with `sudo bash /srv/trading/main/deploy/setup/check.sh` after the deploy: every line should read PASS.
+
 ## Starting over later
 
-To restart the experiment (say after changing the design): pick a new start date in `config.yaml`, reset `state/` and `journal/` as in step 0, reset the paper balance and run `trader rebase-paper`, and deploy. The runtime's history (`/srv/trading/runtime`) isn't backed up anywhere; copy it off first if you want to keep it. Everything the strategist has written is on GitHub.
+To restart the experiment (say after changing the design): pick a new start date in `config.yaml`, reset `state/` and `journal/` (the full-copy bullet in step 0, point 3), reset the paper balance and run `trader rebase-paper`, and deploy. The runtime's history (`/srv/trading/runtime`) isn't backed up anywhere; copy it off first if you want to keep it. Everything the strategist has written is on GitHub.
