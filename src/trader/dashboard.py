@@ -484,6 +484,51 @@ def journal(kind: str, name: str):
     return {"kind": kind, "name": name, "text": _strategist_text(config.STRATEGIST_ROOT / "journal" / kind / name)}
 
 
+def _ny_today() -> str:
+    """Today's New York date: trading days, trade times and journal entries are all New York dates."""
+    from zoneinfo import ZoneInfo
+
+    return dt.datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+
+
+DAILY_SECTIONS = {"premarket": "Pre-market", "postclose": "Post-close"}  # pinned in prompts/premarket.md, postclose.md
+
+
+def _heading_key(title: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", title.lower())
+
+
+def journal_section(text: str, heading: str) -> str | None:
+    """The body of the first `## <heading>` section, or None. Matched case-insensitively by prefix,
+    ignoring spaces and punctuation, so "## Pre-market (09:05)" and "## Premarket" both match
+    "Pre-market". The section runs to the next `#` or `##` heading."""
+    want, body, fenced = _heading_key(heading), None, False
+    for line in text.splitlines():
+        fenced ^= line.startswith("```")  # a "# comment" in a code block isn't a heading
+        m = None if fenced else re.match(r"(#{1,2})\s+(.*)", line)
+        if m and body is not None:
+            break
+        if m and m.group(1) == "##" and _heading_key(m.group(2)).startswith(want):
+            body = []
+        elif body is not None:
+            body.append(line)
+    return "\n".join(body).strip() if body is not None else None
+
+
+@app.get("/api/today-read")
+def today_read():
+    """The strategist's read on today for the Today page: the Pre-market and Post-close sections of
+    the latest daily journal entry. `is_today` is false when today's entry hasn't been written."""
+    today = _ny_today()
+    names = [n for n in _journal_names("daily") if n[:10] <= today]  # never a misdated future entry
+    if not names:
+        return {"today": today, "name": None, "is_today": False, "sections": {}}
+    name = names[0]
+    text = _strategist_text(config.STRATEGIST_ROOT / "journal" / "daily" / name) or ""
+    return {"today": today, "name": name, "is_today": name == f"{today}.md",
+            "sections": {k: journal_section(text, h) for k, h in DAILY_SECTIONS.items()}}
+
+
 def _strategist_stamp() -> Path:
     return config.STRATEGIST_STAMP
 

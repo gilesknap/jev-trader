@@ -282,7 +282,7 @@ Then follow the table. All the scripts are idempotent, so re-running one is alwa
 | ✓ | admin | `sudo bash /srv/trading/main/deploy/setup/check.sh` | Verifies users, permissions, secrets placement, services, socket isolation, the strategist's timers and commands, and the split layout. Every line should read PASS |
 
 Notes:
-- 6b and 6c need `TRADER_DATA_ROOT` pointing at your data checkout: without it, `3-runner.sh key` reads the code's placeholder `config.yaml` and prints a deploy-key link for the wrong repository. 6c needs it only because `/srv/trading/config` doesn't exist yet; from then on the scripts read `config.yaml` there and find the split layout by themselves. 6c also warns that the strategist's `.env` doesn't exist yet: expected, 6e deals with it.
+- 6b and 6c need `TRADER_DATA_ROOT` pointing at your data checkout: without it, `3-runner.sh key` stops, because the code carries no `config.yaml` of its own. 6c needs it only because `/srv/trading/config` doesn't exist yet; from then on the scripts read `config.yaml` there and find the split layout by themselves. 6c also warns that the strategist's `.env` doesn't exist yet: expected, 6e deals with it.
 - 6d needs `trader`'s GitHub token (step 5) to clone your private data repository.
 - Before 6d, make `trader`'s login umask `022` (as trader: `grep -qx 'umask 022' ~/.profile || echo 'umask 022' >> ~/.profile`, and the same in `~/.bash_profile` if it exists, then log in again), so the checkout `2-strategist.sh` clones isn't writable by the `trading` group, which `runner` is in. If it already is, `sudo chmod -R g-w /srv/trading/strategist` fixes it.
 - After 6d, `2-strategist.sh` suggests running `check.sh` next: do 6e first, which copies the strategist's `.env` for `runner`, then check.
