@@ -136,8 +136,11 @@ class FeatureSandbox:
                     bwrap_cmd(Path(snapshot)), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL, text=True, bufsize=1,
                 )
+                from trader.features import harness
+
                 rep = self._call({"op": "load", "dir": str(Path(snapshot).resolve()),
-                                  "samples": [[encode_bars(b), encode_bars(p), encode_bars(s)] for b, p, s in samples]},
+                                  "samples": [[encode_bars(b), encode_bars(p), encode_bars(s)] for b, p, s in samples],
+                                  "speed_budget_s": harness.SPEED_BUDGET_S},
                                  timeout=self.gate_timeout, expect="features")
         except (OSError, SandboxError) as e:  # e.g. a full /tmp: this alert, and library features still trade
             self._fail(f"custom-feature gate failed: {e}")
