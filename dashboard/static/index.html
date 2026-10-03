@@ -273,7 +273,8 @@ code { font-family: var(--mono); font-size: .9em; }
     <div class="table-wrap" id="positions"></div></section>
   <section><h2>Rules right now <span>what each classifier is doing, per stock</span></h2>
     <details class="about"><summary>About the rules</summary>
-      <p>Each classifier watches a few stocks. Every few minutes it asks <b>Jev</b> (a decision model) whether to act, and only acts when Jev's confidence is above the classifier's threshold. The bars show Jev's last answer, tallest first in the label. <b>control_orb</b> is a deliberately simple benchmark the strategist has to beat.</p></details>
+      <p>Each classifier watches a few stocks. Every few minutes it asks <b>Jev</b> (a decision model) whether to act, and only acts when Jev's confidence is above the classifier's threshold. The bars show Jev's last answer, tallest first in the label. <b>control_orb</b> is a deliberately simple benchmark the strategist has to beat.</p>
+      <p>Jev is only asked once a rule's <b>trigger</b> passes (for example, price above the opening range's high). <b>Today so far</b> says how often each stock was checked, how often Jev was asked, and why it wasn't: the trigger didn't pass (with the values the last time it missed), or the check was skipped (stale market data, Jev paused after errors, the account blocked). Hover it for the raw counts. Zero Jev calls on a quiet day is normal when the trigger never passed.</p></details>
     <div class="table-wrap" id="classifiers"></div></section>
 </div>
 
@@ -703,6 +704,8 @@ function render(d) {
           p.map(([k, v]) => `<i class="${v === top ? "top" : ""}" style="height:${Math.max(2, v * 18)}px"></i>`).join("") + "</span>" +
           `<span class="pmeta">${[...p].sort((a, b) => b[1] - a[1]).map(([k, v], i) => i ? `${esc(k)} ${Math.round(v * 100)}%` : `<b>${esc(k)} ${Math.round(v * 100)}%</b>`).join(" · ")}</span>`; } },
     { h: "asked at", v: r => r.x.last_eval || "–", num: 1 }, { h: "note", v: r => r.x.note || "" },
+    // Why Jev was or wasn't asked: the engine's counts for today, summarised by the server.
+    { h: "today so far", raw: 1, v: r => r.probe || !r.x.why ? "" : `<span class="pmeta" title="${esc(Object.entries(r.x.counts || {}).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(", "))}">${esc(r.x.why)}</span>` },
   ], rows, r => r.first ? "grp" : "", "No rules loaded yet. The runner loads them shortly before the open.");
 
   const trades = Object.values(d.books).flatMap(b => b.trades).sort((a, b) => b.time.localeCompare(a.time)).slice(0, 40);

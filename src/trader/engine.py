@@ -553,7 +553,8 @@ class Engine:
         if not self.day:
             return
         data = {"day": self.day.isoformat(), "states": {
-            cs.spec.id: {s: {"status": st.status, "trades": st.trades} for s, st in cs.symbols.items()}
+            cs.spec.id: {s: {"status": st.status, "trades": st.trades, "counts": st.counts,
+                             "last_trigger": st.last_trigger} for s, st in cs.symbols.items()}
             for cs in self.states}}
         tmp = self._classifier_state_file().with_suffix(".tmp")
         tmp.write_text(json.dumps(data))
@@ -567,13 +568,18 @@ class Engine:
         if data.get("day") != today:
             return
         for cs in self.states:
-            if cs.spec.probe:
-                continue  # probes hold nothing and never retire
             book = self.books[cs.spec.book_key]
             for sym, saved in data.get("states", {}).get(cs.spec.id, {}).items():
                 st = cs.symbols.get(sym)
                 if st is None:
                     continue
+                counts = saved.get("counts")  # display only: a damaged tally is dropped, never fatal
+                if isinstance(counts, dict):
+                    st.counts = {k: v for k, v in counts.items() if isinstance(k, str) and type(v) is int}
+                if isinstance(saved.get("last_trigger"), dict):
+                    st.last_trigger = saved["last_trigger"]
+                if cs.spec.probe:
+                    continue  # probes hold nothing and never retire
                 st.trades = int(saved.get("trades", 0))
                 status = saved.get("status", "armed")
                 e = book.entries.get(sym)
@@ -875,19 +881,29 @@ class Engine:
         # Trading classifiers before probes, so probes only ever use what's left of the tick.
         order = sorted(((cs, sym) for cs in self.states for sym in cs.spec.symbols),
                        key=lambda p: (p[0].spec.probe, p[0].symbols[p[1]].last_eval or oldest))
+        # Each outcome is counted on the symbol's state (SymbolState.count) for the dashboard: a
+        # check, why there was no check when one was due, and what the check led to. In memory only.
         for cs, sym in order:
             spec = cs.spec
-            if not spec.in_window(now):
-                continue
             st = cs.symbols[sym]
+            if st.status == "retired" or not cs.due(sym, now):
+                continue
+            if not spec.in_window(now):
+                st.count("skip_outside_window")
+                continue
             sb = bars.get(sym)
-            if st.status == "retired" or sb is None or len(sb) < 2 or not cs.due(sym, now):
+            if sb is None or len(sb) < 2:
+                st.count("skip_no_bars")
                 continue
             if st.status == "armed" and feed_stale:
+                st.count("skip_feed_stale")
                 continue  # no new entries on stale data; exits and stops still run
             if not (self._probes_available(now) if spec.probe else self._decisions_available(now)):
+                paused = self.probes_paused_until if spec.probe else self.decisions_paused_until
+                st.count("skip_paused" if paused is not None and now < paused else "skip_no_time")
                 continue  # not marked evaluated, so it's asked again next tick
             st.last_eval = now
+            st.count("checks")
             ctx = F.FeatureContext(self.prev_day.get(sym, pd.DataFrame()), spy, mso, minutes_to_close)
             if spec.probe:
                 self._probe(spec, st, sym, now, sb, ctx)
@@ -898,14 +914,17 @@ class Engine:
                     st.note = START_UNVERIFIED_NOTE
                 elif st.note == START_UNVERIFIED_NOTE:
                     st.note = ""
-                if book.blocked or book.start_unverified or sym in book.entries or sym in book.pending:
+                if book.blocked or book.start_unverified:
+                    st.count("skip_book_blocked")
                     continue
-                trig_feats = F.compute([t.feature for t in spec.trigger], sb, ctx)
-                if not all(t.holds(trig_feats) for t in spec.trigger):
-                    st.last_choice = "no-trigger"
+                if sym in book.entries or sym in book.pending:
+                    st.count("skip_symbol_busy")  # another rule holds it in this book
+                    continue
+                if not self._trigger_passes(spec, st, sb, ctx, now):
                     continue
                 feats = F.compute(spec.features, sb, ctx)
                 choice, probs = self._ask(spec, sym, now, sb, feats, None, "entry")
+                st.count("asked_entry" if choice is not None else "jev_error")
                 if choice is None:
                     continue
                 thr = spec.entry.threshold
@@ -932,6 +951,7 @@ class Engine:
                 if spec.scale_out:
                     pos["scaled_out"] = e.qty < e.orig_qty - 1e-9
                 choice, probs = self._ask(spec, sym, now, sb, feats, pos, "exit")
+                st.count("asked_exit" if choice is not None else "jev_error")
                 if choice is not None and probs.get("EXIT", 0) >= spec.exit.threshold:
                     self._exit(book, sym, e, px, now, "classifier EXIT")
 
@@ -940,12 +960,28 @@ class Engine:
     def _probe(self, spec, st, sym, now, sb, ctx) -> None:
         """Ask the entry question and log the answer with the price it was asked at. Never
         orders and never stands down: `trader probe-report` scores these rows afterwards."""
-        trig_feats = F.compute([t.feature for t in spec.trigger], sb, ctx)
-        if not all(t.holds(trig_feats) for t in spec.trigger):
-            st.last_choice = "no-trigger"
+        if not self._trigger_passes(spec, st, sb, ctx, now):
             return
         feats = F.compute(spec.features, sb, ctx)
-        self._ask(spec, sym, now, sb, feats, None, "probe")
+        choice, _ = self._ask(spec, sym, now, sb, feats, None, "probe")
+        st.count("asked_probe" if choice is not None else "jev_error")
+
+    @staticmethod
+    def _trigger_passes(spec, st, sb, ctx, now) -> bool:
+        """Whether every trigger condition holds. If not, counts it and keeps the values, so the
+        dashboard can say how close it came."""
+        trig_feats = F.compute([t.feature for t in spec.trigger], sb, ctx)
+        if all(t.holds(trig_feats) for t in spec.trigger):
+            return True
+        st.last_choice = "no-trigger"
+        st.count("no_trigger")
+        def shown(v):
+            return round(float(v), 4) if isinstance(v, (int, float)) and math.isfinite(v) else None
+
+        # [feature, op, needed value, value now (None if it couldn't be computed), held?]
+        st.last_trigger = {"at": now.strftime("%H:%M"), "conditions": [
+            [t.feature, t.op, t.value, shown(trig_feats.get(t.feature)), t.holds(trig_feats)] for t in spec.trigger]}
+        return False
 
     def _ask(self, spec, sym, now, sb, feats, pos, kind):
         rets = (sb.close.pct_change().iloc[-10:] * 1e4).round(1).fillna(0).tolist()
@@ -1556,7 +1592,7 @@ class Engine:
                         s: {"status": st.status, "trades": st.trades, "last_choice": st.last_choice,
                             "probs": {k: round(v, 3) for k, v in st.last_probs.items()},
                             "last_eval": st.last_eval.strftime("%H:%M") if st.last_eval else None,
-                            "note": st.note}
+                            "note": st.note, "counts": st.counts, "last_trigger": st.last_trigger}
                         for s, st in cs.symbols.items()
                     },
                 }
