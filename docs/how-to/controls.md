@@ -36,7 +36,8 @@ uv run trader clear-halt live     # or: paper, sim/<classifier id>
 Clearing it also rebases the high-water mark to the current NAV, so it doesn't re-trigger at once.
 It's refused while the runner is running (the runner holds NAV in memory and would overwrite the
 change): run it after the close. If the live book halted, go-live was demoted to paper; re-arm it
-with `trader release-live` once you've cleared the halt.
+with `trader release-live` once you've cleared the halt. Clearing a live halt also restarts the
+half-size week: the next 5 live sessions trade at half size.
 
 ## After resetting the Alpaca paper account
 
