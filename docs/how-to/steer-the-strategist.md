@@ -66,7 +66,8 @@ changes the current day's trading by itself.
       && echo "no strategist run" || echo "a strategist run is active: wait"
   ```
 
-- **Best: from the close until the post-close run** (the run starts at 21:30 UK as shipped). The post-close
+- **Best: from the close until the post-close run** (the run starts at 21:30 UK as
+  shipped). The post-close
   run is the long one, so the strategist has a full run to absorb the decision and draft the next
   day around it. After the post-close run also works, but then only the short pre-market run
   reacts before the next open.
@@ -83,8 +84,12 @@ strategist:
 
    ```bash
    sudo -u trader flock -n ~trader/.local/state/trader/strategist.lock \
-       git -C /srv/trading/strategist pull -q --ff-only origin strategist
+       git -C /srv/trading/strategist pull -q --ff-only origin strategist \
+       && echo pulled || echo "NOT pulled: a run or deploy holds the lock, or the pull failed"
    ```
+
+   If the pull refuses as not a fast-forward, the checkout holds a strategist run's unpublished
+   commit (the wrapper will have alerted): resolve that first.
 
 3. Restart the runner so it rereads `classifiers.yaml`. It resumes from its saved state
    (see [Daily operations](daily-operations.md#applying-a-classifier-change-mid-session)).
