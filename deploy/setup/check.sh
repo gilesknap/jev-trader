@@ -152,13 +152,18 @@ else
     chk  "main checkout holds config.yaml"            "[[ -f /srv/trading/main/config.yaml ]]"
 fi
 
+deployed_mode() {  # FILE: the value of its `mode:` line, or unknown
+    local m
+    m=$(sed -nE 's/^mode:[[:space:]]*//p' "$1" 2>/dev/null)
+    echo "${m:-unknown}"
+}
 if [[ -n $SPLIT ]]; then
-    echo "Mode: $(grep -E '^mode:' "$C/config/mode.yaml" 2>/dev/null || echo unknown)"
+    echo "Mode: $(deployed_mode "$C/config/mode.yaml")"
     echo "Deployed: code $(git -C /srv/trading/main -c safe.directory='*' log --oneline -1 2>/dev/null)"
     echo "          config $(git -C "$C" -c safe.directory='*' log --oneline -1 2>/dev/null)"
 else
     if [[ -f /srv/trading/main/config.yaml ]]; then
-        echo "Mode: $(grep -E '^mode:' /srv/trading/main/config/mode.yaml 2>/dev/null || echo unknown)"
+        echo "Mode: $(deployed_mode /srv/trading/main/config/mode.yaml)"
     else
         echo "Mode: none (main is code only, with no data: see the failed check above)"
     fi
