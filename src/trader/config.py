@@ -194,7 +194,7 @@ def load_settings(path: Path | None = None) -> Settings:
     """Parse and validate config.yaml. Raises SettingsError naming the file and the problem."""
     path = path or SETTINGS_FILE
     try:
-        raw = yaml.safe_load(path.read_text())
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, ValueError, yaml.YAMLError) as e:  # ValueError: not UTF-8 (UnicodeDecodeError)
         hint = ""
         if isinstance(e, FileNotFoundError) and not os.environ.get("TRADER_CONFIG"):
