@@ -19,9 +19,9 @@ What happens on a normal day, and what's yours to do. Local times are from `conf
 - Read the weekly issue in your data repository (label `weekly`, titled `Week <YYYY>-W<WW>: ...`;
   the strategist closes the previous week's). Its body is the weekly journal, including any
   go-live assessment (flagged in the title), and ends with a link to the week's diff of the
-  `strategist` branch, if you want to see exactly what changed in `state/`. Comment on it if
-  something needs saying. Nothing needs merging: the runner already reads the strategist's
-  branch.
+  `strategist` branch, if you want to see exactly what changed in `state/`. Nothing needs
+  merging: the runner already reads the strategist's branch. The strategist doesn't read comments
+  on the issue: to change its course, [steer it](steer-the-strategist.md).
 - Handle `needs-human` issues in your data repository: the strategist's requests, and its code
   proposals (see [Review the strategist's proposals](proposals.md)).
 - Deploy merged changes outside market hours (see [Deploy a change](deploy.md)), and take code
