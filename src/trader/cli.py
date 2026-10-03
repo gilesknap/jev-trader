@@ -184,7 +184,11 @@ def cmd_probe_report(a):
 def cmd_trials(a):
     from trader import trials
 
-    print(trials.report(trials.read(), a.id, a.hash, a.include_stub))
+    try:
+        rows = trials.read()
+    except (OSError, ValueError) as e:
+        sys.exit(f"can't read the trial ledger: {e}")
+    print(trials.report(rows, a.id, a.hash, a.include_stub))
 
 
 SERVICES_ENV = Path.home() / ".config" / "trading" / "services.env"

@@ -40,6 +40,22 @@ def test_append_writes_one_header_and_never_rewrites(tmp_path):
     assert trials.append([], p) == 0
 
 
+def test_a_file_that_is_not_a_ledger_is_refused(roots, capsys):
+    p = trials.ledger_path()
+    p.parent.mkdir(parents=True)
+    p.write_text("time,kind\nt1,replay\n")  # someone else's header
+    with pytest.raises(OSError):
+        trials.append([{"kind": "replay"}])
+    with pytest.raises(ValueError):
+        trials.read()
+    assert p.read_text() == "time,kind\nt1,replay\n"
+    with pytest.raises(SystemExit, match="can't read the trial ledger"):
+        cli.main(["trials"])
+    (roots / "runtime").mkdir()
+    (roots / "runtime" / "trials.csv").write_text(trials.HEADER + "t,shadow_start,d,a,h1,novel,,,,,,0\n")
+    assert compact.archive()["trials_added"].startswith("failed")  # never re-appended run after run
+
+
 def test_append_refuses_a_symlink(tmp_path):
     target = tmp_path / "elsewhere.csv"
     target.write_text("x\n")
@@ -127,13 +143,21 @@ def test_runner_logs_each_new_spec_once_and_archive_copies_it(roots):
     assert trials.note_shadow_starts([a, b], hashes, DAY + dt.timedelta(days=1), stub=False) == []
     assert trials.note_shadow_starts([a, b], {"a": "h1", "b": "h3"}, DAY, stub=False) == ["b"]  # b was edited
     assert trials.note_shadow_starts([a], {}, DAY, stub=False) == []  # no hash: nothing to log
+    assert trials.note_shadow_starts([spec(id="c")], {"c": "h1"}, DAY, stub=False) == ["c"]  # a's spec under a new id
     assert not ledger()  # the runner never writes the strategist's checkout
 
-    assert compact.archive()["trials_added"] == 3
+    assert compact.archive()["trials_added"] == 4
     assert compact.archive()["trials_added"] == 0  # idempotent
     rows = ledger()
     assert [(r["kind"], r["classifier_id"], r["spec_hash"], r["run_name"]) for r in rows] == [
-        ("shadow_start", "a", "h1", str(DAY)), ("shadow_start", "b", "h2", str(DAY)), ("shadow_start", "b", "h3", str(DAY))]
+        ("shadow_start", "a", "h1", str(DAY)), ("shadow_start", "b", "h2", str(DAY)), ("shadow_start", "b", "h3", str(DAY)),
+        ("shadow_start", "c", "h1", str(DAY))]
+
+
+def test_a_broken_runtime_ledger_raises_for_the_runner_to_report(roots):
+    (roots / "runtime" / "trials.csv").mkdir(parents=True)
+    with pytest.raises(OSError):
+        trials.note_shadow_starts([spec(id="a")], {"a": "h1"}, DAY, stub=False)
 
 
 def test_archive_survives_a_broken_runtime_ledger(roots):
@@ -154,8 +178,8 @@ def test_trials_report(roots, capsys):
     ])
     cli.main(["trials", "--id", "a"])
     out = capsys.readouterr().out
-    assert "a: 2 distinct spec(s) tried on 3 day(s), 3 evaluation(s)" in out
-    assert "family novel: 3 distinct spec(s) across 2 id(s), on 3 day(s)" in out
+    assert "a: 2 distinct spec(s) tried on 3 different day(s), 3 evaluation(s)" in out
+    assert "family novel: 3 distinct spec(s) across 2 id(s), tried on 3 different day(s)" in out
     assert "h9" not in out and "1 stub-decider row(s) not counted" in out
     cli.main(["trials"])
     out = capsys.readouterr().out

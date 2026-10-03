@@ -249,7 +249,7 @@ fi
 # else (an edited, truncated, removed or replaced ledger) goes back to PRE's: the runner's rows come
 # back with the next archive, but rows the tools added since PRE are lost.
 LEDGER=logs/trials.csv
-if OLD_SIZE=$(git cat-file -s "$PRE:$LEDGER" 2>/dev/null); then
+if [[ $(git cat-file -t "$PRE:$LEDGER" 2>/dev/null) == blob ]] && OLD_SIZE=$(git cat-file -s "$PRE:$LEDGER"); then
     OLD_SUM=$(git cat-file blob "$PRE:$LEDGER" | sha256sum)
 else
     OLD_SIZE=-1

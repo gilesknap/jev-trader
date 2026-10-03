@@ -37,6 +37,7 @@ from trader import config
 COLS = ("time", "kind", "run_name", "classifier_id", "spec_hash", "family", "days", "start", "end",
         "trades", "net_pct_after_slip", "stub")
 EVALUATIONS = ("replay", "probe_report")
+HEADER = ",".join(COLS) + "\n"
 LOCK_WAIT_S = 10.0
 
 
@@ -80,12 +81,14 @@ def append(rows: list[dict], path: Path | None = None, lock: bool = True) -> int
                     break
                 time.sleep(0.05)
         size = os.fstat(fd).st_size
-        head = ",".join(COLS) + "\n" if size == 0 else ""
+        head = HEADER if size == 0 else ""
+        if size and os.pread(fd, len(HEADER), 0) != HEADER.encode():
+            raise OSError(f"{path} doesn't start with the ledger's header; not appending")
         if size and os.pread(fd, 1, size - 1) != b"\n":
             head = "\n"
-        data = (head + buf.getvalue()).encode()
-        if os.write(fd, data) != len(data):
-            raise OSError(f"short write to {path}")
+        data = memoryview((head + buf.getvalue()).encode())
+        while data:  # O_APPEND: each write lands at the end, whatever else was written meanwhile
+            data = data[os.write(fd, data):]
     finally:
         os.close(fd)
     return len(rows)
@@ -102,13 +105,15 @@ def record(build, path: Path | None = None) -> int:
 
 def read(path: Path | None = None) -> list[dict]:
     """The ledger's complete rows (a missing file has none; a last line still being written is
-    left out)."""
+    left out). Raises ValueError if the file isn't a ledger (its header isn't COLS)."""
     path = path or ledger_path()
     try:
         text = path.read_bytes().decode()
     except FileNotFoundError:
         return []
     text = text[: text.rfind("\n") + 1]
+    if text and not text.startswith(HEADER):
+        raise ValueError(f"{path} doesn't start with the ledger's header ({HEADER.strip()})")
     return [r for r in csv.DictReader(io.StringIO(text)) if r.get("kind")]
 
 
@@ -159,14 +164,14 @@ def probe_rows(run_name: str, rows, report: dict, horizons: list[int]) -> list[d
 
 def note_shadow_starts(specs, hashes: dict[str, str], day: dt.date, stub: bool, path: Path | None = None) -> list[str]:
     """Runner, at session start: a `shadow_start` row in the runtime ledger for each spec whose hash
-    it hasn't logged before. Returns the ids logged. Raises on failure: the caller decides."""
+    it hasn't logged under that id before. Returns the ids logged. Raises on failure: the caller decides."""
     path = path or runtime_path()
-    seen = {r["spec_hash"] for r in read(path) if r["kind"] == "shadow_start"}
+    seen = {(r["spec_hash"], r["classifier_id"]) for r in read(path) if r["kind"] == "shadow_start"}
     now, new = _now(), []
     for s in specs:
         h = hashes.get(s.id, "")
-        if h and h not in seen:
-            seen.add(h)
+        if h and (h, s.id) not in seen:
+            seen.add((h, s.id))
             new.append({"time": now, "kind": "shadow_start", "run_name": day.isoformat(), "classifier_id": s.id,
                         "spec_hash": h, "family": s.family_label, "stub": int(stub)})
     append(new, path, lock=False)
@@ -183,7 +188,8 @@ def merge_runtime(src: Path | None = None, dst: Path | None = None) -> int:
 
 def report(rows: list[dict], cid: str | None = None, spec: str | None = None, include_stub: bool = False) -> str:
     """`trader trials`: distinct specs tried per classifier id (or for one id or spec hash, each
-    spec), on how many days, and the totals for each family shown."""
+    spec), on how many different days trials were run (not the sessions each one replayed: that
+    is the ledger's days/start/end), and the totals for each family shown."""
     stubs = sum(r.get("stub") == "1" for r in rows)
     if not include_stub:
         rows = [r for r in rows if r.get("stub") != "1"]
@@ -209,7 +215,7 @@ def report(rows: list[dict], cid: str | None = None, spec: str | None = None, in
     if cid or spec:
         if cid:
             n, d, e = tally(rows)
-            lines.append(f"{cid}: {n} distinct spec(s) tried on {d} day(s), {e} evaluation(s)")
+            lines.append(f"{cid}: {n} distinct spec(s) tried on {d} different day(s), {e} evaluation(s)")
         lines.append(f"{'spec_hash':16}  {'family':12}  {'first':10}  {'last':10}  evals  shadow  ids")
         for h, rs in sorted(group(rows, "spec_hash").items(), key=lambda kv: min(r["time"] for r in kv[1])):
             lines.append(f"{h:16}  {rs[-1]['family'] or '-':12}  {min(r['time'] for r in rs)[:10]}  "
@@ -217,15 +223,15 @@ def report(rows: list[dict], cid: str | None = None, spec: str | None = None, in
                          f"{'yes' if any(r['kind'] == 'shadow_start' for r in rs) else 'no':6}  "
                          f"{','.join(sorted({r['classifier_id'] for r in rs}))}")
     else:
-        lines.append(f"{'classifier_id':32}  {'family':12}  specs  days  evals")
+        lines.append(f"{'classifier_id':32}  {'family':12}  specs  trial_days  evals")
         for c, rs in sorted(group(rows, "classifier_id").items()):
             n, d, e = tally(rs)
-            lines.append(f"{c:32}  {rs[-1]['family'] or '-':12}  {n:5}  {d:4}  {e:5}")
+            lines.append(f"{c:32}  {rs[-1]['family'] or '-':12}  {n:5}  {d:10}  {e:5}")
     lines.append("")
     for f in sorted({r["family"] for r in rows if r["family"]}):
         fam = [r for r in every if r["family"] == f]
         n, d, _ = tally(fam)
-        lines.append(f"family {f}: {n} distinct spec(s) across {len({r['classifier_id'] for r in fam})} id(s), on {d} day(s)")
+        lines.append(f"family {f}: {n} distinct spec(s) across {len({r['classifier_id'] for r in fam})} id(s), tried on {d} different day(s)")
     if stubs and not include_stub:
         lines.append(f"({stubs} stub-decider row(s) not counted: --include-stub counts them)")
     return "\n".join(lines).rstrip()
