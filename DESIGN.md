@@ -24,7 +24,7 @@ Opus 5.5 strategist gets ~£200 (held as USD) and autonomy to invent and run an 
 ## Stack
 - Broker: **Alpaca**, US stocks/ETFs, **cash account**, fractional shares. Funded once in USD; all accounting in USD. W-8BEN.
 - Market data: **free IEX** websocket 1-min bars live (at most 30 symbols); **historical SIP** (>15 min old) for research and backtests. Alpaca news API + web search for context.
-- Decision model: **TypeSafe Jev via OpenRouter** (`models.jev`, `typesafe/jev-1.13` as shipped) through its Decisions API, behind an adapter. About $0.00002 per call.
+- Decision model: **TypeSafe Jev via OpenRouter** (`models.jev`, `typesafe/jev-1.13` as shipped) through its Decisions API, behind an adapter (a local model can be swapped in by implementing its `decide`). About $0.00002 per call.
 - Strategist: headless `claude -p` from systemd user timers on the Max subscription (the wrapper unsets `ANTHROPIC_API_KEY`).
 
 ## Schedule
@@ -77,7 +77,7 @@ The engine enforces each position's stop, target, scale-out, trail and time stop
 | Change | Read | Takes effect |
 |---|---|---|
 | `state/classifiers.yaml`, `features/custom/` | once per runner start: 2 minutes before the open, or at once if the runner starts later | the next session; an edit made during a session is picked up only if the runner restarts |
-| Paper or live (`golive.json`, `config/mode.yaml`) | once per runner start, before the open | that session; a HOLD LIVE pressed during a live session applies from the next one (STOP is the immediate control) |
+| Paper or live (`golive.json`, `config/mode.yaml`) | once, when the runner process starts (`schedule.runner_start`, 12:50 UK as shipped, well before the open; or at once on a restart) | that session. The final gate check, funding check and switch to live all happen then, so a HOLD LIVE pressed after that start, even before the open, applies only from the next session (STOP is the immediate control) |
 | Promotion eligibility (`mode: live`) | at each runner start, after the classifiers load | that session |
 | Code, `config.yaml`, `config/mode.yaml`, the universe | only after a human deploy, which never happens mid-session | the runner's next start |
 
@@ -103,12 +103,12 @@ A rule (classifier) moves through these states. The first four are per classifie
 | **probe** | strategist sets `mode: probe` | none | `state/classifiers.yaml`; answers in the decisions log | next runner start | code; counts towards nothing |
 | **sim** | strategist sets `mode: sim` | none | `state/classifiers.yaml`; its account in `runtime/books/sim/<id>/` | next runner start | code; counts towards nothing |
 | **shadow** | strategist sets `mode: shadow` (the default); also where the runner puts an ineligible `mode: live` | none to enter; its paper trades build its record | `state/classifiers.yaml`; the record (spec hash, start date, family) in `runtime/promotion.json` | next runner start | code |
-| **eligible** (computed, not a mode) | the runner, at each start | ≥20 closed paper trades since its record started, mean return > 0 after 0.05%/side; any spec change except `mode`, `enabled`, `family` restarts the record; sim, probe, replay and `(price estimated)` trades don't count | recomputed each start from the paper `trades.csv` and `promotion.json` | that session | code (`golive.enforce_promotion`) |
+| **eligible** (computed, not a mode) | the runner, at each start | ≥20 closed paper trades since its record started, mean return > 0 after 0.05%/side; any spec change except `mode`, `enabled`, `family` restarts the record, and so does any edit to `features/custom/` if the spec uses a custom feature; sim, probe, replay and `(price estimated)` trades don't count | recomputed each start from the paper `trades.csv` and `promotion.json` | that session | code (`golive.enforce_promotion`) |
 | **live** (rule) | strategist sets `mode: live` | eligible, and the account is live | `state/classifiers.yaml` | next runner start | code. While the account is paper, `mode: live` trades paper like shadow. Once it trades live its paper record stops growing, and it stays eligible until its spec changes |
 | **demoted** (rule) | strategist sets `mode: shadow` when live underperforms its paper record; the runner runs it as shadow at any start where it isn't eligible (alerting when the account is live) | strategist's judgement | `state/classifiers.yaml` (the runner's downgrade isn't written back; it's re-decided each start) | next runner start | charter for underperformance; code for ineligibility |
 | account **pending** | the start; a disarm; `trader release-live` | the gate, after each session: ≥10 trading days, ≥20 closed non-control paper trades, positive expectancy after slippage, no day ≤ −5%, paper book not halted | `runtime/golive.json` | — | code (`src/trader/golive.py`) |
 | account **armed** | the runner, after a session in which the gate passes | the gate, re-checked after each of 3 paper sessions and again at the switch; a failure disarms to pending | `runtime/golive.json` | counts down per session | code |
-| account **live** | the runner, at the first start after the 3 sessions | final gate check, and live equity ≥ $100 at that start (otherwise it stays armed and alerts each start) | `runtime/golive.json`; live session count in the live book's `risk.json` | that session; the first 5 live sessions ever at half size | code |
+| account **live** | the runner, at the first runner start (12:50 UK as shipped) after the 3 sessions | final gate check, and live equity ≥ $100 at that start (otherwise it stays armed and alerts each start) | `runtime/golive.json`; live session count in the live book's `risk.json` | that session; the first 5 live sessions ever at half size | code |
 | account **vetoed** | the human: HOLD LIVE (dashboard) or `trader hold-live`, from any state | none | `runtime/golive.json` | next runner start | code; only `trader release-live` leaves it |
 | account **demoted** | the runner, at the end of a session in which the live book halted | the halt | `runtime/golive.json`; `halted` in the live book's `risk.json` | the live book is already flat and blocked; paper from the next start | code; the human clears the halt and releases |
 
@@ -197,7 +197,7 @@ replays/                  replay output (git-ignored)
 - ntfy.sh (secret topic): kill switch, halts, daemon crash, failed strategist run/auth, order rejections, **daily P&L one-liner**.
 - GitHub issues in the data repo labelled `needs-human`: proposals and strategist requests; and a weekly issue (label `weekly`) carrying any go-live assessment.
 - Watchdog timer every 10 min: daemon heartbeat in market hours + post-close run staleness.
-- Dashboard: FastAPI + single page, `tailscale serve` HTTPS; viewing and controls restricted to the dashboard users in `config.yaml` via Tailscale identity header. Pages: Today (accounts, equity with buy-and-hold SPY, health, positions, live classifier states), Scoreboard (per classifier and per family), Rules (each classifier's settings in plain words), Trades, Strategist's notes (strategy/journal), System and links. Controls: STOP (flatten, cancel, halt for the day; confirm) and HOLD LIVE.
+- Dashboard: FastAPI + single page, `tailscale serve` HTTPS; viewing and controls restricted to the dashboard users in `config.yaml` via Tailscale identity header. Pages: Today (accounts, equity with buy-and-hold SPY, health, positions, live classifier states), Scoreboard (per classifier and per family), Rules (each classifier's settings in plain words), Trades, Probes, Strategist's notes (strategy/journal), System and links. Controls: STOP (flatten, cancel, halt for the day; confirm) and HOLD LIVE.
 
 ## Defaults
 - Jev unavailable → fail closed: no new entries and no model exits for 5 minutes after a failed call; stops, targets and the flatten carry on; alert.
@@ -207,7 +207,7 @@ replays/                  replay output (git-ignored)
 ## Not enforced in code
 These are charter instructions or human practice, not code, and nothing stops a run that ignores them; the weekly review and the human's reading of it are the check.
 - The observe phase: the runner trades whatever `state/classifiers.yaml` holds from the first session.
-- Demoting a live classifier that underperforms its paper record, or whose live results diverge from paper: the strategist's job. The code demotes only the whole account, and only on a live-book halt.
+- Demoting a live classifier that underperforms its paper record, or whose live results diverge from paper: the strategist's job. The code demotes the whole account only on a live-book halt, and its only per-classifier downgrade is for an ineligible paper record, which live results never change.
 - The weekly novelty mandate, the honesty of the `family` label, research hygiene and not trading for volume to reach the gate.
 - Keeping `config/universe.yaml` to at most 30 symbols (a test only requires every symbol to be bucketed).
 
