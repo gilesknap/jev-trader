@@ -892,26 +892,29 @@ class Engine:
         """Every bar since the last check, in order, so a slow or skipped tick can't jump past
         a stop. Per bar: stop (first: the order inside a bar is unknown, so assume the worst),
         target, scale-out, then ratchet the trail from that bar's high, which therefore
-        never raises the stop that the same bar's low is tested against."""
+        never raises the stop that the same bar's low is tested against.
+        A stop is a resting order, filled at its level (or the open, if the bar gapped through it).
+        A target or scale-out is not: no profit order rests at the broker, so the engine sells at
+        market once it has seen the touch, at the latest price, in every book. A simulated fill
+        at the target would credit a transient high that the live policy can't capture."""
         since = pd.Timestamp(e.scanned_to or e.time)
         window = bar[bar.index >= since]
-        sim = b.broker.name == "sim"
         last = float(bar.close.iloc[-1])
         dirty = False
         for ts, row in window.iterrows():
             if row.low <= e.stop:
                 why = "stop" if e.stop <= e.init_stop + 1e-9 else "stop (raised)"
                 self._set_cursor(b, e, ts)  # a failed exit re-scans from this bar next tick
-                self._exit(b, sym, e, min(float(row.open), e.stop), now, why)
+                self._exit(b, sym, e, min(float(row.open), e.stop), now, why, resting=True)
                 return
             if ts < pd.Timestamp(e.time):
                 continue  # the bar a limit entry filled in: only its stop risk counts
             if row.high >= e.target:
                 self._set_cursor(b, e, ts)
-                self._exit(b, sym, e, max(float(row.open), e.target) if sim else last, now, "target")
+                self._exit(b, sym, e, last, now, "target")
                 return
             if e.scale_at is not None and row.high >= e.scale_at:
-                if not self._scale_out(b, sym, e, max(float(row.open), e.scale_at) if sim else last, now):
+                if not self._scale_out(b, sym, e, last, now):
                     self._set_cursor(b, e, ts)
                     return
             if row.high > e.high:
@@ -1214,7 +1217,7 @@ class Engine:
             if limit is not None:
                 p.order_id = book.broker.buy_limit(sym, qty, limit, now, cid)
             else:
-                fill = book.broker.buy_notional(sym, order.notional, px, now, cid)
+                fill = book.broker.buy_notional(sym, order.notional, self._market_ref(book, sym, px), now, cid)
         except Exception as e:
             self._entry_failed(book, st, sym, p, e, now)
             return
@@ -1486,6 +1489,7 @@ class Engine:
     def _scale_out(self, b: Book, sym, e: Entry, ref, now) -> bool:
         """Sell scale_fraction of the position. Returns False if the scan should stop here: to
         retry next tick, or because the position has closed."""
+        ref = self._market_ref(b, sym, ref)
         q = math.floor(e.qty * e.scale_fraction * 1e6) / 1e6
         if q * ref < G.MIN_NOTIONAL or (e.qty - q) * ref < G.MIN_NOTIONAL:
             e.scale_at = None  # too small to split: carry on as one position
@@ -1524,9 +1528,22 @@ class Engine:
         e.stop_id = new_id if new_id is not None else None
         b.save_entries()
 
-    def _exit(self, book: Book, sym, e: Entry, ref, now, reason, protect: bool = True) -> None:
+    @staticmethod
+    def _market_ref(b: Book, sym, ref: float) -> float:
+        """The reference price for a market order sent now. A replay's simulated broker knows the
+        next bar's open, the first price the order could really execute at once the signal bar
+        has been seen; everywhere else (paper, live, sim accounts) it is `ref`, the latest
+        price."""
+        nxt = getattr(b.broker, "next_open", None)
+        return nxt.get(sym, ref) if isinstance(nxt, dict) else ref
+
+    def _exit(self, book: Book, sym, e: Entry, ref, now, reason, protect: bool = True,
+              resting: bool = False) -> None:
         """`protect` False (the flatten): a remainder isn't given a new server stop, which would only
-        hold the shares the close-all that follows is about to sell."""
+        hold the shares the close-all that follows is about to sell. `resting`: `ref` is the price
+        of a resting stop, which filled where it was hit, not a market order sent now."""
+        if not resting:
+            ref = self._market_ref(book, sym, ref)
         try:
             fill = book.broker.sell_all(sym, ref, now, f"{e.classifier[:20]}-{sym}-{now:%m%d%H%M}-x", e.stop_id)
         except PartialExit as ex:  # some sold, and the rest may still be held (#61)
