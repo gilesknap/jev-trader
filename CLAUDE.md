@@ -170,7 +170,7 @@ def my_feature(bars, ctx):
 ## Tools
 - `trader validate`: feature gate plus classifier validation. **Run it after every edit.**
 - `trader replay --days 10 [--only id1,id2] [--file alt.yaml] [--name x]`: backtest through the real engine on historical SIP data with Jev.
-  - Replay fills a market order (entry, model exit, target, scale-out, time stop, flatten) at the **next bar's open** ± 0.05%, after the bar the decision saw; paper and sim fill at that bar's close. Stops and limits fill where a bar traded through them.
+  - Replay fills a market order (entry, model exit, target, scale-out, time stop, flatten) at the **next bar's open** ± 0.05%, after the bar the decision saw (paper and live fill at market seconds after that bar's close, which the next open approximates; sim accounts fill at the close itself). Stops and limits fill where a bar traded through them.
   - Use `--decider stub` for free plumbing checks.
   - Results go in `replays/<name>/` (summary.json, sim/trades.csv) and are auto-deleted after 14 days unless named `keep-*`. Use `keep-*` sparingly (at most a few, for reference runs you'll compare against later); disk is limited. Give each run a fresh `--name`; don't reuse one.
 - `trader probe-report`: score probe decisions (see Probes above). Probes also run in replays, so `--replay <name>` scores a backtest's probes. Treat that as tuning data, like any backtest.
