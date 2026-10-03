@@ -3,6 +3,7 @@ import json
 
 import pandas as pd
 
+from trader import provenance
 from trader.broker import SimBroker
 from trader.classifier import ClassifierSpec
 from trader.data import ET
@@ -51,7 +52,10 @@ def run(tmp_path, bars, specs, decider, cash=250.0):
         eng.tick(now, {"SPY": bars.loc[:ts]}, (close - now).total_seconds() / 60)
     eng.end_day(close)
     trades = (
-        pd.read_csv(tmp_path / "sim" / "trades.csv") if (tmp_path / "sim" / "trades.csv").exists() else pd.DataFrame()
+        # provenance ids are hex text: unforced, a sha like 123e45678901 reads back as a float
+        pd.read_csv(tmp_path / "sim" / "trades.csv", dtype=dict.fromkeys(provenance.COLS, str))
+        if (tmp_path / "sim" / "trades.csv").exists()
+        else pd.DataFrame()
     )
     return book, trades
 
