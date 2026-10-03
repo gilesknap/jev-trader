@@ -6,6 +6,10 @@ fills already include it). Every number comes with its sample size, a 95% interv
 verdict, because at a few trades a day one idea will look dominant for weeks before the
 difference means anything.
 
+`daily` is the objective itself: the whole book's return per session from its equity.csv
+(zero-trade days included) against buy-and-hold SPY. Per-trade figures describe the rules; they
+don't say whether the book is beating SPY.
+
 Trades on the same day share that day's tape (and often the same symbols), so they aren't
 independent. Intervals are therefore clustered by trading day: the evidence grows with the
 number of distinct days traded, not just the trade count.
@@ -13,6 +17,7 @@ number of distinct days traded, not just the trade count.
 
 from __future__ import annotations
 
+import datetime as dt
 import math
 import statistics
 
@@ -123,9 +128,133 @@ def compare(a: list[dict], b: list[dict]) -> dict | None:
             "verdict": verdict(min(len(a), len(b)), min(ga, gb), diff, half, behind="behind")}
 
 
+# ---- the objective: daily returns of the whole book vs SPY (descriptive per-trade stats above) ----
+
+SESSION_MIN = 390
+MIN_DAYS_TO_JUDGE = 10  # sessions before the daily comparison with SPY gets a verdict
+
+
+def _session_returns(rows: list[dict], key: str) -> dict[str, float]:
+    """Day -> return (%) over the session: from the day's first mark (the engine writes one at the
+    open) to its last. A NAV reset between sessions (a paper rebase) is therefore never a return,
+    and the book is flat overnight. A day with a single mark is measured from the previous close."""
+    marks: dict[str, list[float]] = {}
+    for r in sorted((r for r in rows if isinstance(r.get("time"), str)), key=lambda r: r["time"]):
+        v = _num(r.get(key), None)
+        if v is not None and v > 0:
+            marks.setdefault(r["time"][:10], []).append(v)
+    out, prev = {}, None
+    for d in sorted(marks):
+        m = marks[d]
+        base = m[0] if len(m) > 1 else prev
+        if base:
+            out[d] = (m[-1] / base - 1) * 100
+        prev = m[-1]
+    return out
+
+
+def _max_drawdown(rets: list[float]) -> float:
+    """Largest peak-to-trough fall (%, <= 0) of the compounded path, starting from 1."""
+    level = peak = 1.0
+    worst = 0.0
+    for r in rets:
+        level *= 1 + r / 100
+        peak = max(peak, level)
+        worst = min(worst, (level / peak - 1) * 100)
+    return worst
+
+
+def _series(rets: dict[str, float]) -> dict:
+    v = [rets[d] for d in sorted(rets)]
+    total = math.prod(1 + r / 100 for r in v) - 1 if v else None
+    return {"days": len(v), "total_pct": None if total is None else total * 100,
+            "mean_pct": statistics.fmean(v) if v else None,
+            "sd_pct": statistics.stdev(v) if len(v) > 1 else None,
+            "max_drawdown_pct": _max_drawdown(v) if v else None}
+
+
+def _exposure(trades: list[dict], day_equity: dict[str, float]) -> dict[str, float]:
+    """Day -> average share of the day's starting equity held in positions over the session (%).
+    Time-weighted from buy to final sell (scale-outs are ignored, so it errs high)."""
+    opened: dict[tuple[str, str], tuple[dt.datetime, float]] = {}
+    held: dict[str, float] = {}
+    for r in sorted((r for r in trades if isinstance(r.get("time"), str)), key=lambda r: r["time"]):
+        key = (r.get("classifier") or "?", r.get("symbol") or "?")
+        try:
+            t = dt.datetime.fromisoformat(r["time"])
+        except ValueError:
+            continue
+        if r.get("side") == "buy":
+            start, notional = opened.get(key, (t, 0.0))
+            opened[key] = (start, notional + _num(r.get("notional")))
+        elif r.get("side") == "sell" and key in opened:
+            start, notional = opened.pop(key)
+            day = start.date().isoformat()
+            try:
+                mins = max(0.0, (t - start).total_seconds() / 60)
+            except TypeError:  # one time naive, one aware (edited data): not measurable
+                continue
+            held[day] = held.get(day, 0.0) + notional * mins
+    return {d: min(100.0, held.get(d, 0.0) / (SESSION_MIN * eq) * 100) for d, eq in day_equity.items() if eq > 0}
+
+
+def daily(equity: list[dict], benchmark: list[dict] | None = None, trades: list[dict] | None = None,
+          from_date: str | None = None) -> dict | None:
+    """The book's daily return series from its equity.csv (unit NAV, so deposits aren't gains),
+    one row per session it marked (open to close), zero-trade days included, against buy-and-hold
+    SPY on the same days. This is the primary measure of the objective: two books with the same daily returns
+    score the same, however many trades they took. The SPY comparison pairs the days both have
+    and treats days as independent (an approximation: a 95% interval, no serial correction)."""
+    key = "nav" if any(_num(r.get("nav"), None) for r in equity) else "equity"
+    rets = {d: r for d, r in _session_returns(equity, key).items() if not from_date or d >= from_date}
+    if not rets:
+        return None
+    day_equity = {}
+    for r in sorted((r for r in equity if isinstance(r.get("time"), str)), key=lambda r: r["time"]):
+        day_equity.setdefault(r["time"][:10], _num(r.get("equity")))
+    exp = _exposure(trades or [], {d: day_equity.get(d, 0.0) for d in rets})
+    traded = {t["time"][:10] for t in trades or [] if isinstance(t.get("time"), str) and t.get("side") == "buy"}
+
+    def book(days: list[str]) -> dict:
+        return _series({d: rets[d] for d in days}) | {
+            "exposure_pct": statistics.fmean(exp.get(d, 0.0) for d in days), "days_traded": sum(d in traded for d in days)}
+
+    out = {"book": book(sorted(rets)),
+           "rows": [{"day": d, "return_pct": round(rets[d], 4), "exposure_pct": round(exp.get(d, 0.0), 2)} for d in sorted(rets)],
+           "spy": None, "book_on_spy_days": None, "vs_spy": None}
+    bench = {str(r.get("date"))[:10]: (_num(r.get("spy_open"), 0), _num(r.get("spy_close"), 0)) for r in benchmark or []}
+    bench = {d: oc for d, oc in bench.items() if oc[0] > 0 and oc[1] > 0}
+    both = sorted(set(rets) & set(bench))
+    if both:
+        # Buy-and-hold from the first paired session's open, overnights included after that.
+        spy, prev = {}, None
+        for d in sorted(bench):
+            if d >= both[0]:
+                spy[d] = (bench[d][1] / (prev if prev and d > both[0] else bench[d][0]) - 1) * 100
+            prev = bench[d][1]
+        out["spy"] = _series({d: spy[d] for d in both})
+        out["book_on_spy_days"] = book(both)
+        for row in out["rows"]:
+            row["spy_pct"] = round(spy[row["day"]], 4) if row["day"] in spy else None
+        diff = [rets[d] - spy[d] for d in both]
+        mean = statistics.fmean(diff)
+        half = t95(len(diff) - 1) * statistics.stdev(diff) / math.sqrt(len(diff)) if len(diff) > 1 else None
+        if len(diff) < MIN_DAYS_TO_JUDGE or half is None:
+            v = f"too few to judge ({len(diff)} days)"
+        elif mean - half > 0:
+            v = "ahead of SPY: 95% interval above zero"
+        elif mean + half < 0:
+            v = "behind SPY: 95% interval below zero"
+        else:
+            v = "can't tell from luck yet"
+        out["vs_spy"] = {"days": len(diff), "mean_diff_pct": mean, "ci_pct": half, "verdict": v}
+    return out
+
+
 def build(rows: list[dict], families: dict[str, str], current: set[str], start_equity: float | None,
           since: dict[str, str] | None = None, slippage_per_side_pct: float = SLIPPAGE_PER_SIDE_PCT,
-          from_date: str | None = None) -> dict:
+          from_date: str | None = None, equity: list[dict] | None = None,
+          benchmark: list[dict] | None = None) -> dict:
     """Scoreboard for one book.
 
     families: classifier id -> novel | conventional (anything else shows as "unlabelled";
@@ -134,6 +263,8 @@ def build(rows: list[dict], families: dict[str, str], current: set[str], start_e
     since: id -> date its current spec started (the paper book's promotion record), else None.
     slippage_per_side_pct: 0 for replays, whose simulated fills already include it.
     from_date: ignore trades before this date (the experiment's start, for the live board).
+    equity, benchmark: the book's equity.csv and SPY's benchmark.csv rows, for `daily` (the
+              objective; omitted when there's no equity file).
     """
     trades = closed_trades(rows, slippage_per_side_pct, from_date)
     # Said on the board, so a 0 there isn't mistaken for "nothing traded" (#148).
@@ -184,4 +315,5 @@ def build(rows: list[dict], families: dict[str, str], current: set[str], start_e
         "classifiers": classifiers, "families": fams,
         "novel_vs_conventional": compare(pooled["novel"], pooled["conventional"]),
         "novel_vs_control": compare(pooled["novel"], pooled["control"]),
+        "daily": daily(equity, benchmark, rows, from_date) if equity else None,
     }
