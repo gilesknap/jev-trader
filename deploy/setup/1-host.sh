@@ -27,5 +27,8 @@ getent group dashview >/dev/null || groupadd dashview
 if [[ -n "${SUDO_USER:-}" && ! "$SUDO_USER" =~ ^(root|trader|runner)$ ]]; then usermod -aG dashview "$SUDO_USER"; fi
 install -d -o runner -g dashview -m 0750 /srv/trading-dashview
 
-echo "host ready. Next, as trader: bash deploy/setup/2-strategist.sh"
+# This host can't tell the layouts apart yet (the config checkout is still empty), so name both.
+echo "host ready. Next:"
+echo "  split layout (#169, a private data repo + the public code): as admin, sudo bash $(dirname "$0")/3-runner.sh key"
+echo "  monorepo layout: as trader, bash deploy/setup/2-strategist.sh"
 echo "(trader must log in again, or restart Claude from a fresh login, to pick up the trading group)"

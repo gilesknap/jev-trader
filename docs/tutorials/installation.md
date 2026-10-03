@@ -1,50 +1,79 @@
 # Setting up your own copy
 
-This guide takes you from nothing to a runner trading on paper, on your own VPS, from your own private copy of this repo. It covers the accounts you need and the order to do things in. The [explanations](../explanations.md) cover the architecture, and the [how-to guides](../how-to.md) cover day-to-day operations; this guide doesn't repeat them.
+This guide takes you from nothing to a runner trading on paper, on your own VPS, running the public code with your own private data repository. It covers the accounts you need and the order to do things in. The [explanations](../explanations.md) cover the architecture, and the [how-to guides](../how-to.md) cover day-to-day operations; this guide doesn't repeat them.
 
 Plan on an evening for steps 1–7, then a few days of paper before the experiment starts (step 8).
 
 What you'll end up with:
 - **A VPS** that you reach by SSH and whose dashboard you open over your private Tailscale network. The VPS itself can't open connections to your other devices.
 - **Three accounts on it:** your admin account (sudo), `trader` (Claude, the strategist, paper keys only) and `runner` (the trading daemon, live keys, no sudo).
-- **Five external services:** Alpaca (the broker), OpenRouter (the Jev decision model), Claude (the strategist), GitHub (the repo and the strategist's memory) and ntfy (alerts on your phone).
+- **Two repositories:** the public code, [gilesknap/jev-trader](https://github.com/gilesknap/jev-trader) (or your fork of it), and a **private data repository** of your own, holding your deployment config and the strategist's memory. [Architecture](../explanations/architecture.md#two-repositories) explains the split.
+- **Five external services:** Alpaca (the broker), OpenRouter (the Jev decision model), Claude (the strategist), GitHub (the two repositories) and ntfy (alerts on your phone).
 
 Items marked **TODO** weren't verified when this was written; check them as you go.
 
-## 0. Your copy of the repo and `config.yaml`
+## 0. Your data repository and `config.yaml`
 
-1. Get the code from the public starter, [github.com/gilesknap/jev-trader](https://github.com/gilesknap/jev-trader), into a **private** repository of your own. Keep it private: the strategist's journal and your trading results end up in it.
-   - Create an empty private repository on GitHub (no README, licence or `.gitignore`).
-   - Clone the starter, keep it as a remote called `upstream`, and push its `main` to your repo:
-     ```bash
-     git clone https://github.com/gilesknap/jev-trader.git trading && cd trading
-     git remote rename origin upstream
-     git remote add origin https://github.com/<you>/<your-repo>.git
-     git push -u origin main
-     ```
-   - Don't use GitHub's "Use this template" button. It copies the files into a new history that shares no commits with the starter, so every later `git merge upstream/main` sees unrelated histories and conflicts on everything. Don't fork it either: a fork of a public repository can't be made private. Later updates come in by a merge: see "Taking updates from the starter" below.
+1. **Decide where your code comes from.**
+   - **(A) Straight from `gilesknap/jev-trader`.** Nothing to do now: your runner will deploy the
+     upstream maintainer's merged pull requests.
+   - **(B) From your own fork of it.** Fork `gilesknap/jev-trader` on GitHub (a fork of a public
+     repository is public; it holds only code). You review each upstream update in a pull request
+     on your fork before you deploy it. This is the safer choice once real money is involved, and
+     you need a fork anyway to contribute or to change the universe.
 
-   The starter is already reset for a new owner: `journal/` and `logs/` are empty, `state/` is fresh (`strategy.md`, an empty `watchlist.md`, and the pre-launch pack from `templates/data/strategist/state/classifiers.yaml` as `state/classifiers.yaml`), and `config.yaml` holds placeholders.
-2. Edit `config.yaml` at the repo root. It holds everything specific to one deployment. Read the comments in the file itself for what each key does: that file, not this guide, is the reference. The keys you must change:
-   - `owner.name` and `owner.github_repo` (`you/your-repo`, your private repo): the setup scripts clone from it.
-   - `dashboard.users`: your Tailscale login(s). **Empty means nobody can open the dashboard.**
-   - `experiment.start_date`: see point 3.
-   - `schedule.*` if you aren't in the UK. `local_tz` is your clock, and `runner_start` and the `strategist` timer specs (systemd `OnCalendar` syntax) are in it. Keep `runner_start` safely before 09:30 New York in every daylight-saving week, and the post-close timer after 16:00 New York.
-
-   Then regenerate the files that can't read YAML (the runner timer, the strategist timers and `services.env`), and commit everything to `main`:
+   [Take updates](../how-to/take-updates.md) compares the two. You can switch later.
+2. **Create an empty private repository** on GitHub for your data: no README, licence or
+   `.gitignore`. Keep it private: the strategist's journal and your trading results end up in it.
+3. **Fill it with `0-data.sh`**, on your laptop or the VPS, from a clone of the code (yours, as
+   your normal GitHub user, not the strategist's). It needs `git`, `uv` and the GitHub CLI `gh`,
+   logged in with access to the new repository (`gh auth login`, then `gh auth setup-git` so `git
+   push` uses it):
    ```bash
-   uv sync --extra dev                    # on your laptop, in a checkout of your repo
-   uv run trader config render-deploy     # rewrites deploy/systemd/trader-runner.timer, deploy/systemd/trader.env, deploy/systemd-trader/*.timer
-   uv run --extra dev pytest -q           # a test fails if they don't match config.yaml
-   git commit -am "Configure for <you>" && git push
+   git clone https://github.com/gilesknap/jev-trader.git && cd jev-trader   # or your fork
+   bash deploy/setup/0-data.sh <you>/<your-data-repo>
    ```
-   A malformed `config.yaml` (an unknown key, a bad date, an unquoted time) stops every `trader` command with a message naming the file, so a typo can't slip through quietly.
-3. Start the experiment fresh:
-   - For now, set `experiment.start_date` to any date comfortably after your install (a few weeks out). You'll set the real one in step 8, when you run the pre-launch pack. The go-live gate and the scoreboard ignore everything before it.
-   - **Only if you started from someone's full copy rather than the starter:** empty `journal/` and `logs/` (keep the `.gitkeep` files): `logs/` holds the previous owner's `trades.csv`, equity and cashflow files, `probe_report.json` and decision logs, which would otherwise be read as your history. Then reset `state/`: `strategy.md` to a short "Phase: pre-launch, observe starts <date>" note, `watchlist.md` to empty, and `classifiers.yaml` to `control_orb` only (copy it from `templates/data/strategist/state/classifiers.yaml` and delete the other rules, or use the whole pack for step 8).
-   - Leave `config/universe.yaml` and `config/mode.yaml` (`paper`) as they are unless you mean to change them.
-4. Create the `strategist` branch from `main` and push it. The strategist commits only there.
-5. Create a label called `needs-human` (Issues → Labels). The strategist uses it when it needs something from you.
+   It asks for your name, the experiment start date and the Tailscale logins allowed into the
+   dashboard (or take them as `--name`, `--start-date` and `--users`; `--help` lists them). Then
+   it builds both branches from the code's `templates/data/` and pushes them together:
+   - `main`: `config.yaml` with your values, `config/mode.yaml` (`paper`), and the timers and
+     environment file rendered from them;
+   - `strategist`, an orphan branch: a fresh `state/` (holding the pre-launch pack as
+     `state/classifiers.yaml`, see step 8), empty `journal/` and `logs/`, `features/custom/`,
+     `proposals/`, and a stub `CLAUDE.md`.
+
+   It also makes `main` the default branch and creates the `needs-human` and `weekly` labels, which
+   the strategist uses. It refuses a repository that isn't empty, and re-running it on one it set
+   up only re-checks the default branch and the labels.
+4. **Review `config.yaml`** on your data repository's `main`. It holds everything specific to one
+   deployment; the comments in the file itself are the reference for each key. Check:
+   - `owner.github_repo` is your **data** repository: the setup scripts clone it.
+   - `dashboard.users`: your Tailscale login(s). **Empty means nobody can open the dashboard.**
+   - `experiment.start_date`: for now, any date comfortably after your install (a few weeks out).
+     You'll set the real one in step 8, when you run the pre-launch pack. The go-live gate and the
+     scoreboard ignore everything before it.
+   - `schedule.*` if you aren't in the UK. `local_tz` is your clock, and `runner_start` and the
+     `strategist` timer specs (systemd `OnCalendar` syntax) are in it. Keep `runner_start` safely
+     before 09:30 New York in every daylight-saving week, and the post-close timer after 16:00 New
+     York.
+
+   To change it, edit it in a checkout of your data repository, re-render the files that can't
+   read YAML, and commit them together:
+   ```bash
+   git clone https://github.com/<you>/<your-data-repo>.git ~/my-data     # main
+   # edit ~/my-data/config.yaml, then, from the code checkout:
+   TRADER_DATA_ROOT=~/my-data uv run trader config render-deploy --data-root ~/my-data
+   git -C ~/my-data commit -am "Configure for <you>" && git -C ~/my-data push
+   ```
+   A malformed `config.yaml` (an unknown key, a bad date, an unquoted time) stops every `trader`
+   command with a message naming the file, so a typo can't slip through quietly. Before the
+   install, pushing straight to `main` is fine; once the system runs, change it through pull
+   requests (see "Changing `config.yaml` later").
+
+Your data repository never holds code, and the code repository never holds your data. Leave
+`config/mode.yaml` at `paper` until you mean to change it. The universe isn't in your data
+repository: it's `config/universe.yaml` in the code, because it must match the allocator's
+buckets.
 
 ## The admin account and Claude Code
 
@@ -54,7 +83,7 @@ You'll do setup and maintenance from a personal admin account with sudo (step 1 
 
 **Be honest about what that account can do.** With sudo it can read the live Alpaca keys and place orders directly, outside the runner and its guardrails. What bounds the damage:
 - Alpaca API keys can trade but can't withdraw money.
-- `trading-deploy` deploys GitHub-signed merges without a diff review; anything else makes you read the diff.
+- `trading-deploy` deploys GitHub-signed code merges without a diff review; anything else, and every config change, makes you read the diff.
 - The one-way tailnet (step 2): the VPS can't reach your other devices.
 
 So:
@@ -64,7 +93,7 @@ So:
 - Turn on 2FA for Alpaca, GitHub and OpenRouter, and give the OpenRouter key a spend limit.
 - While live keys are on the box, be careful what untrusted content you have it read (web pages, issues, files from elsewhere): that's how instructions get smuggled in.
 
-**The strategist is different on purpose.** `trader` runs Claude headless with `bypassPermissions` (step 5), because the account itself is the fence: no sudo, no live keys, no write access to the deployed code or the runtime, and no way to reach the dashboard. One gap: its GitHub token can merge PRs through the API, and those merges are GitHub-signed too. So every time you deploy, check that the PR list `sudo -u runner trading-deploy --dry-run` prints holds only PRs you reviewed.
+**The strategist is different on purpose.** `trader` runs Claude headless in auto mode (step 5), with nobody there to answer a prompt, so the account itself is the fence: no sudo, no live keys, no write access to the deployed code, the deployed config or the runtime, no way to reach the dashboard, and a GitHub token that reaches only your data repository. One gap: that token can push to the data repository's `main` or merge a pull request there through the API, and those merges are GitHub-signed too. That's why `trading-deploy` always shows you the full diff of the config and needs a typed `yes` for it, signed or not: read it.
 
 ## 1. The VPS
 
@@ -115,12 +144,13 @@ Once Tailscale works (step 2), you can close public SSH too, if you don't need t
 **Packages.**
 ```bash
 sudo apt update && sudo apt upgrade -y
-sudo apt install -y git gh gpg bubblewrap curl openssl util-linux
+sudo apt install -y git gh gpg bubblewrap curl openssl util-linux acl
 curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR=/usr/local/bin sh   # the units expect /usr/local/bin/uv
 ```
 - `bubblewrap` sandboxes the strategist's feature code. On Ubuntu 24.04+ it needs AppArmor's `bwrap-userns-restrict` profile, which the `apparmor` package ships; `check.sh` tests that the sandbox works.
 - `uv` installs the right Python for the project by itself.
 - `gpg` lets `trading-deploy` check that merge commits were signed by GitHub.
+- `acl` provides `setfacl`, which `2-strategist.sh` uses to let `runner` see the strategist's run lock, so a deploy can refuse while a run is live.
 
 ## 2. Tailscale, one way
 
@@ -213,62 +243,70 @@ sudo -iu trader
 curl -fsSL https://claude.ai/install.sh | bash      # installs ~/.local/bin/claude
 claude                                              # log in with your subscription, then /exit
 ```
-The wrapper unsets `ANTHROPIC_API_KEY`, so runs can only use the subscription. Headless runs can't answer permission prompts, so `~trader/.claude/settings.json` needs:
+The wrapper unsets `ANTHROPIC_API_KEY`, so runs can only use the subscription. Headless runs can't answer permission prompts, so put `trader` in auto mode, in `~trader/.claude/settings.json`:
 ```json
-{ "permissions": { "defaultMode": "bypassPermissions" }, "skipDangerousModePermissionPrompt": true }
+{ "permissions": { "defaultMode": "auto" } }
 ```
-That's why the strategist runs as its own account with paper keys only: what it can reach is limited by the OS, not by prompts. If the login expires, runs fail and you get an alert; log in again the same way. **TODO:** how long a subscription login lasts before it needs renewing.
+That's what the original runs headless, and the deny rules below were tested in it. Don't use `bypassPermissions`. Auto mode's classifier is a second line, not the fence: the strategist runs as its own account with paper keys only, so what it can reach is limited by the OS, not by prompts. `2-strategist.sh` (step 6d) later adds `permissions.deny` rules to the same file, for the routes to GitHub's public content, and leaves everything else in it alone. Don't make `~trader/.claude/CLAUDE.md` import the charter: the wrapper passes it to every run, and an import would load it twice (`2-strategist.sh` and `check.sh` both flag one). If the login expires, runs fail and you get an alert; log in again the same way. **TODO:** how long a subscription login lasts before it needs renewing.
 
-**GitHub (trader).** Create a fine-grained personal access token for **your repo only**, with *Contents*, *Pull requests* and *Issues* set to read and write, and an expiry you'll notice (housekeeping warns 3 weeks ahead). Then as trader:
+**GitHub (trader).** Create a **fine-grained** personal access token for **your data repository only** ("Only select repositories"), with *Contents*, *Pull requests* and *Issues* set to read and write, and an expiry you'll notice (housekeeping warns 3 weeks ahead). Never give it access to the code repository or your fork: the strategist mustn't be able to write anything public. Don't log `trader` in with your own GitHub account (OAuth) either: that would carry all your access, and `check.sh` fails unless the token is a fine-grained one. Then as trader:
 ```bash
 gh auth login          # GitHub.com → HTTPS → paste the token
 gh auth setup-git      # so git push uses it
 git config --global user.name "strategist" && git config --global user.email "<your noreply address>"
 ```
-The token lets the strategist push its branch and open PRs and issues. It could technically push to `main` too (branch protection isn't available on private repos on the free plan), which is why nothing runs until **you** deploy ([Deploy a change](../how-to/deploy.md)).
+The token lets the strategist push its branch and open issues (its `needs-human` requests, code proposals and the weekly report). It could technically push to the data repository's `main` too (branch protection isn't available on private repositories on the free plan), which is why nothing on `main` runs until **you** deploy it, after reading its diff ([Deploy a change](../how-to/deploy.md)).
 
-**GitHub (runner).** `runner` gets a **read-only deploy key** in step 6. It only ever pulls `main`.
+**GitHub (runner).** `runner` gets a **read-only deploy key** on your data repository in step 6. It only ever pulls the data repository's `main`, and the public code over HTTPS without credentials.
 
-**Merging.** Merge PRs in GitHub's web UI with **"Create a merge commit"**. Those merge commits are signed by GitHub, and `trading-deploy` checks that signature (against `deploy/github-web-flow.gpg`): signed merges deploy after a PR list and the tests, and anything else makes you read the diff and type `yes`.
+**Merging.** Merge PRs in GitHub's web UI with **"Create a merge commit"**, on your fork and on your data repository. Those merge commits are signed by GitHub, and `trading-deploy` checks that signature (against `deploy/github-web-flow.gpg`): signed code merges deploy after a PR list and the tests, and anything else makes you read the diff and type `yes`. Config changes always show their diff.
 
 **ntfy.** Install the ntfy app on your phone. Step 6 generates a random topic name (`NTFY_TOPIC` in the strategist's `.env`); subscribe to exactly that name. Alerts go to the public ntfy.sh server, so the random name is what keeps them private: don't share it.
 
 ## 6. Install
 
-Follow the table below: step 0 (clone as trader), 1 (`1-host.sh`), 2 (`2-strategist.sh`, from a fresh trader login), 3a (`3-runner.sh key`, then add the printed key under your repo → Settings → Deploy keys, **read-only**), 3b (`3-runner.sh install`). All the scripts are idempotent, so re-running one is always safe. Run each as a single short command, not by pasting long command lists.
+As your admin account on the VPS, get the code and a checkout of your data repository's `main` (the scripts read `config.yaml` from it until the runner has its own copy):
+```bash
+git clone https://github.com/gilesknap/jev-trader.git ~/jev-trader      # or your fork
+git clone https://github.com/<you>/<your-data-repo>.git ~/my-data       # main; needs read access, e.g. gh auth login
+```
+Then follow the table. All the scripts are idempotent, so re-running one is always safe. Run each as a single short command, not by pasting long command lists.
 
 | # | As | Command | Does |
 |---|---|---|---|
-| 0 | trader | `git clone https://github.com/<owner>/<repo> /tmp/trading-setup` (your private repo, as in `config.yaml`) | Gets the scripts before `/srv/trading` exists (a fresh install only) |
-| 1 | admin | `sudo bash /tmp/trading-setup/deploy/setup/1-host.sh` | Creates the `trading` group, the `runner` user (no sudo, lingering) and `/srv/trading/{strategist,main,runtime}` with the right owners and modes |
-| 2 | trader, **from a fresh login** | `bash /tmp/trading-setup/deploy/setup/2-strategist.sh` | Checks out the `strategist` branch, creates `.env` (paper keys only, generated ntfy topic), installs the strategist's systemd timers, links `~/trading` |
-| 3a | admin | `sudo bash /srv/trading/strategist/deploy/setup/3-runner.sh key` | Creates `runner`'s deploy key and prints it. Add it on GitHub → Settings → Deploy keys, **read-only** |
-| 3b | admin | `sudo bash /srv/trading/strategist/deploy/setup/3-runner.sh install` | Checks out `main` as runner, runs the tests, installs `trading-deploy`, the services and `tailscale serve` → dashboard socket |
-| ✓ | admin | `sudo bash /srv/trading/main/deploy/setup/check.sh` | Verifies users, permissions, secrets placement, services, socket isolation and the strategist timers. Every line should read PASS |
+| 6a | admin | `sudo bash ~/jev-trader/deploy/setup/1-host.sh` | Creates the `trading` group, the `runner` user (no sudo, lingering) and `/srv/trading/{strategist,main,config,runtime}` with the right owners and modes |
+| 6b | admin | `sudo TRADER_DATA_ROOT=$HOME/my-data bash ~/jev-trader/deploy/setup/3-runner.sh key` | Creates `runner`'s deploy key and prints it. Add it on your **data** repository → Settings → Deploy keys, **read-only** |
+| 6c | admin | `sudo TRADER_DATA_ROOT=$HOME/my-data bash ~/jev-trader/deploy/setup/3-runner.sh install --split` | As `runner`: clones the public code over HTTPS to `/srv/trading/main` and your data repository's `main` (with the deploy key) to `/srv/trading/config`, runs the tests against that config, installs `trading-deploy`, the services and timers, and `tailscale serve` → dashboard socket. For option (B), add `--code-repo <you>/jev-trader` to clone your fork instead |
+| 6d | trader, **from a fresh login** | `bash /srv/trading/main/deploy/setup/2-strategist.sh` | Clones your data repository's `strategist` branch to `/srv/trading/strategist`, creates `.env` (paper keys only, generated ntfy topic), builds `trader`'s virtual environment of the deployed code and installs the `trader`, `trader-python` and `trader-test` commands, adds Claude Code deny rules for GitHub's public content, installs the strategist's unit (from the code) and timers (from your config), and links `~/trading` |
+| 6e | admin | `sudo bash /srv/trading/main/deploy/setup/3-runner.sh install` | Copies the strategist's `.env` to `runner`'s env file (6c couldn't: it didn't exist yet) and re-checks the rest |
+| ✓ | admin | `sudo bash /srv/trading/main/deploy/setup/check.sh` | Verifies users, permissions, secrets placement, services, socket isolation, the strategist's timers and commands, and the split layout. Every line should read PASS |
 
-Between 2 and 3b:
+Notes:
+- 6b and 6c need `TRADER_DATA_ROOT` pointing at your data checkout: without it, `3-runner.sh key` reads the code's placeholder `config.yaml` and prints a deploy-key link for the wrong repository. 6c needs it only because `/srv/trading/config` doesn't exist yet; from then on the scripts read `config.yaml` there and find the split layout by themselves. 6c also warns that the strategist's `.env` doesn't exist yet: expected, 6e deals with it.
+- 6d needs `trader`'s GitHub token (step 5) to clone your private data repository.
+- Before 6d, make `trader`'s login umask `022` (as trader: `grep -qx 'umask 022' ~/.profile || echo 'umask 022' >> ~/.profile`, and the same in `~/.bash_profile` if it exists, then log in again), so the checkout `2-strategist.sh` clones isn't writable by the `trading` group, which `runner` is in. If it already is, `sudo chmod -R g-w /srv/trading/strategist` fixes it.
+- After 6d, `2-strategist.sh` suggests running `check.sh` next: do 6e first, which copies the strategist's `.env` for `runner`, then check.
+- Between 6d and 6e: fill in `/srv/trading/strategist/.env` (paper keys and the OpenRouter key) and subscribe to the printed ntfy topic.
 
-- Fill in `/srv/trading/strategist/.env`: paper keys and the OpenRouter key.
-- Subscribe to the printed ntfy topic.
-
-After 3b, as admin:
+After 6e, as admin:
 ```bash
 sudo -u runner -H nano /home/runner/.config/trading/env        # add ALPACA_LIVE_KEY / ALPACA_LIVE_SECRET
 sudo bash /srv/trading/main/deploy/setup/check.sh               # every line should read PASS
 ```
 **Live keys go only in `runner`'s file.** Never put them in the strategist's `.env`: `check.sh` fails if they're there.
-The setup scripts read the repo and the Tailscale port from `config.yaml` (through `deploy/setup/cfg.sh`), so they clone your repo, not the original.
 
 `3-runner.sh install` prints the dashboard's address. Open it from your laptop; you should see "The runner isn't trading right now".
 
+You can delete `~/my-data` now if you like: from here on, `/srv/trading/config` is the copy that counts, and it changes only when you deploy.
+
 ## 7. First day
 
-- **From the starter**, the pre-launch pack (step 8) is already `state/classifiers.yaml`, so expect its `test_*` rules to trade on paper from the first session; they stop on the start date.
-- **Before the session:** `uv run trader session` (as trader, in `/srv/trading/strategist`) shows today's session times. `uv run trader validate` should say `classifiers OK`.
+- The pre-launch pack (step 8) is already `state/classifiers.yaml` on a new `strategist` branch, so expect its `test_*` rules to trade on paper from the first session; they stop on the start date.
+- **Before the session:** `trader session` (as trader) shows today's session times. `trader validate` should say `classifiers OK`.
 - **At the runner's start** (the timer, shortly before the US open): an ntfy "runner started session …". The dashboard's banner switches to "The runner is trading now".
 - **During the session:** watch `decision_errors` and `probe_errors` in the dashboard's At a glance panel. A few Jev timeouts a day pause decisions for 5 minutes each and are harmless; a steady stream means a key or credit problem.
-- **After the close:** a Daily P&L ntfy, then the strategist's post-close run commits a journal to the `strategist` branch (check the branch on GitHub).
-- **Saturday:** the weekly run opens a PR from `strategist` to `main`. Reviewing and merging it is your weekly job ([Daily operations](../how-to/daily-operations.md)).
+- **After the close:** a Daily P&L ntfy, then the strategist's post-close run commits a journal to your data repository's `strategist` branch (check the branch on GitHub).
+- **Saturday:** the weekly run opens a weekly issue (label `weekly`) in your data repository, its body the weekly journal. Reading it is your weekly job ([Daily operations](../how-to/daily-operations.md)).
 
 If something doesn't happen, the logs are in `/srv/trading/runtime/alerts.log` (runner), `/srv/trading/strategist/strategist-alerts.log` (the strategist wrapper's and housekeeping's alerts), `journalctl --user` as runner, and `~trader/.local/state/trader/` for the strategist's runs (one log per run).
 
@@ -277,13 +315,13 @@ If something doesn't happen, the logs are in `/srv/trading/runtime/alerts.log` (
 Before the experiment starts, push real orders through every execution path on paper, so a bug shows up while nothing counts.
 
 1. Set `experiment.start_date` in `config.yaml` to **2–3 trading days after the first pre-launch session** (a Monday is tidiest), then render, merge and deploy (see "Changing `config.yaml` later"). This is the one real start date: the pack runs on the days before it.
-2. As trader, on the `strategist` branch, copy the pack into place, set its `date:` to the next session, validate and push (from the starter the pack is already `state/classifiers.yaml`, so the `cp` changes nothing):
+2. As trader, on the `strategist` branch, copy the pack into place, set its `date:` to the next session, validate and push (on a new `strategist` branch the pack is already `state/classifiers.yaml`, so the `cp` changes nothing). Do it between strategist runs:
    ```bash
    sudo -iu trader
    cd /srv/trading/strategist && git pull
-   cp templates/data/strategist/state/classifiers.yaml state/classifiers.yaml
+   cp /srv/trading/main/templates/data/strategist/state/classifiers.yaml state/classifiers.yaml
    sed -i 's/^date: .*/date: YYYY-MM-DD/' state/classifiers.yaml   # the next session's date
-   uv run trader validate                                          # must end "classifiers OK"
+   trader validate                                                 # must end "classifiers OK"
    git commit -am "Pre-launch plumbing pack" && git push
    ```
    The pack is `control_orb`, five `test_*` rules (each deliberately enters on its own symbol, AAPL, MSFT, XLF, XLI or XLV, to hit one path) and the universe baseline probe, which never orders.
@@ -306,32 +344,28 @@ Before the experiment starts, push real orders through every execution path on p
 
 **Why the tests must stop at launch.** Every shadow rule shares one paper account, and the go-live gate judges that account's days: a plumbing rule's trades and drawdowns would crowd out and distort the real experiment. So from the start date the runner drops every `test_*` rule by itself with an urgent alert, and `trader validate` refuses them. Their earlier trades never count: the gate, promotion and the live scoreboard start at the start date (the scoreboard can show them with its pre-start toggle).
 
-**Any day, for free:** `uv run trader replay --decider stub --days 2` runs the classifiers through the real engine on historical bars with a stub decision model: no orders, no Jev cost. It's the quick plumbing check after any change, but it simulates fills, so only paper proves the broker side.
+**Any day, for free:** `trader replay --decider stub --days 2` (as trader) runs the classifiers through the real engine on historical bars with a stub decision model: no orders, no Jev cost. It's the quick plumbing check after any change, but it simulates fills, so only paper proves the broker side.
 
 ## Changing `config.yaml` later
 
-Edit it, run `uv run trader config render-deploy`, commit through a PR, merge and deploy ([Deploy a change](../how-to/deploy.md)). Then:
-- **A schedule change** also needs the strategist's timers reinstalled, as trader: `bash /srv/trading/strategist/deploy/setup/2-strategist.sh` (after the strategist checkout has merged `main`; `check.sh` fails until you do). The runner timer is reinstalled by the deploy.
+Edit it on a branch of your data repository, re-render from a code checkout (`TRADER_DATA_ROOT=<data checkout> uv run trader config render-deploy --data-root <data checkout>`), open a pull request on the data repository, merge it with a merge commit, and deploy ([Deploy a change](../how-to/deploy.md)). The deploy shows you the whole config diff and refuses if the rendered files don't match. Then:
+- **A schedule change** also needs the strategist's timers reinstalled, as trader: `bash /srv/trading/main/deploy/setup/2-strategist.sh` (the deploy reminds you; `check.sh` fails until you do). The runner timer is reinstalled by the deploy.
 - **A dashboard users change** also needs `TRADER_DASHBOARD_USERS` in `/home/runner/.config/trading/services.env` updated to match, then a dashboard restart. That file is installed once and is never overwritten, and its value wins over `config.yaml`.
 - **A start date change** takes effect at the runner's next session start.
 
-## Taking updates from the starter
+[Configuration](../reference/configuration.md#when-a-change-takes-effect) lists every key.
 
-When the starter changes, merge it on a branch and bring it in through a PR on your own repo. A checkout without an `upstream` remote (any clone other than the one you made in step 0) needs it added first: `git remote add upstream https://github.com/gilesknap/jev-trader.git`. Then:
-```bash
-git fetch --multiple origin upstream   # both remotes, so origin/main is current too
-git switch -c upstream-sync origin/main
-git merge upstream/main
-```
-Conflicts are usually only in `config.yaml` (keep your values, take any new keys) and the rendered deploy files (take either side, then re-run `uv run trader config render-deploy` to regenerate them from your `config.yaml`). Anything under `state/`, `journal/` or `logs/` is yours: keep your side. Then run the tests, commit, push the branch, open a PR on your repo and merge it with **"Create a merge commit"** (not squash or rebase), so `trading-deploy` sees a GitHub-signed merge and lists it without a diff review. Deploy as usual ([Deploy a change](../how-to/deploy.md)). If the merge changed `config.yaml`, the follow-ups in "Changing `config.yaml` later" above apply too. If anything under `deploy/systemd-trader/` changed, reinstall the strategist timers as in "A schedule change" above. Finish with `sudo bash /srv/trading/main/deploy/setup/check.sh` after the deploy: every line should read PASS.
+## Taking updates
+
+New code reaches your runner only when you deploy it. How you take upstream changes depends on the choice you made in step 0: see [Take updates](../how-to/take-updates.md), which also covers the rare change that needs an edit in your data repository.
 
 ## Starting over later
 
-To restart the experiment (say after changing the design): pick a new start date in `config.yaml`, reset `state/` and `journal/` (the full-copy bullet in step 0, point 3), reset the paper balance and run `trader rebase-paper`, and deploy. The runtime's history (`/srv/trading/runtime`) isn't backed up anywhere; copy it off first if you want to keep it. Everything the strategist has written is on GitHub.
+To restart the experiment (say after changing the design): pick a new start date in `config.yaml` and deploy it, reset the `strategist` branch's `state/` and `journal/` to the template (`templates/data/strategist/` in the code: copy its `state/` over yours and empty `journal/` and `logs/`, keeping the `.gitkeep` files), reset the paper balance and run `trader rebase-paper` (as runner, see [Use the controls](../how-to/controls.md)). The runtime's history (`/srv/trading/runtime`) isn't backed up anywhere; copy it off first if you want to keep it. Everything the strategist has written is in your data repository's history.
 
-## Checking a private copy's docs
+## The docs
 
-A private copy doesn't publish its docs (the docs workflow skips private repositories). Build them locally instead (see [Build the docs](../how-to/build-docs.md)):
+These docs are published from the public code repository. Your data repository has none of its own, and a fork builds them like any checkout (see [Build the docs](../how-to/build-docs.md)):
 
 ```bash
 uv run --group docs sphinx-build -W --keep-going docs build/html

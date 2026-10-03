@@ -7,10 +7,11 @@ explains the gate.
 ## See where it stands
 
 ```bash
-uv run trader golive
+trader golive
 ```
 
-It prints the override from `config/mode.yaml`, the effective mode, the saved state and the gate
+(as `trader`, or `uv run trader golive` as `runner` with the services environment loaded, see
+[Use the controls](controls.md)). It prints the override from `config/mode.yaml`, the effective mode, the saved state and the gate
 evaluated now (days, trades, expectancy after slippage, worst day, and what's blocking). The same
 state is in `/srv/trading/runtime/golive.json`, and the Daily P&L alert names the blocking reasons
 while the gate is pending. The weekly journal carries the strategist's go-live assessment when the

@@ -15,6 +15,11 @@ from pathlib import Path
 # The CLI reference prints argument defaults. Pin the standard install layout, so the
 # docs don't show the build machine's checkout path. Set before trader is imported.
 os.environ.setdefault("TRADER_STRATEGIST_ROOT", "/srv/trading/strategist")
+# trader loads config.yaml when it's imported, and the code repo has none of its own. The docs
+# always build from the data template, never from anyone's data checkout (whatever the
+# environment says), so nothing personal can end up in a published page.
+os.environ["TRADER_DATA_ROOT"] = str(Path(__file__).resolve().parent.parent / "templates" / "data" / "main")
+os.environ.pop("TRADER_CONFIG", None)
 
 project = "jev-trader"
 author = "Giles Knap"

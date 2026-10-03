@@ -39,8 +39,10 @@ A daily `trader housekeeping` run (through `scripts/strategist.sh housekeeping`)
 
 - **OpenRouter credit** is under $3, or will run out within 21 days at the current burn rate;
 - the OpenRouter key's spend limit is nearly used, or the key expires soon;
-- the **GitHub token** expires within 21 days, or stops working;
-- **merged changes on `main` haven't been deployed** for 48 hours;
+- `trader`'s **GitHub token** expires within 21 days, or stops working;
+- **merged changes haven't been deployed** for 48 hours: on the code repository's `main` (read
+  anonymously, over HTTPS), or on your data repository's `main` (the deployment config), each
+  alerted separately;
 - **disk** has less than 3 GB free.
 
 Each repeats weekly, then daily once it's within 7 days.

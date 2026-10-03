@@ -13,13 +13,7 @@ C=$CONFIG_CHECKOUT
 [[ -n $SPLIT ]] && export TRADER_DATA_ROOT=$C   # cfg.sh: the data repo's config.yaml
 # shellcheck source=deploy/setup/cfg.sh
 . "$(dirname "$0")/cfg.sh"
-fails=0
-ok()   { printf '  \e[32mPASS\e[0m %s\n' "$1"; }
-bad()  { printf '  \e[31mFAIL\e[0m %s\n' "$1"; fails=$((fails + 1)); }
-chk()  { if eval "$2" >/dev/null 2>&1; then ok "$1"; else bad "$1"; fi; }
-nchk() { if eval "$2" >/dev/null 2>&1; then bad "$1"; else ok "$1"; fi; }
-warn() { printf '  \e[33mWARN\e[0m %s\n' "$1"; }
-wchk() { if eval "$2" >/dev/null 2>&1; then ok "$1"; else warn "$1"; fi; }   # reported, not counted
+fails=0   # ok, bad, chk, nchk, warn and wchk (lib.sh) count failures here
 RUID=$(id -u runner 2>/dev/null || echo 0)
 as_runner() { sudo -u runner -H env XDG_RUNTIME_DIR=/run/user/$RUID "$@"; }
 as_trader() { sudo -u trader -H "$@"; }
@@ -44,7 +38,16 @@ chk  "runner can read strategist state"           "as_runner cat /srv/trading/st
 chk  "runner can read strategist alerts (if any)" "[[ ! -e /srv/trading/strategist/strategist-alerts.log ]] || as_runner cat /srv/trading/strategist/strategist-alerts.log >/dev/null"
 # runner is in trading, so a group-writable strategist tree would let it plant code trader runs
 nchk "runner cannot write strategist"             "as_runner touch /srv/trading/strategist/.w || as_runner touch /srv/trading/strategist/state/.w"
-nchk "strategist tree has no group write"         "find /srv/trading/strategist ! -type l -perm -g=w | grep -q ."
+# All of it, .git included: runner writing .git/config or .git/hooks could make trader's own git run
+# its commands, and writing .git/objects or refs could change what trader commits and pushes.
+# Interactive sessions as trader (login umask 0002) leave group-writable files behind; the fix is
+# `chmod -R g-w` on the checkout (and umask 022 in trader's login profile).
+GWL=$(find /srv/trading/strategist ! -type l -perm -g=w 2>/dev/null)
+nchk "strategist tree has no group write"         "[[ -n \$GWL ]]"
+if [[ -n $GWL ]]; then
+    echo "       $(wc -l <<<"$GWL") group-writable (fix: sudo -u trader chmod -R g-w /srv/trading/strategist), e.g.:"
+    head -3 <<<"$GWL" | sed 's/^/         /'
+fi
 nchk "strategist git is not group-shared"         "git -C /srv/trading/strategist -c safe.directory='*' config core.sharedRepository"
 rm -f /srv/trading/main/.w /srv/trading/runtime/.w /srv/trading/strategist/.w /srv/trading/strategist/state/.w
 
@@ -79,6 +82,8 @@ if [[ -d /srv/trading-dashview ]]; then
     nchk "trader is not in dashview"                  "id -nG trader | grep -qw dashview"
 fi
 chk  "trading-deploy installed"                   "[[ -x /usr/local/bin/trading-deploy ]]"
+# its deploy plan verifies GitHub's merge signatures with gpg; without it every deploy falls back to a full review
+chk  "gpg available to runner (deploy signature checks)" "as_runner sh -c 'command -v gpg'"
 nchk "no sudoers rule lets trader deploy"         "sudo -l -U trader | grep -q trading-deploy"
 
 echo "Feature sandbox"
@@ -109,7 +114,9 @@ chk  "trader's gh token is a fine-grained PAT"   "as_trader gh auth token 2>/dev
 probe() { run_push_probe "$LIB" "$1" as_trader; }   # 2 (never accepted) if sudo or sourcing fails
 MAIN_ORIGIN=$(git -C /srv/trading/main -c safe.directory='*' remote get-url origin 2>/dev/null)
 CODE_URL=$(github_https_url "$MAIN_ORIGIN")
-DATA_URL=$(github_https_url "https://github.com/$(cfg owner github_repo 2>/dev/null)")   # canonical: owner/name or owner/name.git
+DATA_URL=$(github_https_url "https://github.com/$(cfg_repo 2>/dev/null)")   # canonical: owner/name or owner/name.git
+SLUG=$(cfg owner github_repo 2>/dev/null)
+[[ $SLUG == your-github-user/* ]] && bad "owner.github_repo is the template placeholder ($SLUG in $CONFIG_YAML)"
 if [[ -n $CODE_URL && $CODE_URL != "$DATA_URL" ]]; then
     PCHK=wchk; [[ -n $SPLIT ]] && PCHK=chk
     $PCHK "trader cannot push to the code repo (${CODE_URL#https://github.com/})" "probe $CODE_URL; [[ \$? -eq 1 ]]"

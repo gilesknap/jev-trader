@@ -13,9 +13,11 @@ it beats doing nothing.
 > and keep the live account small.
 
 The code runs on one Linux host with three accounts: an admin (you), `trader` (the strategist,
-paper keys only) and `runner` (the trading daemon, live keys, no sudo). The strategist's memory is
-this git repository; its changes to code reach the runner only through pull requests that a human
-merges and deploys.
+paper keys only) and `runner` (the trading daemon, live keys, no sudo). This public repository
+holds only code. Each owner keeps their settings and the strategist's memory in a **private data
+repository** of their own, made from the template in `templates/data/`. The strategist can write
+only to that data repository: its code ideas reach this one as patches a human reviews and turns
+into pull requests, and nothing runs until a human deploys it.
 
 <!-- README only content. Anything below this line won't be included in index.md -->
 
@@ -26,3 +28,6 @@ merges and deploys.
 - [DESIGN.md](DESIGN.md): the agreed design and the reasons behind it.
 - [CLAUDE.md](CLAUDE.md): the strategist's charter (the schema, rules and tools it works with).
 - [CONTRIBUTING.md](CONTRIBUTING.md): issues and pull requests.
+
+Already running an install from a single private repository? See
+[migrating to the split layout](docs/how-to/migrate-to-split.md).

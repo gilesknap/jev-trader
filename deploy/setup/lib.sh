@@ -12,6 +12,19 @@ CONFIG_CHECKOUT=/srv/trading/config
 # split_layout [DIR]: true when DIR (default CONFIG_CHECKOUT) is a checkout of data main.
 split_layout() { [[ -e "${1:-$CONFIG_CHECKOUT}/.git" ]]; }
 
+# check.sh's verdicts. `chk LABEL EXPR` passes when EXPR succeeds, `nchk` when it fails, and `wchk`
+# warns instead of failing; each FAIL adds one to the caller's $fails. EXPR is judged by its last
+# command, so pipefail is off inside (check_eval): in `find ... | grep -q .` grep exits at its first
+# match and find dies of SIGPIPE (141), and under the caller's pipefail that made an nchk PASS
+# exactly when there was a match. A failure on the left of a pipe shows up as no input to grep.
+check_eval() { (set +o pipefail; eval "$1") >/dev/null 2>&1; }
+ok()   { printf '  \e[32mPASS\e[0m %s\n' "$1"; }
+bad()  { printf '  \e[31mFAIL\e[0m %s\n' "$1"; fails=$((${fails:-0} + 1)); }
+warn() { printf '  \e[33mWARN\e[0m %s\n' "$1"; }
+chk()  { if check_eval "$2"; then ok "$1"; else bad "$1"; fi; }
+nchk() { if check_eval "$2"; then bad "$1"; else ok "$1"; fi; }
+wchk() { if check_eval "$2"; then ok "$1"; else warn "$1"; fi; }   # reported, not counted
+
 # unit_needs_missing_config UNIT [DIR]: true (so the caller refuses to install UNIT) when the unit
 # names DIR but DIR holds no config.yaml. A unit with TRADER_DATA_ROOT=/srv/trading/config on a
 # host without that checkout would make every trader command fail (#169 section 14 item 3).

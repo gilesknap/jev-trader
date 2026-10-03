@@ -63,7 +63,38 @@ One JSON object per line. Every answered question:
 An `allocation` row records a book-level limit shrinking an entry: `constraint`, `requested`,
 `allowed` and `floor`.
 
-## The strategist's repository
+## The data repository
+
+Each owner's private data repository has two branches, which share no history and are never
+merged. `deploy/setup/0-data.sh` creates both from the code's `templates/data/`.
+
+`main`, the human's deployment config, checked out by `runner` at `/srv/trading/config`:
+
+| Path | What |
+|---|---|
+| `config.yaml` | Deployment settings (see [Configuration](configuration.md)) |
+| `config/mode.yaml` | The paper/live override |
+| `deploy/systemd/trader-runner.timer`, `deploy/systemd/trader.env` | Rendered from `config.yaml`; installed for `runner` |
+| `deploy/systemd-trader/trader-strategist-<kind>.timer` | Rendered from `config.yaml`; installed for `trader` by `2-strategist.sh` |
+| `README.md` | A note on what the repository is |
+
+`strategist`, the strategist's data, checked out by `trader` at `/srv/trading/strategist`:
+
+| Path | What |
+|---|---|
+| `state/` | `strategy.md`, `classifiers.yaml`, `watchlist.md` |
+| `journal/` | `daily/`, `weekly/`, `monthly/`, `yearly/` |
+| `logs/` | The runner's logs, archived (below) |
+| `features/custom/` | The strategist's feature functions |
+| `proposals/<topic>/` | Code proposals: a `git format-patch` series and a `README.md` rationale (see [Review the strategist's proposals](../how-to/proposals.md)) |
+| `CLAUDE.md` | A stub for interactive sessions: the charter itself is `/srv/trading/main/CLAUDE.md` |
+| `.gitignore` | Keeps `.env`, the wrapper's stamps, `strategist-alerts.log`, `replays/` and the decision logs out of git |
+
+The wrapper commits only `state/`, `journal/`, `features/custom/`, `logs/` and `proposals/`.
+Outside git, the checkout also holds the strategist's secrets (`.env`), `replays/` and
+`strategist-alerts.log`.
+
+## The strategist's logs
 
 The post-close and weekly runs copy the runner's logs into the strategist checkout (`trader
 archive`): decision logs to `logs/decisions/`, every book's trades (sim accounts included) merged
@@ -74,3 +105,14 @@ probe report.
 Retention (`trader compact`, weekly): daily journals older than 28 days are deleted once the
 week's weekly journal exists; monthlies older than 400 days once the yearly exists; archived
 decision logs after 90 days; replay runs after 14 days, unless their name starts with `keep-`.
+
+## The strategist's run files
+
+Outside both repositories, in `trader`'s home:
+
+| Path | What |
+|---|---|
+| `~/.local/state/trader/<time>-<kind>.log` | One log per strategist run, kept 14 days |
+| `~/.local/state/trader/strategist.lock` | Held for each whole run. `trading-deploy` takes it too, and refuses while a run holds it |
+| `~/.local/share/trader/venv` | `trader`'s virtual environment of the deployed code, built by `2-strategist.sh` and synced with the deployed `uv.lock` at the start of each run |
+| `~/.local/bin/trader`, `trader-python`, `trader-test` | The commands that run it (from `scripts/` in the code) |

@@ -8,6 +8,7 @@ split-only logic lives in lib.sh, which is tested function by function.
 
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -55,6 +56,46 @@ def test_cfg_falls_back_to_the_checkout_root():
     env = {k: v for k, v in os.environ.items() if k != "TRADER_DATA_ROOT"}
     r = subprocess.run(["bash", "-c", f'. "{SETUP}/cfg.sh" && echo "$CONFIG_YAML"'], capture_output=True, text=True, env=env)
     assert r.stdout.strip() == str(ROOT / "config.yaml")
+
+
+def cfg_repo_in(tmp_path, slug):
+    (tmp_path / "config.yaml").write_text(f"owner:\n  name: x\n  github_repo: {slug}   # comment\n")
+    env = {**os.environ, "TRADER_DATA_ROOT": str(tmp_path)}
+    return subprocess.run(["bash", "-c", f'. "{SETUP}/cfg.sh" && cfg_repo'], capture_output=True, text=True, env=env)
+
+
+def test_cfg_repo_reads_a_real_slug(tmp_path):
+    r = cfg_repo_in(tmp_path, "someone/their-data")
+    assert r.returncode == 0 and r.stdout.strip() == "someone/their-data" and r.stderr == ""
+
+
+def test_cfg_repo_refuses_the_template_placeholder(tmp_path):
+    """Rehearsal F1: `3-runner.sh key` without TRADER_DATA_ROOT read the public code's placeholder
+    config.yaml and printed a deploy-key page for your-github-user/your-repo."""
+    r = cfg_repo_in(tmp_path, "your-github-user/your-data-repo")
+    assert r.returncode != 0 and r.stdout == ""
+    assert "placeholder" in r.stderr and "TRADER_DATA_ROOT" in r.stderr
+
+
+def test_cfg_repo_refuses_the_shipped_template():
+    tpl = ROOT / "templates" / "data" / "main"
+    if not (tpl / "config.yaml").exists():
+        pytest.skip("no data template in this tree")
+    env = {**os.environ, "TRADER_DATA_ROOT": str(tpl)}
+    r = subprocess.run(["bash", "-c", f'. "{SETUP}/cfg.sh" && cfg_repo'], capture_output=True, text=True, env=env)
+    assert r.returncode != 0 and "placeholder" in r.stderr
+
+
+@pytest.mark.parametrize("script", ["2-strategist.sh", "3-runner.sh", "check.sh"])
+def test_setup_scripts_read_the_repo_through_cfg_repo(script):
+    text = (SETUP / script).read_text()
+    assert "cfg_repo" in text
+    # a raw read only to report the placeholder itself (check.sh)
+    raw = [ln for ln in text.splitlines() if "cfg owner github_repo" in ln]
+    assert len(raw) <= 1 and (not raw or script == "check.sh")
+    if raw:
+        nxt = text.splitlines()[text.splitlines().index(raw[0]) + 1]
+        assert "your-github-user/*" in nxt and "bad " in nxt
 
 
 # ---- lib.sh ------------------------------------------------------------------------------
@@ -168,6 +209,81 @@ def test_deny_rules_never_block_gh_on_the_data_repo(code, data, kept, skipped):
 ])
 def test_repo_name(url, name):
     assert sh('repo_name "$1"', url).stdout.strip() == name
+
+
+# ---- check.sh's verdicts (lib.sh) ------------------------------------------------------
+
+def verdict(script, *args):
+    """Run SCRIPT under check.sh's own shell options; prints its output then fails=N."""
+    return sh(f'set -uo pipefail; fails=0; {script}; echo "fails=$fails"', *args)
+
+
+def test_nchk_fails_on_a_tree_with_many_group_writable_files(tmp_path):
+    """Rehearsal F3: under pipefail, `find ... | grep -q .` lost its find to SIGPIPE (141) once grep
+    matched, so nchk passed exactly when there WERE group-writable files. Enough files that find's
+    output overflows the pipe after grep has quit."""
+    tree = tmp_path / "t"
+    tree.mkdir()
+    for i in range(3000):
+        f = tree / f"group-writable-file-with-a-longish-name-{i:05d}"
+        f.write_text("")
+        f.chmod(0o664)
+    expr = f"find {tree} ! -type l -perm -g=w | grep -q ."
+    r = verdict('nchk "no group write" "$1"', expr)
+    assert "FAIL" in r.stdout and "PASS" not in r.stdout and r.stdout.strip().endswith("fails=1"), r.stdout
+    r = verdict('chk "has group write" "$1"', expr)
+    assert "PASS" in r.stdout and r.stdout.strip().endswith("fails=0"), r.stdout
+    for f in tree.iterdir():
+        f.chmod(0o644)
+    tree.chmod(0o755)
+    r = verdict('nchk "no group write" "$1"', expr)
+    assert "PASS" in r.stdout and r.stdout.strip().endswith("fails=0"), r.stdout
+
+
+def test_check_verdicts_judge_the_last_command_and_count_failures():
+    r = verdict('chk a true; chk b false; nchk c false; nchk d true; wchk e false; wchk f true')
+    lines = r.stdout.splitlines()
+    got = {ln.split()[-1]: ("PASS" if "PASS" in ln else "FAIL" if "FAIL" in ln else "WARN") for ln in lines[:-1]}
+    assert got == {"a": "PASS", "b": "FAIL", "c": "PASS", "d": "FAIL", "e": "WARN", "f": "PASS"}
+    assert lines[-1] == "fails=2"   # a WARN isn't counted
+    # a failing left-hand side is no input to grep, not a verdict of its own
+    r = verdict('nchk x "false | grep -q ."; chk y "printf a | grep -q a"; nchk z "(echo m; exit 3) | grep -q m"')
+    got = {ln.split()[-1]: "PASS" if "PASS" in ln else "FAIL" for ln in r.stdout.splitlines()[:-1]}
+    assert got == {"x": "PASS", "y": "PASS", "z": "FAIL"} and r.stdout.strip().endswith("fails=1")
+
+
+def test_check_sh_uses_the_lib_verdicts():
+    """check.sh must not grow its own eval-based chk again: every verdict goes through check_eval."""
+    text = (SETUP / "check.sh").read_text()
+    assert not re.search(r"\beval\b", text)
+    assert not any(line.startswith(("chk()", "nchk()", "wchk()")) for line in text.splitlines())
+
+
+def test_check_sh_checks_the_strategist_tree_and_gpg():
+    text = (SETUP / "check.sh").read_text()
+    assert 'GWL=$(find /srv/trading/strategist ! -type l -perm -g=w 2>/dev/null)' in text
+    assert 'nchk "strategist tree has no group write"         "[[ -n \\$GWL ]]"' in text
+    assert "command -v gpg" in text   # rehearsal F6: trading-deploy's plan verifies signatures with it
+
+
+# ---- the umask and the next-step hints (rehearsal F4, F9) --------------------------------
+
+@pytest.mark.parametrize("script", ["2-strategist.sh", "3-runner.sh"])
+def test_setup_scripts_set_umask_022_before_writing(script):
+    """Trader's login umask can be 0002, and group trading includes runner: a checkout cloned under it
+    is writable by runner (rehearsal F4)."""
+    lines = (SETUP / script).read_text().splitlines()
+    umask = lines.index("umask 022")
+    first_write = next(i for i, ln in enumerate(lines) if not ln.lstrip().startswith("#")
+                       and any(w in ln for w in ("git clone", "install ", "mkdir", "cp ", "> ")))
+    assert umask < first_write
+
+
+def test_2_strategist_split_hint_names_the_second_runner_install():
+    text = (SETUP / "2-strategist.sh").read_text()
+    split_hint = text[text.rindex("if [[ -n $SPLIT ]]; then"):]
+    split_hint = split_hint[:split_hint.index("else")]
+    assert split_hint.index("3-runner.sh install") < split_hint.index("check.sh")
 
 
 # ---- the strategist's helpers ------------------------------------------------------------
@@ -401,6 +517,14 @@ def test_0_data_pushes_nothing_when_the_config_does_not_load(data_env):
     r = run("you/your-data", "--name", "Ada", "--start-date", "2026-02-30")   # passes the pattern, not the loader
     assert r.returncode != 0 and "render-deploy failed" in r.stderr
     assert heads(remote) == "" and not (tmp / "gh.log").exists()
+
+
+def test_host_step_names_the_next_step_for_both_layouts():
+    # A fresh split install goes 1-host -> 3-runner key -> 3-runner install --split -> 2-strategist (#169
+    # section 15); a monorepo install goes on to 2-strategist. 1-host can't tell which yet, so it names both.
+    text = (SETUP / "1-host.sh").read_text()
+    assert '3-runner.sh key"' in text and "split layout" in text
+    assert "monorepo layout: as trader, bash deploy/setup/2-strategist.sh" in text
 
 
 # ---- the push probe (#186) ---------------------------------------------------------------

@@ -61,6 +61,20 @@ if [[ -z "$LOCKED" ]]; then
     exit $rc
 fi
 
+# Split mode: bring trader's venv (the one the `trader` shim runs) in line with the deployed
+# uv.lock before anything uses it, the session lookup included (#169 section 6.2). The command is
+# 2-strategist.sh's, exactly; it's a quick no-op when uv.lock hasn't changed. It runs under the
+# run lock, which a deploy takes too, so the code can't change under it. On failure the venv may
+# not match the deployed code, so nothing runs (the note in the log is in case the alert, which
+# uses that venv, can't be sent).
+if [[ -n "$SPLIT" ]]; then
+    if ! UV_PROJECT_ENVIRONMENT="$HOME/.local/share/trader/venv" uv sync -q --frozen --extra dev --project "$CODE" >>"$LOG" 2>&1; then
+        echo "$(date -u +%FT%TZ) $KIND: trader's venv sync failed; not running" >>"$LOG"
+        alert "strategist $KIND: could not sync trader's venv with $CODE (uv sync failed; see $LOG); not running"
+        exit 1
+    fi
+fi
+
 # Session gating via Alpaca's calendar (holidays, half-days, UK/US DST offsets).
 if [[ "$KIND" == premarket || "$KIND" == postclose ]]; then
     SESSION=$("${TRADER_BIN[@]}" session 2>>"$LOG"); rc=$?
@@ -156,11 +170,49 @@ POST=$(git rev-parse HEAD)
 # Undo any commits the run made itself, so everything goes through the path check below.
 [[ "$POST" != "$PRE" ]] && git reset -q --soft "$PRE"
 git reset -q
-OUTSIDE=$(git status --porcelain | awk '{print $NF}' | grep -Ev "$ALLOWED" || true)
-if [[ -n "$OUTSIDE" ]]; then
-    alert "strategist $KIND touched non-strategy paths (reverted): $(echo $OUTSIDE | head -c 300)"
-    echo "$OUTSIDE" | xargs -r git checkout -q -- 2>/dev/null
-    echo "$OUTSIDE" | xargs -r git clean -qfd -- 2>/dev/null
+# Changed paths outside ALLOWED, from `git status -z` (NUL-separated and unquoted, so spaces and
+# non-ASCII parse exactly, #177): untracked ones in OUT_UNTRACKED, the rest in OUT_TRACKED, all
+# of them in OUT_ALL. A rename or copy entry carries its source path as a second field. Returns
+# non-zero if git can't list them.
+outside_paths() {
+    OUT_TRACKED=(); OUT_UNTRACKED=(); OUT_ALL=()
+    local list rec xy path orig p rc=0
+    list=$(mktemp "$LOGDIR/status.XXXXXX") || return 1
+    git status --porcelain -z >"$list" 2>>"$LOG" || rc=1
+    while IFS= read -r -d '' rec; do
+        xy=${rec:0:2}; path=${rec:3}; orig=""
+        if [[ $xy == *[RC]* ]]; then IFS= read -r -d '' orig || rc=1; fi
+        for p in "$path" ${orig:+"$orig"}; do
+            [[ $p =~ $ALLOWED ]] && continue
+            OUT_ALL+=("$p")
+            if [[ $xy == '??' ]]; then OUT_UNTRACKED+=("$p"); else OUT_TRACKED+=("$p"); fi
+        done
+    done <"$list"
+    rm -f -- "$list"
+    return $rc
+}
+joined() { local out="" p; for p in "$@"; do out+="${out:+, }$p"; done; printf '%s' "${out:0:300}"; }
+# Revert them one path at a time, so one failure can't skip the rest (F5: a single `git checkout`
+# of every path failed as a whole on any untracked one). Untracked first: a tracked file replaced
+# by a directory comes back only once that directory is gone. Literal pathspecs: a name like `*`
+# must not match anything else. Then look again, and refuse to publish if anything survived.
+if ! outside_paths; then
+    alert "strategist $KIND: could not list changed paths for the path check; not publishing — see $LOG"
+    exit 1
+fi
+if (( ${#OUT_ALL[@]} )); then
+    TOUCHED=$(joined "${OUT_ALL[@]}")
+    for p in ${OUT_UNTRACKED[@]+"${OUT_UNTRACKED[@]}"}; do
+        git --literal-pathspecs clean -qfd -- "$p" >>"$LOG" 2>&1
+    done
+    for p in ${OUT_TRACKED[@]+"${OUT_TRACKED[@]}"}; do
+        git --literal-pathspecs checkout -q HEAD -- "$p" >>"$LOG" 2>&1
+    done
+    if ! outside_paths || (( ${#OUT_ALL[@]} )); then
+        alert "strategist $KIND touched non-strategy paths and could NOT revert all of them; not publishing, fix the checkout by hand. Still changed: $(joined ${OUT_ALL[@]+"${OUT_ALL[@]}"}). Touched: $TOUCHED"
+        exit 1
+    fi
+    alert "strategist $KIND touched non-strategy paths (reverted): $TOUCHED"
 fi
 # Only existing dirs: a missing pathspec makes `git add` add nothing at all (and none would add everything).
 DIRS=$(ls -d state journal features/custom logs ${SPLIT:+proposals} 2>/dev/null)

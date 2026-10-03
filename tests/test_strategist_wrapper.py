@@ -20,6 +20,9 @@ pytestmark = pytest.mark.skipif(not (shutil.which("flock") and shutil.which("git
 
 FAKE_UV = """#!/bin/bash
 case "$*" in
+  sync\\ *) echo "$UV_PROJECT_ENVIRONMENT $*" >> "$HOME/uv_sync"; echo sync >> "$HOME/seq"
+           flock -n -s "$XDG_STATE_HOME/trader/strategist.lock" true && echo free >> "$HOME/sync_lock" || echo held >> "$HOME/sync_lock"
+           [[ -e "$HOME/sync_fails" ]] && exit 1; exit 0 ;;
   "run trader session") echo '{"minutes_to_open": 45, "minutes_to_close": 400}' ;;
   "run trader config get models.strategist") echo cfg-model ;;
   run\\ python*) echo "${@: -1}" >> "$HOME/alerts" ;;
@@ -28,7 +31,7 @@ esac
 """
 FAKE_TRADER = """#!/bin/bash
 case "$*" in
-  "session") echo '{"minutes_to_open": 45, "minutes_to_close": 400}' ;;
+  "session") echo session >> "$HOME/seq"; echo '{"minutes_to_open": 45, "minutes_to_close": 400}' ;;
   "config get models.strategist") echo cfg-model ;;
   *) echo "$*" >> "$HOME/trader_calls" ;;
 esac
@@ -47,6 +50,9 @@ echo note >> state/note.md
 
 def git(cwd, *args, env=None):
     return subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True, text=True).stdout
+
+
+TRACKED_ODD = "docs/réad me.md"   # a tracked path git quotes in plain `git status --porcelain`
 
 
 def make_sandbox(tmp_path, split=False, code=ROOT):
@@ -74,6 +80,10 @@ def make_sandbox(tmp_path, split=False, code=ROOT):
     (seed / "features" / "custom" / "README.md").write_text("r")
     # The real .gitignore, so a test fails if it ever starts hiding new strategy files (#169 section 14.1).
     shutil.copy(ROOT / ".gitignore", seed / ".gitignore")
+    # Tracked files outside the allowed paths, for the revert tests (F5, #177).
+    (seed / "CLAUDE.md").write_text("charter\n")
+    (seed / "docs").mkdir()
+    (seed / TRACKED_ODD).write_text("odd\n")
     if not split:   # monorepo: the branch carries the wrapper and the prompts
         for d in ("scripts", "prompts"):
             (seed / d).mkdir()
@@ -430,3 +440,165 @@ def test_split_housekeeping_leaves_a_busy_checkout_alone(split):
     assert git(split.repo, "branch", "--show-current", env=split.env).strip() == "proposal/x"
     assert split.read("trader_calls") == "housekeeping\n"
     assert split.read("uv_calls") == ""
+
+
+# ---- trader's venv re-sync (split mode, #169 section 6.2 / C2) ----
+
+def test_split_syncs_trader_venv_first_under_the_lock(split):
+    # Exactly 2-strategist.sh's command, against the deployed code, before the session lookup uses
+    # the venv, while the run lock is held (a deploy takes it too).
+    assert split.run("premarket").returncode == 0
+    venv = split.home / ".local" / "share" / "trader" / "venv"
+    assert split.read("uv_sync") == f"{venv} sync -q --frozen --extra dev --project {ROOT}\n"
+    assert split.read("seq") == "sync\nsession\n"
+    assert split.read("sync_lock") == "held\n"
+    assert split.read("claude_runs") == "run\n" and split.read("alerts") == ""
+    setup = (ROOT / "deploy" / "setup" / "2-strategist.sh").read_text()
+    assert 'UV_PROJECT_ENVIRONMENT=$VENV uv sync -q --frozen --extra dev --project "$CODE"' in setup
+    assert "VENV=$HOME/.local/share/trader/venv" in setup
+
+
+@pytest.mark.parametrize("kind", ["weekly", "housekeeping"])
+def test_split_failed_venv_sync_alerts_and_does_not_run(split, kind):
+    (split.home / "sync_fails").write_text("")
+    r = split.run(kind)
+    assert r.returncode == 1
+    assert "could not sync trader's venv" in split.read("alerts") and "not running" in split.read("alerts")
+    assert split.read("claude_runs") == "" and split.read("trader_calls") == ""
+    assert git(split.repo, "status", "--porcelain", "--untracked-files=all") == ""
+    assert "venv sync failed" in "".join(p.read_text() for p in split.logdir.glob("*.log"))
+    assert list(split.logdir.glob("strategist.sh.*")) == []
+
+
+def test_monorepo_does_not_sync_trader_venv(sandbox):
+    assert sandbox.run("weekly").returncode == 0
+    assert sandbox.read("uv_sync") == ""
+
+
+# ---- the charter and prompts for the split layout (#169 C2) ----
+
+def test_charter_and_prompts_fit_the_split_layout():
+    charter = (ROOT / "CLAUDE.md").read_text()
+    prompts = {k: (ROOT / "prompts" / f"{k}.md").read_text() for k in ("premarket", "postclose", "weekly")}
+    for name, text in {"CLAUDE.md": charter, **prompts}.items():
+        assert "uv run trader" not in text, name    # `trader` is the shim on PATH
+        assert "gh pr" not in text, name             # no code PRs, and the weekly is an issue
+        assert "Read CLAUDE.md" not in text, name    # the charter comes in the system prompt
+    for text in prompts.values():
+        assert "Your charter is in your system prompt" in text
+    assert "This charter is in your system prompt" in charter
+    assert "`state/`, `journal/`, `features/custom/`, `logs/` and `proposals/`" in charter
+    # A local clone checks ownership on the gitdir: safe.directory must name /srv/trading/main/.git.
+    assert "git -c safe.directory=/srv/trading/main/.git clone -q --no-hardlinks /srv/trading/main ~/work/<topic>" in charter
+    assert "safe.directory=/srv/trading/main " not in charter and "`trader-test`" in charter
+    assert "other than this week's" in prompts["weekly"]
+    assert "Never interact with `gilesknap/jev-trader` or any other public GitHub repository" in charter
+    assert "untrusted" in charter and "`trader-python`" in charter
+    assert "gh issue create --label weekly" in prompts["weekly"]
+    assert "proposals/<topic>/" in prompts["postclose"]
+
+
+# ---- the path check's revert (F5 from the split rehearsal, #169; #177) ----
+
+def origin_files(s):
+    return set(git(s.tmp / "origin.git", "ls-tree", "-r", "--name-only", "-z", "strategist").split("\0")) - {""}
+
+
+def origin_show(s, path):
+    return git(s.tmp / "origin.git", "show", f"strategist:{path}")
+
+
+@pytest.mark.parametrize("mode", ["monorepo", "split"])
+def test_edited_tracked_and_new_untracked_outside_files_are_both_reverted(tmp_path, mode):
+    # F5 exactly: the run edited CLAUDE.md and created evil.txt. One `git checkout` of both paths failed
+    # as a whole on the untracked one, so only evil.txt went and CLAUDE.md kept its edit, yet the alert
+    # said "(reverted)".
+    s = make_sandbox(tmp_path, split=mode == "split")
+    fake_claude(s, "echo evil >> CLAUDE.md\necho evil > evil.txt\necho n > state/n.md\n")
+    r = s.run("weekly")
+    assert r.returncode == 0, r.stderr
+    assert (s.repo / "CLAUDE.md").read_text() == "charter\n"
+    assert not (s.repo / "evil.txt").exists()
+    alerts = s.read("alerts")
+    assert "touched non-strategy paths (reverted): CLAUDE.md, evil.txt" in alerts
+    assert "could NOT" not in alerts
+    assert git(s.repo, "status", "--porcelain") == ""
+    files = origin_files(s)
+    assert "state/n.md" in files and "evil.txt" not in files
+    assert origin_show(s, "CLAUDE.md") == "charter\n"
+
+
+@pytest.mark.parametrize("mode", ["monorepo", "split"])
+def test_paths_with_spaces_and_non_ascii_are_checked_exactly(tmp_path, mode):
+    # #177: plain porcelain quotes these paths and `awk '{print $NF}'` took only their last word.
+    s = make_sandbox(tmp_path, split=mode == "split")
+    fake_claude(s, f"""echo evil >> "{TRACKED_ODD}"
+mkdir -p scripts && echo evil > "scripts/evil file.sh"
+echo evil > "naïve évil.txt"
+echo keep > "state/my note.md"
+mkdir -p journal && echo keep > "journal/café ☕.md"
+""")
+    r = s.run("weekly")
+    assert r.returncode == 0, r.stderr
+    assert (s.repo / TRACKED_ODD).read_text() == "odd\n"
+    assert not (s.repo / "scripts" / "evil file.sh").exists() and not (s.repo / "naïve évil.txt").exists()
+    alerts = s.read("alerts")
+    assert "could NOT" not in alerts
+    (line,) = [a for a in alerts.splitlines() if "touched non-strategy paths (reverted): " in a]
+    assert TRACKED_ODD in line and "naïve évil.txt" in line and "scripts/" in line
+    assert "state/" not in line and "journal/" not in line   # allowed paths aren't named
+    assert git(s.repo, "status", "--porcelain") == ""
+    files = origin_files(s)
+    assert {"state/my note.md", "journal/café ☕.md"} <= files
+    assert not {"scripts/evil file.sh", "naïve évil.txt"} & files
+    assert origin_show(s, TRACKED_ODD) == "odd\n"
+
+
+@pytest.mark.parametrize("mode", ["monorepo", "split"])
+def test_renames_across_the_allowed_boundary(tmp_path, mode):
+    # Out of an allowed dir (the outside copy goes; the deletion inside is a strategy change) and into
+    # one (the tracked outside file comes back; its copy inside is a strategy file). Committed, so the
+    # wrapper's reset turns them into a deletion plus an untracked file.
+    s = make_sandbox(tmp_path, split=mode == "split")
+    fake_claude(s, """mkdir -p scripts && git mv state/s.md scripts/s.md
+git mv CLAUDE.md state/charter.md
+git commit -qm renames
+""")
+    r = s.run("weekly")
+    assert r.returncode == 0, r.stderr
+    assert not (s.repo / "scripts" / "s.md").exists()
+    assert (s.repo / "CLAUDE.md").read_text() == "charter\n"
+    alerts = s.read("alerts")
+    assert "touched non-strategy paths (reverted): CLAUDE.md, scripts/" in alerts and "could NOT" not in alerts
+    assert git(s.repo, "status", "--porcelain") == ""
+    files = origin_files(s)
+    assert "CLAUDE.md" in files and "state/charter.md" in files
+    assert "scripts/s.md" not in files and "state/s.md" not in files
+
+
+SURVIVORS = {
+    # A stale index lock: the wrapper's reset and every checkout fail, so the edit stays.
+    "index lock": ("echo evil >> CLAUDE.md\ntouch .git/index.lock\n", "CLAUDE.md"),
+    # The same with a staged rename out of an allowed dir: a rename entry, two paths in one record.
+    "staged rename": ("mkdir -p scripts && git mv state/s.md scripts/moved.md\ntouch .git/index.lock\n",
+                      "scripts/moved.md"),
+    # `git clean -fd` won't remove a nested repository.
+    "nested repo": ("mkdir -p tools/x && git -C tools/x init -q && echo x > tools/x/f\n", "tools/"),
+}
+
+
+@pytest.mark.parametrize("mode", ["monorepo", "split"])
+@pytest.mark.parametrize("case", list(SURVIVORS))
+def test_an_outside_path_that_survives_the_revert_alerts_and_is_not_published(tmp_path, mode, case):
+    s = make_sandbox(tmp_path, split=mode == "split")
+    body, survivor = SURVIVORS[case]
+    fake_claude(s, "echo n > state/n.md\n" + body)
+    before = origin_log(s)
+    r = s.run("weekly")
+    assert r.returncode == 1
+    alerts = s.read("alerts")
+    assert "could NOT revert" in alerts and "not publishing" in alerts
+    assert survivor in alerts.split("Still changed: ")[1].split(". Touched")[0]
+    assert "(reverted)" not in alerts
+    assert origin_log(s) == before                   # nothing published, not even state/n.md
+    assert not list(s.logdir.glob("status.*"))      # the status scratch file is removed

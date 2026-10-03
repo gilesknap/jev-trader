@@ -10,7 +10,8 @@ set -a; . ~/.config/trading/services.env; set +a
 
 Without it, the commands that change state (`stop`, `rebase-paper`, `clear-halt`, `hold-live`,
 `release-live`) refuse and change nothing, rather than writing to a stray `runtime/` directory in
-the checkout.
+the checkout. (The services environment also names the config checkout, `TRADER_DATA_ROOT`;
+without it no command finds `config.yaml`.)
 
 ## STOP
 
@@ -49,8 +50,9 @@ fund live with, so paper sizing matches reality.
 
 ## Force paper or live
 
-Set `config/mode.yaml` to `paper` or `live` (or back to `auto`), merge, and deploy. The override
-wins over the automatic go-live.
+Set `config/mode.yaml` on your data repository's `main` to `paper` or `live` (or back to
+`auto`), through a pull request, merge it, and deploy. The deploy shows the change in full and
+needs your `yes`. The override wins over the automatic go-live.
 
 ## Withdraw profits
 

@@ -3,21 +3,26 @@
 #                     sudo bash deploy/setup/3-runner.sh install  -> checks out main, installs services + dashboard
 # Idempotent: safe to re-run either step.
 #
-# Split layout (#169):  sudo TRADER_DATA_ROOT=<a data checkout> bash deploy/setup/3-runner.sh install --split [--code-repo OWNER/NAME]
+# Split layout (#169):  sudo TRADER_DATA_ROOT=<a data checkout> bash deploy/setup/3-runner.sh key
+#                       sudo TRADER_DATA_ROOT=<a data checkout> bash deploy/setup/3-runner.sh install --split [--code-repo OWNER/NAME]
 #   clones the public code (default gilesknap/jev-trader) over https to /srv/trading/main and the data
 #   repo's main (with the deploy key, on the data repo) to /srv/trading/config, tests the code against
 #   that config, and installs the services and trader-watchdog.timer from the code and
 #   trader-runner.timer from the config. TRADER_DATA_ROOT (where config.yaml is read from) is needed
-#   only before /srv/trading/config exists. Once that checkout exists, a re-run is in split mode
+#   only before /srv/trading/config exists; without it the code's placeholder config.yaml is read,
+#   and its your-github-user/... slug is refused. Once that checkout exists, a re-run is in split mode
 #   without the flag; without it and without --split, everything runs exactly as before the split.
 set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo "run with sudo" >&2; exit 1; }
+# Nothing written below may be group-writable: group trading holds both trader and runner. (The
+# runner-side commands get at least 022 anyway: sudo adds its own umask to this one.)
+umask 022
 # shellcheck source=deploy/setup/lib.sh
 . "$(dirname "$0")/lib.sh"
 if split_layout; then export TRADER_DATA_ROOT="${TRADER_DATA_ROOT:-$CONFIG_CHECKOUT}"; fi
 # shellcheck source=deploy/setup/cfg.sh
 . "$(dirname "$0")/cfg.sh"
-GH_REPO=$(cfg owner github_repo)
+GH_REPO=$(cfg_repo)
 PORT=$(cfg dashboard tailscale_port)
 REPO=git@github-trading:$GH_REPO
 R=/home/runner

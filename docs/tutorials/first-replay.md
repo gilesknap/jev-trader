@@ -28,10 +28,30 @@ uv sync --extra dev
 
 The `dev` extra adds pytest and yfinance.
 
-## 2. Look at the control classifier
+## 2. Make a data directory
 
-Open `state/classifiers.yaml`. It holds `control_orb`, the permanent benchmark: an opening-range
-breakout on SPY and QQQ. Read it top to bottom:
+The code repository holds no one's settings or strategy: those live in each owner's private data
+repository. For this tutorial, a scratch directory made from the code's template will do. Copy
+both halves of the template into it, and point `trader` at it:
+
+```bash
+mkdir ../my-data
+cp -r templates/data/main/. templates/data/strategist/. ../my-data/
+export TRADER_DATA_ROOT="$(realpath ../my-data)"
+```
+
+`templates/data/main/` is what a data repository's `main` branch starts with (`config.yaml` and
+`config/mode.yaml`); `templates/data/strategist/` is what its `strategist` branch starts with
+(`state/`, `journal/`, `logs/`, `features/custom/`). In a real install they are two checkouts; here
+one directory serves as both, because the strategist root defaults to the data root. Keep the
+`export` in this terminal (and repeat it in any other you use below): without it, every `trader`
+command stops, saying it can't find `config.yaml`.
+
+## 3. Look at the control classifier
+
+Open `../my-data/state/classifiers.yaml`. It's the pre-launch pack a new install starts with: some
+`test_*` plumbing rules, a probe, and `control_orb`, the permanent benchmark, an opening-range
+breakout on SPY and QQQ. Find `control_orb` and read it top to bottom:
 
 - `window` and `cadence_min`: it looks between 09:45 and 15:00 US Eastern, at most every 2 minutes
   per symbol.
@@ -41,16 +61,17 @@ breakout on SPY and QQQ. Read it top to bottom:
 - `size_fraction`, `stop_pct`, `target_pct`: 20% of equity per position, a 0.4% stop and a 0.8%
   target.
 
-## 3. Validate it
+## 4. Validate it
 
 ```bash
 uv run trader validate --source yfinance
 ```
 
 This checks any custom features (there are none yet) and validates the file. It ends with
-`classifiers OK: [...]`. This is the check the runner repeats at every session start.
+`classifiers OK: [...]`, listing every classifier in the file. This is the check the runner repeats
+at every session start.
 
-## 4. Replay a few days
+## 5. Replay a few days
 
 ```bash
 uv run trader replay --decider stub --source yfinance --days 3 --only control_orb --name first
@@ -59,7 +80,7 @@ uv run trader replay --decider stub --source yfinance --days 3 --only control_or
 The engine replays each session minute by minute: for each minute it enforces stops and targets,
 runs the risk checks, asks the (stub) decider when the trigger holds, and sends orders to a
 simulated broker with 0.05% slippage a side. It prints a summary per day (equity, the day's P&L,
-trades, NAV) and the run directory, `runtime/replay/first/`.
+trades, NAV) and the run directory, `runtime/replay/first/` in the code checkout.
 
 Look inside it:
 
@@ -74,7 +95,7 @@ overnight: anything still open 15 minutes before the close is sold.
 `runtime/replay/first/decisions/` has one line per question asked, with the probabilities the
 decider returned and the feature values it was shown.
 
-## 5. Watch it on the dashboard
+## 6. Watch it on the dashboard
 
 Start the dashboard locally. `TRADER_DASHBOARD_ALLOW_LOCAL=1` lets requests in without a Tailscale
 identity, so use it only on your own machine:
@@ -94,9 +115,9 @@ terminal, and pick it on the dashboard while it runs:
 uv run trader replay --decider stub --source yfinance --days 1 --only control_orb --pace 0.2 --name watch
 ```
 
-## 6. Change something
+## 7. Change something
 
-Edit `control_orb` in `state/classifiers.yaml`: say, raise `target_pct` to `1.2`. Validate it, and
+Edit `control_orb` in `../my-data/state/classifiers.yaml`: say, raise `target_pct` to `1.2`. Validate it, and
 replay the same days under a new name:
 
 ```bash

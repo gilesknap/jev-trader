@@ -13,3 +13,19 @@ cfg() {
     [[ -n "$v" ]] || { echo "config.yaml: no value for $1.$2 ($CONFIG_YAML)" >&2; return 1; }
     printf '%s\n' "$v"
 }
+
+# cfg_repo: owner.github_repo, refusing the code template's placeholder (your-github-user/...). That
+# is what the public code's own config.yaml holds, so reading it means TRADER_DATA_ROOT wasn't set
+# to the data checkout, and a clone URL or deploy-key page built from it would name nobody's repo.
+cfg_repo() {
+    local v
+    v=$(cfg owner github_repo) || return 1
+    if [[ $v == your-github-user/* ]]; then
+        echo "config.yaml: owner.github_repo is the template placeholder '$v' ($CONFIG_YAML)." >&2
+        echo "Point TRADER_DATA_ROOT at a checkout of your data repo's main, e.g." \
+             "sudo TRADER_DATA_ROOT=/path/to/data-main bash deploy/setup/3-runner.sh key (or install --split);" \
+             "if $CONFIG_YAML is already your data checkout, set owner.github_repo there" >&2
+        return 1
+    fi
+    printf '%s\n' "$v"
+}

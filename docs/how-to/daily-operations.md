@@ -5,25 +5,31 @@ What happens on a normal day, and what's yours to do. Local times are from `conf
 
 | When (UK, as shipped) | What |
 |---|---|
-| 09:00 daily | Housekeeping checks: OpenRouter credit, token expiry, undeployed merges, disk (see [Alerts](alerts.md)) |
+| 09:00 daily | Housekeeping checks: OpenRouter credit, token expiry, undeployed merges in either repository, disk (see [Alerts](alerts.md)) |
 | 12:50 Mon–Fri | The runner starts, checks Alpaca's calendar and waits for the open |
 | 30–75 min before the open | The strategist's pre-market run (short) |
 | open–close | The runner trades. The watchdog checks its heartbeat every 10 minutes. Any position the engine didn't open (left from a crash, or **bought by hand**) is sold within about a minute of the first tick after the open, with an urgent alert |
 | close − 15 min | Everything is flattened, retried every minute until the close. Nothing is sent after the bell; anything still held is alerted, to close by hand in Alpaca |
 | close | The runner writes the day summary and sends the **Daily P&L** alert |
 | 21:30 (retry 22:30) | The strategist's post-close review: archive logs, research, rewrite the strategy, draft tomorrow |
-| Sat 10:00 | The weekly retrospective, compaction, and the weekly PR `strategist` → `main` |
+| Sat 10:00 | The weekly retrospective, compaction, and the weekly issue in your data repository |
 
 ## Your weekly job
 
-- Review and merge the weekly pull request from `strategist`. Its body is the weekly journal,
-  including any go-live assessment.
-- Handle `needs-human` issues (the strategist's requests) and `proposal/*` pull requests (its
-  code proposals).
-- Deploy merged code changes outside market hours (see [Deploy a change](deploy.md)).
+- Read the weekly issue in your data repository (label `weekly`, titled `Week <YYYY>-W<WW>: ...`;
+  the strategist closes the previous week's). Its body is the weekly journal, including any
+  go-live assessment (flagged in the title), and ends with a link to the week's diff of the
+  `strategist` branch, if you want to see exactly what changed in `state/`. Comment on it if
+  something needs saying. Nothing needs merging: the runner already reads the strategist's
+  branch.
+- Handle `needs-human` issues in your data repository: the strategist's requests, and its code
+  proposals (see [Review the strategist's proposals](proposals.md)).
+- Deploy merged changes outside market hours (see [Deploy a change](deploy.md)), and take code
+  updates when you choose to (see [Take updates](take-updates.md)).
 
-Merge pull requests in GitHub's web UI with **Create a merge commit**: GitHub signs those, and the
-deploy uses the signature to skip the diff review for them.
+The dashboard's links include all of these. Merge pull requests in GitHub's web UI with **Create
+a merge commit**: GitHub signs those, and the deploy uses the signature to skip the diff review for
+code. (Config changes always show their diff.)
 
 ## Where to look when something's wrong
 

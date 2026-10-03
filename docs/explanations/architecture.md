@@ -5,33 +5,55 @@ rules, and a **runner** that executes them. They run as different Unix users, fr
 checkouts, and talk only through files. That separation is the main safety property: the part
 that is creative and AI-driven can't touch real money or the code that guards it.
 
+## Two repositories
+
+The code and each owner's data live in separate repositories:
+
+- **The code** is the public repository
+  [gilesknap/jev-trader](https://github.com/gilesknap/jev-trader): everything in `src/`, the
+  tests, these docs, the strategist's charter (`CLAUDE.md`) and prompts, the setup scripts and
+  systemd units, the default universe, and a template for a data repository (`templates/data/`).
+  Nothing in it is specific to one owner.
+- **The data** is a private repository per owner, made from that template by
+  `deploy/setup/0-data.sh`. It has two branches that share no history and are never merged:
+  - `main` is the human's **deployment config**: `config.yaml`, `config/mode.yaml`, and the
+    timers and environment file rendered from them.
+  - `strategist` is the **strategist's data**: `state/`, `journal/`, `logs/`, `features/custom/`
+    and `proposals/`, plus a short `CLAUDE.md` that points at the charter.
+
+Both the code and the deployment config reach the runner only through `trading-deploy`, which a
+human runs. The strategist's branch needs no deploy: the runner reads it at each session start.
+
 ## The pieces
 
 ```{mermaid}
 flowchart LR
     subgraph trader["user: trader (paper keys only)"]
-        T[systemd timers] --> W[scripts/strategist.sh]
+        T[systemd timers] --> W[strategist.sh<br/>from /srv/trading/main]
         W --> C[headless Claude Code]
-        C -->|edits| S[(/srv/trading/strategist<br/>branch strategist)]
+        C -->|edits| S[(/srv/trading/strategist<br/>data repo, branch strategist)]
     end
     subgraph runner["user: runner (live keys, no sudo)"]
         RT[systemd timer] --> R[trader run]
         R -->|writes| RD[(/srv/trading/runtime)]
         D[dashboard] -->|reads| RD
-        M[(/srv/trading/main<br/>branch main)] -->|code| R
+        M[(/srv/trading/main<br/>public code)] -->|code| R
+        CF[(/srv/trading/config<br/>data repo, branch main)] -->|config.yaml, mode.yaml| R
     end
     S -->|state/classifiers.yaml<br/>features/custom/| R
     R <-->|orders, bars| A[Alpaca]
     R <-->|decisions| J[Jev via OpenRouter]
-    C -->|push, PRs| G[GitHub]
-    G -->|human merge + trading-deploy| M
+    C -->|push strategist,<br/>needs-human and weekly issues| G[(private data repo)]
+    G -->|human merge to main<br/>+ trading-deploy| CF
+    P[(public code repo)] -->|human merge<br/>+ trading-deploy| M
     TS[tailscale serve] --> D
 ```
 
 - **The strategist** is headless Claude Code, started by `trader`'s systemd timers through
-  `scripts/strategist.sh` (pre-market, post-close, a Saturday weekly run and a daily housekeeping
-  check). It reads its charter (`CLAUDE.md`) and its own notes, researches, and writes the next
-  session's rules to `state/classifiers.yaml` on the `strategist` branch.
+  `scripts/strategist.sh` in the deployed code checkout (pre-market, post-close, a Saturday weekly
+  run and a daily housekeeping check). Its charter (`CLAUDE.md` in the code) is passed in its
+  system prompt. It reads its own notes, researches, and writes the next session's rules to
+  `state/classifiers.yaml` on the data repository's `strategist` branch.
 - **The runner** is `trader run`, started once per weekday by `runner`'s systemd timer. One
   invocation runs one session: it waits for the open, streams minute bars, ticks the engine
   every minute, flattens before the close, writes the day's summary and exits.
@@ -48,52 +70,78 @@ flowchart LR
 | Account | Holds | Can | Can't |
 |---|---|---|---|
 | your admin account | sudo | run the setup scripts, deploy, read everything | (it can do anything: use it only in sessions you watch) |
-| `trader` | the strategist checkout, Alpaca **paper** keys, a GitHub token, the Claude login | edit `state/`, `journal/`, `features/custom/`, `logs/`; push the `strategist` branch; open PRs and issues | read the live keys, write the deployed code or the runtime directory, reach the dashboard |
-| `runner` | the deployed checkout of `main`, the runtime directory, Alpaca **live** keys | trade, write runtime state, serve the dashboard | sudo (it executes strategist-written feature code, so it must not be able to escalate) |
+| `trader` | the strategist checkout, its own virtual environment of the deployed code, Alpaca **paper** keys, a GitHub token for the **data** repository only, the Claude login | edit `state/`, `journal/`, `features/custom/`, `logs/`, `proposals/`; push the `strategist` branch; open issues in the data repository (and, technically, push or merge to its `main`: see [Deploy a change](../how-to/deploy.md)) | read the live keys, write the deployed code checkout, the deployed config checkout or the runtime directory, reach the dashboard, write to the public code repository |
+| `runner` | the deployed code checkout, the deployed config checkout, the runtime directory, Alpaca **live** keys | trade, write runtime state, serve the dashboard | sudo (it executes strategist-written feature code, so it must not be able to escalate) |
 
 The setup scripts (`deploy/setup/1-host.sh` and friends) create the `trading` group and the
 directories with these owners. `deploy/setup/check.sh` verifies the result, including that
-`trader` can't write the deployed code or the runtime, that the live keys are only in
-`runner`'s file, and that the dashboard socket is unreachable from other users.
+`trader` can't write the deployed code, the deployed config or the runtime, that the live keys
+are only in `runner`'s file, that the dashboard socket is unreachable from other users, and that
+`trader`'s GitHub token is a fine-grained personal access token.
 
-## Three roots
+## Four roots
 
-`src/trader/config.py` names three directories. In development they are all the same checkout;
-in production they are separate:
+`src/trader/config.py` names four directories. In development they can all be one directory; in
+production they are separate:
 
-| Root | Environment variable | Production path | Owner |
-|---|---|---|---|
-| Code | `TRADER_CODE_ROOT` | `/srv/trading/main` (branch `main`) | runner |
-| Strategist | `TRADER_STRATEGIST_ROOT` | `/srv/trading/strategist` (branch `strategist`) | trader |
-| Runtime | `TRADER_RUNTIME` | `/srv/trading/runtime` | runner (read-only to trader) |
+| Root | Environment variable | Default | Production path | Owner |
+|---|---|---|---|---|
+| Code | `TRADER_CODE_ROOT` | the checkout containing `src/` | `/srv/trading/main` (public code, `main`) | runner |
+| Data | `TRADER_DATA_ROOT` | the code root | `/srv/trading/config` (data repository, `main`) | runner (read-only to trader) |
+| Strategist | `TRADER_STRATEGIST_ROOT` | the data root | `/srv/trading/strategist` (data repository, `strategist`) | trader |
+| Runtime | `TRADER_RUNTIME` | `runtime/` in the code root | `/srv/trading/runtime` | runner (read-only to trader) |
 
-The runner reads its code from the code root but its *rules* from the strategist root:
-`state/classifiers.yaml` and `features/custom/`. So strategy changes need no deploy; they take
-effect at the next session start. Code changes do need one, and only a human can run it (see
+- The **code root** holds the code and the universe (`config/universe.yaml`), which stays with
+  the code because it must match the allocator's buckets.
+- The **data root** holds `config.yaml`, `config/mode.yaml` and the files rendered from them.
+  On the host it is a checkout only `runner` can write, so the strategist can't change the
+  deployment settings or the paper/live override by editing files.
+- The **strategist root** holds the rules the runner reads: `state/classifiers.yaml` and
+  `features/custom/`. So strategy changes need no deploy; they take effect at the next session
+  start.
+- The **runtime** holds everything the runner writes (see [Files and logs](../reference/files.md)).
+
+Code and config changes need a deploy, and only a human can run one (see
 [Deploy a change](../how-to/deploy.md)).
 
 The runner never follows symlinks in the strategist's `state/` or `features/custom/`, and never
 imports strategist-written code: custom features run in a bubblewrap sandbox with no network, no
 secrets and no access to the runtime directory.
 
-## How code changes flow
+## The strategist runs the deployed code
+
+`trader` doesn't have its own copy of the code. A `trader` command on its `PATH`
+(`~/.local/bin/trader`, installed from `scripts/trader-shim` by `2-strategist.sh`) runs the
+deployed code in `/srv/trading/main` from `trader`'s own virtual environment
+(`~/.local/share/trader/venv`), with the four roots fixed to the production paths. So the
+strategist validates and replays against exactly the code the runner will run, and the wrapper
+that path-checks each run is the deployed one, which the strategist can't change.
+`trader-python` is the same environment's Python, for ad-hoc research.
+
+## How changes flow
 
 ```{mermaid}
 flowchart LR
-    S[strategist run] -->|state/, journal/,<br/>features/custom/, logs/| B[branch strategist]
-    S -->|code proposals| P[branch proposal/*]
-    B -->|weekly PR| Main[main]
-    P -->|PR| Main
-    H[human] -->|reviews, merges| Main
-    Main -->|"sudo -u runner trading-deploy"| Run[/srv/trading/main/]
+    S[strategist run] -->|state/, journal/,<br/>features/custom/, logs/| B[data repo: strategist]
+    S -->|"proposals/topic/*.patch<br/>+ needs-human issue"| B
+    B -->|runner reads at session start| Run[runner]
+    H[human] -->|"applies a patch on a fork,<br/>opens a public PR"| Code[jev-trader main]
+    H -->|config PR, merge| Cfg[data repo: main]
+    Code -->|"sudo -u runner trading-deploy"| Run
+    Cfg -->|"sudo -u runner trading-deploy"| Run
 ```
 
-- The strategist's branch may change only `state/`, `journal/`, `features/custom/` and `logs/`.
-  The wrapper reverts anything else after each run and alerts.
-- Anything else (code, the universe, the prompts, the charter) goes through a `proposal/<topic>`
-  branch and a pull request that a human reviews.
-- Merged code reaches the runner only when the human runs `trading-deploy`. A token that can push
-  to `main` still can't make anything run.
+- The strategist's branch may change only `state/`, `journal/`, `features/custom/`, `logs/` and
+  `proposals/`. The wrapper reverts anything else after each run and alerts.
+- A code change the strategist wants (code, the universe, the prompts, the charter) becomes a
+  patch series and a rationale under `proposals/<topic>/`, and a `needs-human` issue in the data
+  repository. Its token can't reach the public code repository. The human reviews the patch,
+  applies it on a branch of their fork, and opens the public pull request with their own
+  description (see [Review the strategist's proposals](../how-to/proposals.md)).
+- Changes to the deployment config are pull requests on the data repository's `main`.
+- Merged changes reach the runner only when the human runs `trading-deploy`, which deploys both
+  repositories together. A token that can push to the data repository's `main` still can't make
+  anything run, and the deploy always shows the full config diff.
 
 ## The dashboard and its protection
 

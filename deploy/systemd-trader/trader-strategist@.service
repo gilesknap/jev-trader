@@ -3,12 +3,17 @@ Description=Strategist %i run (headless Claude as trader; scripts/strategist.sh)
 
 [Service]
 Type=oneshot
+# Split layout (#169): the wrapper, prompts and charter come from the deployed code (main, read-only to
+# trader), the config from the deployed data repo main, and `trader` from the shim in ~/.local/bin.
+Environment=TRADER_CODE_ROOT=/srv/trading/main
+Environment=TRADER_DATA_ROOT=/srv/trading/config
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 Environment=TRADER_STRATEGIST_ROOT=/srv/trading/strategist
 Environment=TRADER_RUNTIME=/srv/trading/runtime
 Environment=TRADER_REPLAY_DIR=/srv/trading/strategist/replays
 Environment=TRADER_STRATEGIST_STAMP=/srv/trading/strategist/.last_run
 # As cron did: files the strategist writes must never be group-writable (check.sh).
 UMask=0022
-ExecStart=/srv/trading/strategist/scripts/strategist.sh %i
+ExecStart=/srv/trading/main/scripts/strategist.sh %i
 # The script bounds each Claude run itself (25 or 50 min); leave room for its git steps.
 TimeoutStartSec=90min

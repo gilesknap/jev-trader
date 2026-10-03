@@ -6,7 +6,7 @@ value is dimensionless (percentages, ratios, z-scores), so the decision model ne
 prices or dates. A feature returns NaN when there isn't enough data yet; a trigger on a NaN
 feature never holds, and the model sees it as `null`.
 
-`uv run trader features` lists the library features and any custom features that passed the gate
+`trader features` (as `trader`; `uv run trader features` in a development checkout) lists the library features and any custom features that passed the gate
 (it reads recent Alpaca bars for the gate, so it needs Alpaca keys).
 
 ## Library features
@@ -55,4 +55,4 @@ Rules, enforced by the gate (`src/trader/features/harness.py`) and the sandbox:
 
 The runner re-checks every custom feature at each session start. A rejected feature makes every
 classifier that uses it invalid, and an invalid classifier file means nothing trades that day, so
-always run `uv run trader validate` after an edit.
+always run `trader validate` after an edit.

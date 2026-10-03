@@ -10,6 +10,9 @@
 # config checkout; and Claude Code deny rules, the charter-import check and runner's access to the
 # run lock are set up. Without that checkout everything below runs exactly as before the split.
 set -euo pipefail
+# Everything this writes into the checkout must be writable by trader only: trader's login umask can
+# be 0002, and group trading includes runner, which must never be able to plant files trader runs.
+umask 022
 # shellcheck source=deploy/setup/lib.sh
 . "$(dirname "$0")/lib.sh"
 SPLIT=""
@@ -21,7 +24,8 @@ if split_layout; then
 fi
 # shellcheck source=deploy/setup/cfg.sh
 . "$(dirname "$0")/cfg.sh"
-REPO=https://github.com/$(cfg owner github_repo).git
+GH_REPO=$(cfg_repo)
+REPO=https://github.com/$GH_REPO.git
 S=/srv/trading/strategist
 [[ "$(id -un)" == trader ]] || { echo "run as trader" >&2; exit 1; }
 id -nG | grep -qw trading || { echo "this login lacks the trading group: log in again" >&2; exit 1; }
@@ -138,7 +142,9 @@ else ln -s "$S" ~/trading; fi
 echo "strategist ready (branch $(git branch --show-current), timers installed):"
 systemctl --user list-timers 'trader-strategist-*' --no-pager
 if [[ -n $SPLIT ]]; then
-    echo "Next, as admin: sudo bash $CODE/deploy/setup/check.sh"
+    # The first install ran before $S/.env existed, so it couldn't give runner its env yet.
+    echo "Next, as admin: sudo bash $CODE/deploy/setup/3-runner.sh install   (again: it copies $S/.env to runner)"
+    echo "then:           sudo bash $CODE/deploy/setup/check.sh"
 else
     echo "Next, as admin: sudo bash $S/deploy/setup/3-runner.sh key"
 fi

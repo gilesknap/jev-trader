@@ -118,7 +118,32 @@ def test_strategist_units_stay_out_of_runners_install_dir():
     # must never land there (they'd run strategist.sh as runner).
     assert not list((ROOT / "deploy" / "systemd").glob("trader-strategist*"))
     unit = (ROOT / "deploy" / "systemd-trader" / "trader-strategist@.service").read_text()
-    assert "ExecStart=/srv/trading/strategist/scripts/strategist.sh %i" in unit and "UMask=0022" in unit
+    assert "UMask=0022" in unit
+
+
+def test_strategist_unit_runs_the_deployed_wrapper_in_split_mode():
+    """The cutover (#169 C2): the wrapper runs from the deployed code, never from the checkout the
+    strategist can write, and TRADER_DATA_ROOT (the wrapper's split-mode switch) points at the
+    deployed config. PATH carries ~/.local/bin for the `trader` shim."""
+    unit = (ROOT / "deploy" / "systemd-trader" / "trader-strategist@.service").read_text()
+    lines = unit.splitlines()
+    assert [ln for ln in lines if ln.startswith("ExecStart=")] == ["ExecStart=/srv/trading/main/scripts/strategist.sh %i"]
+    env = dict(ln.removeprefix("Environment=").split("=", 1) for ln in lines if ln.startswith("Environment="))
+    assert env["TRADER_CODE_ROOT"] == "/srv/trading/main"
+    assert env["TRADER_DATA_ROOT"] == "/srv/trading/config"
+    assert env["PATH"].split(":")[0] == "%h/.local/bin"
+    assert env["TRADER_STRATEGIST_ROOT"] == "/srv/trading/strategist"
+    assert env["TRADER_RUNTIME"] == "/srv/trading/runtime"
+    assert env["TRADER_REPLAY_DIR"] == "/srv/trading/strategist/replays"
+    assert env["TRADER_STRATEGIST_STAMP"] == "/srv/trading/strategist/.last_run"
+
+
+def test_runner_services_env_points_at_the_deployed_config():
+    """The runner's services.env (template and rendered) reads config from /srv/trading/config (#169 C2)."""
+    for text in ((ROOT / "deploy" / "templates" / "trader.env").read_text(),
+                 config.render_deploy(ROOT, DATA)["deploy/systemd/trader.env"]):
+        assert "\nTRADER_CODE_ROOT=/srv/trading/main\n" in text
+        assert "\nTRADER_DATA_ROOT=/srv/trading/config\n" in text
 
 
 def test_render_refuses_unknown_keys_sections_and_line_breaks(monkeypatch):

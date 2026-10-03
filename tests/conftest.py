@@ -5,7 +5,9 @@ loaded at import):
 1. TRADER_TEST_DATA_ROOT, if set: a developer's own data checkout (config.yaml, config/mode.yaml,
    state/...), used as both TRADER_DATA_ROOT and TRADER_STRATEGIST_ROOT.
 2. An already-set TRADER_DATA_ROOT (e.g. trading-deploy testing candidate code against candidate
-   config), left alone.
+   config), left alone. A data repo's `main` checkout holds the config but no state/, so unless
+   TRADER_STRATEGIST_ROOT is set too (respected) or that root has a state/ of its own, the strategist
+   root becomes a session copy of templates/data/strategist: never the live strategist checkout.
 3. Otherwise, if this tree has no config.yaml of its own (the public code repo), a session copy of
    templates/data/main and templates/data/strategist, with the deploy files rendered into it.
 4. Otherwise (a monorepo checkout with its own config.yaml, as deployed today), nothing changes.
@@ -22,24 +24,37 @@ ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_DATA = ROOT / "templates" / "data"
 
 
-def _use_template_data() -> Path | None:
-    """Point TRADER_DATA_ROOT/TRADER_STRATEGIST_ROOT at test data when this tree has none. Returns the
-    session copy of the template, or None when the environment or the tree already supplies data."""
-    if os.environ.get("TRADER_TEST_DATA_ROOT"):
-        data = str(Path(os.environ["TRADER_TEST_DATA_ROOT"]).absolute())
-        os.environ["TRADER_DATA_ROOT"] = data
-        os.environ["TRADER_STRATEGIST_ROOT"] = data
-        return None
-    if os.environ.get("TRADER_DATA_ROOT") or (ROOT / "config.yaml").exists():
-        return None
-    tmp = Path(tempfile.mkdtemp(prefix="trader-test-data-"))
+def _session_tmp(prefix: str) -> Path:
+    tmp = Path(tempfile.mkdtemp(prefix=prefix))
     atexit.register(shutil.rmtree, tmp, ignore_errors=True)
-    data = tmp / "data"
+    return tmp
+
+
+def _use_template_data(environ=os.environ, root: Path = ROOT) -> Path | None:
+    """Point TRADER_DATA_ROOT/TRADER_STRATEGIST_ROOT (in `environ`) at test data when the environment or
+    the tree `root` doesn't supply it. Returns the session copy of the whole template (whose deploy files
+    the caller renders), or None when the environment or the tree already supplies the config."""
+    if environ.get("TRADER_TEST_DATA_ROOT"):
+        data = str(Path(environ["TRADER_TEST_DATA_ROOT"]).absolute())
+        environ["TRADER_DATA_ROOT"] = data
+        environ["TRADER_STRATEGIST_ROOT"] = data
+        return None
+    if environ.get("TRADER_DATA_ROOT"):
+        # A data repo's main checkout (trading-deploy's candidate data, `3-runner.sh install --split`)
+        # has config.yaml but no state/; STRATEGIST_ROOT would default to it and find no classifiers.
+        if not environ.get("TRADER_STRATEGIST_ROOT") and not (Path(environ["TRADER_DATA_ROOT"]) / "state").is_dir():
+            strategist = _session_tmp("trader-test-strategist-") / "strategist"
+            shutil.copytree(TEMPLATE_DATA / "strategist", strategist)
+            environ["TRADER_STRATEGIST_ROOT"] = str(strategist)
+        return None
+    if (root / "config.yaml").exists():
+        return None
+    data = _session_tmp("trader-test-data-") / "data"
     # One directory for both, as in a single data checkout: config and strategy side by side.
     shutil.copytree(TEMPLATE_DATA / "main", data)
     shutil.copytree(TEMPLATE_DATA / "strategist", data, dirs_exist_ok=True)
-    os.environ["TRADER_DATA_ROOT"] = str(data)
-    os.environ["TRADER_STRATEGIST_ROOT"] = str(data)
+    environ["TRADER_DATA_ROOT"] = str(data)
+    environ["TRADER_STRATEGIST_ROOT"] = str(data)
     return data
 
 

@@ -2,12 +2,16 @@
 
 Agreed 2026-09-27. Observe phase day 1: **Monday 2026-10-05**.
 
+Numbers in parentheses, such as (#39), refer to issues and pull requests in the project's original
+private repository, which holds the review record up to the repository split (2026-10). They are
+not links to this repository's tracker.
+
 ## Goal
 Opus 5.5 strategist gets ~£200 (held as USD) and autonomy to invent and run an intraday strategy.
 - Primary: beat buy-and-hold SPY risk-adjusted, net of slippage (measured on unit NAV).
 - Standing aside is a valid outcome; every trade needs a written reason.
 - Exploration mandate: ≥1 genuinely novel hypothesis in shadow per week, failures recorded.
-- Honest self-assessment in weekly PR ("what I believed that was wrong", paper-vs-live, luck vs edge).
+- Honest self-assessment in the weekly report ("what I believed that was wrong", paper-vs-live, luck vs edge): a weekly PR until the repository split, a weekly issue in the data repo since.
 - Quarterly reviews (first at 3 months, mid-point at 6 weeks); runs indefinitely if successful.
 
 ## Stack
@@ -20,7 +24,7 @@ Opus 5.5 strategist gets ~£200 (held as USD) and autonomy to invent and run an 
 - ~13:45 pre-market check (short): news, confirm/tweak/stand down drafted classifiers.
 - 14:30–21:00 runner daemon trades.
 - ~21:30 post-close review (heavy): review decisions/fills/P&L, cashflow reconciliation, update strategy, draft tomorrow.
-- Saturday: weekly retrospective + PR `strategist` → `main`; compaction.
+- Saturday: weekly retrospective + weekly issue in the data repo (until the split, a PR `strategist` → `main`); compaction.
 
 ## Hard guardrails (code on `main`, owned by runner user, not agent-editable)
 - Long-only; no shorting, margin or options.
@@ -51,20 +55,42 @@ Opus 5.5 strategist gets ~£200 (held as USD) and autonomy to invent and run an 
 - Unit NAV (fund-style); deposits/withdrawals auto-detected from Alpaca account activities into `logs/cashflows.csv`. Sizing is % of current equity.
 
 ## Security split
-- `trader` (Claude): `/srv/trading/strategist` checkout (`strategist` branch), **paper keys only**, GitHub fine-grained PAT (Contents + PRs rw) in `~/.config/trading/` 600.
-- `runner` (dedicated, **no sudo**): `/srv/trading/main` (deployed code), `/srv/trading/runtime` (logs/fills/heartbeats, trader read-only), **live keys** in `/home/runner/.config/trading/` 600, systemd user services with `UMask=0027`. It executes strategist feature code, so it must not be able to escalate (the human's admin account has sudo, so it isn't used).
-- **Deploys are human-only:** `sudo -u runner trading-deploy`.
-  - GitHub branch protection isn't enforced on free private repos, so the token *can* push to `main`, and this step is the real gate.
-  - Code is reviewed in its PR. If every commit since the last deploy is a GitHub-signed PR merge commit, the deploy lists the PRs and proceeds. The deployed code checks this against a pinned key (#39).
-  - Anything else shows its diff and requires `yes`.
-  - The human checks that the listed PRs are ones they merged.
-  - Never mid-session: the runner unit holds a shared `flock` on `runtime/session.lock` for the whole session. The deploy refuses while that lock is held or systemd shows the runner up; it doesn't wait. It holds the lock exclusively only around the switch (checkout, `uv sync`, unit files), and a runner starting at 12:50 waits that out.
-- Code changes to `runner/`/`guardrails/` via `proposal/*` branches → human-merged PRs.
+- **Two repositories** (since 2026-10; the split replaced one private repo holding both):
+  - **Public code**, `gilesknap/jev-trader`: all code, tests, docs, the charter (`CLAUDE.md`) and prompts, the systemd units, setup scripts, `trading-deploy`, the default universe, and a data-repo template (`templates/data/`). Nothing owner-specific.
+  - **A private data repo per owner**, two unrelated branches, never merged: `main` is human-owned deployment config (`config.yaml`, `config/mode.yaml`, the rendered timers and `trader.env`); `strategist` is the strategist's data (`state/`, `journal/`, `logs/`, `features/custom/`, `proposals/`, a stub `CLAUDE.md`).
+- **Three checkouts on the host:** `/srv/trading/main` (public code, runner-owned, deployed), `/srv/trading/config` (data `main`, runner-owned, deployed, read-only to trader) and `/srv/trading/strategist` (data `strategist`, trader-owned). The runner never reads config from a directory trader can write. Code paths: `TRADER_CODE_ROOT`, `TRADER_DATA_ROOT` (config), `TRADER_STRATEGIST_ROOT`, `TRADER_RUNTIME`.
+- `trader` (Claude): the strategist checkout, **paper keys only**, a fine-grained GitHub PAT for the **data repo only** (Contents, PRs, Issues rw), so it can't write anything public. It runs the **deployed** code: its own venv (`~/.local/share/trader/venv`, built from `/srv/trading/main`) through a `trader` shim, and the wrapper itself is run from the deployed checkout, so the strategist can't change the script that path-checks it. The charter is passed with `--append-system-prompt-file` from the deployed checkout. Claude Code deny rules close the obvious routes to GitHub's public content (porous; the charter carries the rule too).
+- `runner` (dedicated, **no sudo**): `/srv/trading/main`, `/srv/trading/config`, `/srv/trading/runtime` (logs/fills/heartbeats, trader read-only), **live keys** in `/home/runner/.config/trading/` 600, systemd user services with `UMask=0027`. It executes strategist feature code (in a sandbox), so it must not be able to escalate (the human's admin account has sudo, so it isn't used).
+- **Code proposals stay private:** the strategist writes a `git format-patch` series plus rationale under `proposals/<topic>/` on its branch and opens a `needs-human` issue in the data repo. The human applies it on their fork and writes the public PR text.
+- **Deploys are human-only:** `sudo -u runner trading-deploy`, covering both repos together.
+  - Code is reviewed in its PR. If every code commit since the last deploy is a GitHub-signed PR merge commit, the deploy lists the PRs and proceeds. The deployed code checks this against a pinned key (#39). Anything else shows its diff and requires `yes`. The public repo's `main` has a ruleset requiring PRs.
+  - Data `main` is a free private repo without branch protection, and the strategist's token can push to it or merge its own PRs there. So the deploy **always** shows the full data diff and needs `yes`, signed or not.
+  - The candidate code is tested against the candidate config, the rendered files must match `config.yaml` under the new code, and the strategist's live specs are validated (a warning only).
+  - Never mid-session: the runner unit holds a shared `flock` on `runtime/session.lock` for the whole session. The deploy refuses while that lock is held or systemd shows the runner up; it doesn't wait. It holds the lock exclusively only around the switch (checkouts, `uv sync`, unit files), and a runner starting at 12:50 waits that out.
+  - Never mid-run: the strategist holds its run lock for each whole run; the deploy refuses while it's held and holds it across the switch.
+- Owners deploy code straight from upstream (trusting its merges) or from their own fork, taking upstream by a merge PR they review (recommended with real money).
 
 ## Repo layout
+Public code repo:
 ```
 CLAUDE.md                 charter, guardrail summary, file map, run procedures
-guardrails/ runner/ dashboard/ features/lib/   (main only)
+prompts/                  per-run prompts (premarket, postclose, weekly)
+src/trader/               runner, engine, guardrails, allocator, features library, dashboard
+config/universe.yaml      the universe (must match the allocator's buckets)
+deploy/                   trading-deploy, systemd units, templates, setup scripts
+scripts/                  strategist.sh (the wrapper), the trader shim and helpers
+templates/data/           what a new owner's data repo starts with
+tests/ docs/
+```
+Private data repo, branch `main` (deployed to `/srv/trading/config`):
+```
+config.yaml               owner, dashboard users, start date, schedule, models
+config/mode.yaml          auto | paper | live (human override)
+deploy/systemd*/          timers and trader.env rendered from config.yaml
+```
+Private data repo, branch `strategist` (`/srv/trading/strategist`):
+```
+CLAUDE.md                 stub pointing at the charter in the code
 features/custom/          strategist-authored features
 state/strategy.md         living thesis, rewritten, ~2–3k words cap
 state/classifiers.yaml    active specs
@@ -72,7 +98,8 @@ state/watchlist.md        untraded hypotheses
 journal/daily|weekly|monthly|yearly/
 logs/trades.csv           permanent (tax record; rows with book sim:<id> are simulated, not real trades)
 logs/cashflows.csv        permanent
-logs/decisions/*.jsonl.gz one line per classifier call
+logs/decisions/*.jsonl.gz one line per classifier call (on disk, not committed)
+proposals/<topic>/        code proposals: patch series + rationale
 ```
 - Never store market data; re-fetch. Git history is the strategy history.
 - Retention: dailies deleted after 4 weeks (once weekly exists); decision logs after 3 months; monthlies → yearly.
@@ -81,7 +108,7 @@ logs/decisions/*.jsonl.gz one line per classifier call
 
 ## Alerts & dashboard
 - ntfy.sh (secret topic): kill switch, halts, daemon crash, failed strategist run/auth, order rejections, **daily P&L one-liner**.
-- GitHub issues labelled `needs-human`: go-live memo, proposals, strategist requests.
+- GitHub issues in the data repo labelled `needs-human`: go-live memo, proposals, strategist requests; and a weekly issue (label `weekly`).
 - Watchdog timer every 10 min in market hours: daemon heartbeat + last-run staleness.
 - Dashboard: FastAPI + single page, `tailscale serve` HTTPS; viewing and STOP restricted to the dashboard users in `config.yaml` via Tailscale identity header. Pages: Today (accounts, equity with buy-and-hold SPY, health, positions, live classifier states), Scoreboard (per classifier and per family), Rules (each classifier's settings in plain words), Trades, Strategist's notes (strategy/journal), System and links. Only control: STOP (flatten, cancel, halt; confirm).
 
@@ -93,7 +120,7 @@ logs/decisions/*.jsonl.gz one line per classifier call
 ## Human to-dos
 - Run the setup commands as the admin account (see the installation tutorial in `docs/`).
 - Alpaca account (KYC, USD funding, W-8BEN); paper keys early.
-- GitHub repo + fine-grained PAT; protect `main`.
+- A private data repo (from `templates/data/` with `deploy/setup/0-data.sh`) + a fine-grained PAT for it only; optionally a fork of the code.
 - OpenRouter credit (few $); ntfy app.
 
 ## Changes made during the build (2026-09-27)
@@ -109,7 +136,7 @@ logs/decisions/*.jsonl.gz one line per classifier call
   - Smoke test: 0.43 s and about $0.00002 per call.
   - A 5-day replay of the control cost $0.0036.
   - Jev sees only dimensionless features, never dates or absolute prices.
-- **The `strategist` branch may only change `state/`, `journal/`, `features/custom/` and `logs/`.** The wrapper reverts anything else, including commits made or pushed during the run, and publishes as a fast-forward of `origin/strategist`. Code changes go via `proposal/*` PRs.
+- **The `strategist` branch may only change `state/`, `journal/`, `features/custom/` and `logs/`** (plus `proposals/` since the repository split). The wrapper reverts anything else, including commits made or pushed during the run, and publishes as a fast-forward of `origin/strategist`. Code changes went via `proposal/*` PRs until the split; since then they are patches under `proposals/` plus a `needs-human` issue.
 - **Timing:**
   - The runner starts at 12:50 UK and loads classifiers 2 minutes before the open, so the pre-market run can still edit them.
   - Pre-market is gated to 30–75 minutes before the open and post-close to after the close, both from Alpaca's calendar, which also handles UK/US DST offsets.

@@ -36,7 +36,8 @@ it retries briefly; a same-day restart may reuse the session times it saved earl
 `runtime/session.json`, but it never guesses times or decides "no session" without the calendar.
 Otherwise it alerts (at most hourly) and exits, and systemd's restart is the retry.
 
-It then resolves today's account mode: `config/mode.yaml` (a human override), else the go-live
+It then resolves today's account mode: `config/mode.yaml` in the deployed config (a human
+override), else the go-live
 state. If go-live is due today, this is where the final gate check and the switch happen (see
 [Evidence and promotion](evidence.md)). In live mode it also records any new deposits or
 withdrawals on the live account.
@@ -136,11 +137,10 @@ The watchdog also alerts once per session if no post-close run has succeeded by 
 ## The week
 
 - **Saturday:** the weekly retrospective. The wrapper archives logs and applies the retention
-  policy (`trader compact`); the strategist writes the weekly journal and opens or updates the
-  weekly pull request from `strategist` to `main`. Reviewing and merging it is the human's weekly
-  job.
+  policy (`trader compact`); the strategist writes the weekly journal and opens the weekly issue
+  in the data repository, its body the journal. Reading it is the human's weekly job.
 - **Daily housekeeping** (`trader housekeeping`) checks OpenRouter credit, token expiry,
-  undeployed merges and disk space (see [Alerts](../how-to/alerts.md)).
+  undeployed merges in either repository and disk space (see [Alerts](../how-to/alerts.md)).
 
 ## After a crash
 

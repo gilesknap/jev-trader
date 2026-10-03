@@ -1,8 +1,9 @@
 # Money safety
 
 The strategist designs what to trade; it never decides how much can be lost. Every limit on this
-page is code on `main`, in the runner's checkout, which the strategist can't write. Changing one
-needs a pull request that a human reviews, merges and deploys. Whatever `classifiers.yaml` says,
+page is code, in the runner's checkout of the code repository, which the strategist can't write
+and its GitHub token can't reach. Changing one needs a pull request that a human reviews, merges
+and deploys. Whatever `classifiers.yaml` says,
 the runner enforces these.
 
 The layers, from a single order up to the whole account:
@@ -93,8 +94,8 @@ parked ideas in the [design](design.md).
   STOP flattens directly through Alpaca.
 - **HOLD LIVE** (dashboard, or `trader hold-live`): vetoes going live, at any stage, until the
   human runs `trader release-live`.
-- **`config/mode.yaml`:** forces `paper` or `live`, overriding the automatic go-live, after a
-  deploy.
+- **`config/mode.yaml`** (in the data repository's `main`): forces `paper` or `live`, overriding
+  the automatic go-live, after a deploy, which always shows the change.
 - **Money movements** are the human's alone. No part of the system has transfer permissions:
   Alpaca API keys can trade but can't withdraw.
 

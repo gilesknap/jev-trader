@@ -1,7 +1,8 @@
 # Run the pre-launch dry run
 
 Before the experiment starts, push real orders through every execution path on paper, so a bug
-shows up while nothing counts. The pack is `templates/data/strategist/state/classifiers.yaml`:
+shows up while nothing counts. The pack is `templates/data/strategist/state/classifiers.yaml` in
+the code (`0-data.sh` puts it on a new `strategist` branch as `state/classifiers.yaml`):
 `control_orb`, five `test_*` classifiers and a universe-wide baseline probe that never orders.
 
 The `test_*` classifiers aren't strategies. Each deliberately enters on its own symbol (AAPL,
@@ -13,16 +14,17 @@ flatten. The go-live gate and the live scoreboard ignore trades before
 ## Steps
 
 1. Set `experiment.start_date` in `config.yaml` to 2–3 trading days after the first pre-launch
-   session, then render, merge and deploy it (see [Deploy a change](deploy.md)).
-2. As `trader`, on the `strategist` branch, copy the pack into place, set its `date:` to the next
-   session, validate and push:
+   session, then render, merge and deploy it on your data repository's `main` (see
+   [Configuration](../reference/configuration.md) and [Deploy a change](deploy.md)).
+2. As `trader`, on the `strategist` branch, between strategist runs, copy the pack into place, set
+   its `date:` to the next session, validate and push:
 
    ```bash
    sudo -iu trader
    cd /srv/trading/strategist && git pull
-   cp templates/data/strategist/state/classifiers.yaml state/classifiers.yaml
+   cp /srv/trading/main/templates/data/strategist/state/classifiers.yaml state/classifiers.yaml
    sed -i 's/^date: .*/date: YYYY-MM-DD/' state/classifiers.yaml   # the next session's date
-   uv run trader validate                                          # must end "classifiers OK"
+   trader validate                                                 # must end "classifiers OK"
    git commit -am "Pre-launch plumbing pack" && git push
    ```
 
@@ -52,9 +54,9 @@ Remove them anyway.
 ## Any day, for free
 
 ```bash
-uv run trader replay --decider stub --days 2
+trader replay --decider stub --days 2
 ```
 
-runs the classifiers through the real engine on historical bars with a stub decision model: no
+(as `trader`) runs the classifiers through the real engine on historical bars with a stub decision model: no
 orders, no Jev cost. It's the quick plumbing check after any change, but it simulates fills, so
 only paper proves the broker side.

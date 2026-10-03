@@ -13,14 +13,20 @@ Then open `build/html/index.html`. `build/` and `docs/_generated/` are git-ignor
 features table and the source map are generated from the code at build time, and the command-line
 reference from the `trader` argument parser.
 
+Importing `trader` loads a `config.yaml`, so `docs/conf.py` always points `TRADER_DATA_ROOT` at
+the code's own template, `templates/data/main/`, whatever your environment says. The docs never
+read anyone's data repository, so nothing personal can reach a published page.
+
 ## Publishing
 
 `.github/workflows/docs.yml` builds the docs on every push and pull request, and publishes them to
-GitHub Pages on a push to `main`. The whole workflow runs only in a **public** repository: in a
-private repository every job is skipped, since Pages there is either unavailable or public. So in
-a private copy, build the docs locally as above.
+GitHub Pages on a push to `main`, from the public `gilesknap/jev-trader`. A pull request whose docs
+don't build with warnings as errors fails this check. The whole workflow runs only in a
+**public** repository: in a private one every job is skipped, since Pages there is either
+unavailable or public.
 
-To publish from a public repository, set **Settings → Pages → Source** to **GitHub Actions**.
+A fork builds the docs on its own pull requests too. To publish a fork's docs, set **Settings →
+Pages → Source** to **GitHub Actions** on it.
 
 ## Writing
 
