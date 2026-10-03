@@ -90,6 +90,10 @@ class SimBroker:
         self.positions: dict[str, Position] = {}
         self.last: dict[str, float] = {}
         self.orders: dict[str, dict] = {}  # resting limit buys
+        # Set by a replay before each tick: {symbol: the open of the bar after the one just
+        # seen}, the price a market order sent now executes at (Engine._market_ref). Empty in a
+        # live sim account, which fills at the latest close, as paper does.
+        self.next_open: dict[str, float] = {}
 
     def update_prices(self, prices: dict[str, float]) -> None:
         self.last.update(prices)

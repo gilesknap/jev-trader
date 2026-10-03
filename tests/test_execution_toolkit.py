@@ -235,7 +235,9 @@ def test_scale_out_banks_part_and_the_round_trip_is_one_trade(tmp_path, session)
     assert part.qty == pytest.approx(buy.qty / 2, abs=1e-6)
     assert last.price == pytest.approx(buy.price * (1 - 0.0005), abs=1e-4)  # breakeven stop, less slippage
     assert last.pnl == pytest.approx(part.pnl + (last.price - buy.price) * last.qty, abs=0.01)
-    assert last.pnl_pct == pytest.approx(last.pnl / (buy.qty * buy.price) * 100, abs=1e-3)
+    # pnl is logged to the cent, so on a $50 position the ratio is only good to about 0.01%
+    assert last.pnl_pct == pytest.approx(last.pnl / (buy.qty * buy.price) * 100, abs=0.011)
+    assert part.price == pytest.approx(100.6 * (1 - 0.0005))  # no resting order: sold at the close that crossed it
     assert (t.side == "sell").sum() == 1  # the go-live gate counts sells: one round trip
 
 

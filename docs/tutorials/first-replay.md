@@ -79,7 +79,8 @@ uv run trader replay --decider stub --source yfinance --days 3 --only control_or
 
 The engine replays each session minute by minute: for each minute it enforces stops and targets,
 runs the risk checks, asks the (stub) decider when the trigger holds, and sends orders to a
-simulated broker with 0.05% slippage a side. It prints a summary per day (equity, the day's P&L,
+simulated broker with 0.05% slippage a side. A market order fills at the next minute's open, after
+the bar the decision saw. It prints a summary per day (equity, the day's P&L,
 trades, NAV) and the run directory, `runtime/replay/first/` in the code checkout.
 
 Look inside it:
