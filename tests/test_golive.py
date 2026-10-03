@@ -265,7 +265,7 @@ def test_hold_during_after_session_is_never_overwritten(env, monkeypatch, sessio
     assert st["status"] == "vetoed" and golive.load_state()["status"] == "vetoed"
     assert len(sent) == n  # no stale ARMED / DISARMED / countdown alert after the HOLD
     golive.release(note)  # `trader release-live` semantics are unchanged: back to pending from scratch
-    assert golive.load_state() == {"status": "pending", "released_on": dt.date.today().isoformat()}
+    assert golive.load_state() == {"status": "pending", "released_on": golive.session_date().isoformat()}
 
 
 # ---- #115: a corrupt golive.json fails closed to paper and never raises ----
@@ -324,7 +324,7 @@ def test_hold_on_corrupt_state_vetoes_and_keeps_the_file(env):
 def test_release_on_corrupt_state_gives_clean_pending(env):
     golive.STATE_FILE.write_text('{"status": "armed", "sessions_left": null}')
     golive.release(lambda *a: None)
-    assert golive.load_state() == {"status": "pending", "released_on": dt.date.today().isoformat()}
+    assert golive.load_state() == {"status": "pending", "released_on": golive.session_date().isoformat()}
     [kept] = golive.STATE_FILE.parent.glob("golive.json.corrupt-*")
     assert kept.read_text() == '{"status": "armed", "sessions_left": null}'
 
@@ -407,3 +407,36 @@ def test_undecodable_alert_marker_never_raises(env):
         assert golive.resolve_mode(lambda lvl, msg: sent.append(msg), session=DAYS[k]) == "paper"
         golive.after_session(lambda lvl, msg: sent.append(msg), session=DAYS[k])
     assert len(sent) == 1
+
+
+class _LateEvening(dt.datetime):
+    """21:30 in New York on 2026-11-03: already 2026-11-04 in UTC, where the server's clock is."""
+
+    @classmethod
+    def now(cls, tz=None):
+        t = dt.datetime(2026, 11, 4, 2, 30, tzinfo=dt.UTC)
+        return t.astimezone(tz) if tz else t.replace(tzinfo=None)
+
+
+class _UTCDate(dt.date):
+    @classmethod
+    def today(cls):
+        return dt.date(2026, 11, 4)
+
+
+def test_state_is_stamped_with_the_new_york_session_date_not_the_servers(env, monkeypatch):
+    import types
+
+    monkeypatch.setattr(golive, "dt", types.SimpleNamespace(datetime=_LateEvening, date=_UTCDate,
+                                                            timedelta=dt.timedelta, UTC=dt.UTC))
+    note = lambda *a: None
+    day = dt.date(2026, 11, 3)
+    assert golive.session_date() == day
+    golive.hold(note, by="test")
+    assert golive.load_state()["vetoed_on"] == day.isoformat()
+    golive.release(note)
+    assert golive.load_state()["released_on"] == day.isoformat()
+    golive.save_state({"status": "live", "live_since": "2026-10-20"})
+    golive.after_session(note, live_book_halted=True)  # no session given: today's, in New York
+    st = golive.load_state()
+    assert st["status"] == "demoted" and st["demoted_on"] == st["last_session"] == day.isoformat()
