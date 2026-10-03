@@ -178,7 +178,10 @@ broker. Every `live`, `shadow` and `sim` spec in a replay trades the same single
 probes stay probes, and only log their answers. Backtests never qualify
 anything: only forward paper results count. The strategist's charter adds research hygiene on
 top: tune on older sessions and confirm on recent ones it didn't look at, log every variant it
-replays, and treat anything under about 30 trades as a hypothesis, not evidence.
+replays, and treat anything under about 30 trades as a hypothesis, not evidence. The tools count
+replays in the [trial ledger](../reference/files.md#the-trial-ledger) as well; compare
+[*What survives honest evaluation?*](related-work.md#three-camps), which discounted every result
+by its true trial count.
 
 Replay fills follow the sim rules above with one difference. The engine decides on a completed
 bar, so a market order (an entry, a model exit, a target or scale-out, a time stop, a flatten or a
