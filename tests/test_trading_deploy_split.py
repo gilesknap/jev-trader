@@ -6,6 +6,7 @@ rewritten to temp dirs, and `uv`, `systemctl`, `less` and the deployed `trader` 
 what they were asked. Nothing here touches /srv/trading.
 """
 
+import getpass
 import os
 import shlex
 import shutil
@@ -31,9 +32,10 @@ def block(start, end):
 
 
 def helpers(**vars_):
-    """Both function blocks, then variable overrides."""
+    """The function blocks, then variable overrides."""
     out = "set -euo pipefail\n" + block("# --- session lock", "# --- end session lock ---")
     out += block("# --- two-repo helpers", "# --- end two-repo helpers ---")
+    out += block("# --- ownership pre-flight", "# --- end ownership pre-flight ---")
     return out + "".join(f"{k}={shlex.quote(str(v))}\n" for k, v in vars_.items())
 
 
@@ -158,10 +160,12 @@ def test_unit_sources_refuses_when_the_data_lacks_the_runner_timer(tmp_path):
 FAKE_UV = r"""#!/bin/bash
 mode=""; [[ -n "${TRADER_DATA_ROOT:-}" ]] && mode=$(cat "$TRADER_DATA_ROOT/config/mode.yaml" 2>/dev/null)
 echo "uv $* | cwd=$PWD | TRADER_DATA_ROOT=${TRADER_DATA_ROOT:-} | mode=$mode" >> "$FAKE_LOG"
+[[ "$1" == run ]] && env | grep '^TRADER_' | sort > "$FAKE_LOG.testenv"  # everything TRADER_* the tests see
 case "$1" in
     sync) [[ "$PWD" == "${FAKE_CODE_DIR:-}" ]] && exit "${FAKE_SWITCH_SYNC_RC:-0}"  # the switch's sync
           mkdir -p .venv/bin && cp "$FAKE_TRADER" .venv/bin/trader ;;
-    run) exit "${FAKE_PYTEST_RC:-0}" ;;
+    run) [[ -z "${FAKE_DURING_TESTS:-}" ]] || eval "$FAKE_DURING_TESTS"
+         exit "${FAKE_PYTEST_RC:-0}" ;;
 esac
 """
 FAKE_TRADER = r"""#!/bin/bash
@@ -259,6 +263,7 @@ class Rig:
             ("/srv/trading/runtime", str(self.runtime)),
             ("/home/trader/.config/systemd/user", str(self.trader_units)),
             ("-p /var/tmp", f"-p {self.scratch}"),
+            ("OWNER=runner ", f"OWNER={getpass.getuser()} "),
         ]
         for old, new in subs:
             assert old in text, f"the script no longer contains {old!r}: update the test rig"
@@ -339,6 +344,28 @@ def test_single_repo_review_and_typed_yes_as_before(mono):
 def test_single_repo_up_to_date(mono):
     r = mono.run()
     assert r.returncode == 0 and r.stdout.startswith("already at origin/main (")
+
+
+# ---- the candidate tests' environment, in both layouts
+
+LIVE_ENV = {  # what a shell with services.env loaded (or a developer's) might carry into the deploy
+    "TRADER_DATA_ROOT": "/live/config", "TRADER_STRATEGIST_ROOT": "/live/strategist", "TRADER_RUNTIME": "/live/runtime",
+    "TRADER_REPLAY_DIR": "/live/replays", "TRADER_SECRETS": "/live/env", "TRADER_CONFIG": "/live/config.yaml",
+    "TRADER_CODE_ROOT": "/live/code", "TRADER_TEST_DATA_ROOT": "/live/data", "TRADER_STRATEGIST_STAMP": "/live/.last_run",
+}
+
+
+@pytest.mark.parametrize("two_repo", [False, True])
+def test_candidate_tests_run_with_a_clean_trader_environment(tmp_path, two_repo):
+    rig = Rig(tmp_path, split=two_repo)
+    rig.push(rig.code_origin, {"src/app.py": "VERSION = 2\n"})
+    r = rig.run(FAKE_PLAN_OUT="PR 0123456789 #9 merged", **LIVE_ENV)
+    assert r.returncode == 0, r.stdout + r.stderr
+    seen = (tmp_path / "log.testenv").read_text().splitlines()
+    if two_repo:  # only the candidate data, set explicitly
+        assert len(seen) == 1 and seen[0].startswith(f"TRADER_DATA_ROOT={rig.scratch}/")
+    else:
+        assert seen == []
 
 
 # ---- two-repo layout
@@ -543,3 +570,85 @@ def test_failed_tests_name_both_shas_in_two_repo_mode(split):
     split.push(split.data_origin, {"config.yaml": "owner: y\n"})
     r = split.run(FAKE_PYTEST_RC=1)
     assert f"keeps code {old_code[:7]} + data {old_data[:7]}" in r.stderr and "PARTIAL SWITCH" not in r.stderr
+
+
+# ---------------------------------------------------------------- ownership pre-flight
+
+def test_ownership_preflight_passes_when_the_owner_owns_everything(tmp_path):
+    write(tmp_path / "code", {"a/b.txt": "x", ".venv/bin/python": "x"})
+    write(tmp_path / "data", {"config.yaml": "x"})
+    r = bash(helpers(OWNER=getpass.getuser()) + f"foreign_files {tmp_path / 'code'} {tmp_path / 'data'}")
+    assert r.returncode == 0 and r.stdout == r.stderr == ""
+
+
+@needs_non_root
+def test_ownership_preflight_lists_every_foreign_file(tmp_path):
+    """Files nobody but root can make foreign here, so the check is asked for another owner instead."""
+    write(tmp_path / "code", {"a/b.txt": "x"})
+    write(tmp_path / "data", {"config.yaml": "x"})
+    r = bash(helpers(OWNER="root") + f"foreign_files {tmp_path / 'code'} {tmp_path / 'data'}")
+    me = getpass.getuser()
+    assert r.returncode == 1 and "REFUSING" in r.stderr and "nothing was changed" in r.stderr
+    for p in ("code", "code/a", "code/a/b.txt", "data", "data/config.yaml"):
+        assert f"  {me}  {tmp_path / p}\n" in r.stderr
+    assert "sudo chown -h root" in r.stderr
+
+
+@needs_non_root
+def test_ownership_preflight_caps_the_list(tmp_path):
+    write(tmp_path / "code", {f"f{i:03}": "x" for i in range(60)})
+    r = bash(helpers(OWNER="root") + f"foreign_files {tmp_path / 'code'}")
+    assert r.returncode == 1 and r.stderr.count(f"  {getpass.getuser()}  ") == 50 and "... and 11 more" in r.stderr
+
+
+@needs_non_root
+def test_ownership_preflight_refuses_what_it_cannot_check(tmp_path):
+    write(tmp_path / "code", {"locked/f": "x"})
+    (tmp_path / "code" / "locked").chmod(0)
+    try:
+        r = bash(helpers(OWNER=getpass.getuser()) + f"foreign_files {tmp_path / 'code'}")
+    finally:
+        (tmp_path / "code" / "locked").chmod(0o700)
+    assert r.returncode == 1 and "REFUSING" in r.stderr and "Permission denied" in r.stderr
+
+
+def test_ownership_preflight_runs_early_and_again_just_before_the_switch():
+    body = SCRIPT[SCRIPT.index("# --- end ownership pre-flight ---"):]
+    early = body.index('if ! foreign_files "${CHECKOUTS[@]}"')
+    assert body.index("split_layout ||") < early < body.index("git fetch")
+    late = body.index('foreign_files "${CHECKOUTS[@]}" || exit 1')
+    assert body.index("uv run --frozen pytest") < late < body.index("lock_strategist || {") < body.index("lock_switch ||")
+    assert 'CHECKOUTS=("$CODE_DIR"); (( SPLIT )) && CHECKOUTS+=("$CONFIG_DIR")' in body
+
+
+@needs_non_root
+@pytest.mark.parametrize("two_repo", [False, True])
+def test_ownership_preflight_refuses_before_anything_changes(tmp_path, two_repo):
+    rig = Rig(tmp_path, split=two_repo)
+    rig.script.write_text(rig.script.read_text().replace(f"OWNER={getpass.getuser()} ", "OWNER=root ", 1))
+    old_code = git(rig.code, "rev-parse", "HEAD")
+    rig.push(rig.code_origin, {"src/app.py": "VERSION = 2\n"})
+    r = rig.run("--dry-run")
+    assert r.returncode == 0 and "the ownership pre-flight would refuse now" in r.stdout
+    rig.log.unlink()  # the dry run's plan
+    r = rig.run()
+    assert r.returncode == 1 and "REFUSING" in r.stderr and f"  {getpass.getuser()}  {rig.code}\n" in r.stderr
+    assert f"under {rig.code} {rig.config} aren't" in r.stderr if two_repo else f"under {rig.code} aren't" in r.stderr
+    assert git(rig.code, "rev-parse", "HEAD") == old_code and rig.logged() == ""
+
+
+@needs_non_root
+def test_ownership_preflight_catches_a_file_that_appears_during_the_tests(split):
+    """The second check, just before the switch: here a directory runner can't search turns up meanwhile."""
+    old_code, old_data = git(split.code, "rev-parse", "HEAD"), git(split.config, "rev-parse", "HEAD")
+    split.push(split.code_origin, {"src/app.py": "VERSION = 2\n"})
+    split.push(split.data_origin, {"config.yaml": "owner: y\n"})
+    sneak = split.config / "sneaked"
+    try:
+        r = split.run(FAKE_DURING_TESTS=f"mkdir {sneak} && chmod 0 {sneak}")
+    finally:
+        if sneak.exists():
+            sneak.chmod(0o700)
+    assert r.returncode == 1 and "REFUSING" in r.stderr and str(sneak) in r.stderr and "PARTIAL SWITCH" not in r.stderr
+    assert git(split.code, "rev-parse", "HEAD") == old_code and git(split.config, "rev-parse", "HEAD") == old_data
+    assert "uv run --frozen pytest" in split.logged()

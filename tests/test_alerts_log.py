@@ -62,6 +62,7 @@ def test_both_logs_unwritable_still_goes_to_stderr_and_ntfy(paths, capsys):
     assert len(posts) == 1
 
 
+@pytest.mark.real_strategist_alerts
 def test_fallback_defaults_into_the_strategist_checkout_and_is_gitignored():
     if "TRADER_STRATEGIST_ALERTS" in os.environ:
         pytest.skip("default overridden")

@@ -2,8 +2,8 @@
 
 All data comes from files: the runner's RUNTIME_DIR (status, books, replays) and
 the strategist's state/ and journal/. Every route requires a Tailscale identity in
-TRADER_DASHBOARD_USERS; with no identity header, only TRADER_DASHBOARD_ALLOW_LOCAL=1
-(dev) lets requests through.
+config.yaml's dashboard.users (TRADER_DASHBOARD_USERS overrides it, for development only);
+with no identity header, only TRADER_DASHBOARD_ALLOW_LOCAL=1 (dev) lets requests through.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, JSONResponse
 
-from trader import config
+from trader import config, safeio
 
 STATIC = config.CODE_ROOT / "dashboard" / "static"
 JOURNAL_KINDS = ("daily", "weekly", "monthly", "yearly")
@@ -58,11 +58,23 @@ def _csv(path: Path) -> list[dict]:
         return []
 
 
-def _text(path: Path) -> str | None:
+def _strategist_text(path: Path) -> str | None:
+    """A file from the strategist's checkout, or None if it's missing, unreadable or refused. safeio
+    never follows a symlink there, so a planted one can't make the dashboard (running as runner)
+    show another file runner can read."""
     try:
-        return path.read_text()
-    except OSError:
+        return safeio.read_text(path)
+    except (OSError, ValueError):  # UnsafePath and UnicodeDecodeError are ValueErrors
         return None
+
+
+def _journal_names(kind: str) -> list[str]:
+    """The *.md entries in journal/<kind>/, newest first; none if the directory is missing or refused."""
+    try:
+        names = safeio.listdir(config.STRATEGIST_ROOT / "journal" / kind)
+    except (OSError, ValueError):
+        return []
+    return sorted((n for n in names if n.endswith(".md") and not n.startswith(".")), reverse=True)
 
 
 def _replay_ids() -> list[str]:
@@ -126,6 +138,19 @@ def _equity_points(rows: list[dict]) -> list:
     out = [p for i, p in enumerate(pts)
            if p[0][:10] >= cutoff or i + 1 == len(pts) or pts[i + 1][0][:10] != p[0][:10]]
     return _downsample(out)
+
+
+TRADES_TAIL = 40  # earlier fills sent after the latest day's, so a busy day never pushes its own fills off
+
+
+def recent_trades(rows: list[dict], today: str | None) -> tuple[list[dict], int]:
+    """(fills to show, newest first; how many older ones were left out). Every fill from `today`
+    (the New York date; a replay has none, so its latest day), plus the TRADES_TAIL before them."""
+    rows = sorted((r for r in rows if isinstance(r.get("time"), str)), key=lambda r: r["time"], reverse=True)
+    day = today or (rows[0]["time"][:10] if rows else "")
+    n_day = sum(1 for r in rows if r["time"][:10] >= day)
+    kept = rows[: n_day + TRADES_TAIL]
+    return kept, len(rows) - len(kept)
 
 
 def _age_seconds(path: Path) -> float | None:
@@ -269,13 +294,18 @@ def data(source: str = "live"):
         eq = _csv(d / "equity.csv")
         books[d.name] = {
             "equity": _equity_points(eq),
-            "trades": _csv(d / "trades.csv")[-60:],
             "nav": _json(d / "nav.json"),
             "risk": _json(d / "risk.json"),
         }
     sims = _sim_dirs(source)
     if sims:  # every sim account's trades together; each account's own state is in status.json
-        books["sim"] = {"equity": [], "trades": _sim_trades(source)[-60:], "nav": None, "risk": None, "accounts": len(sims)}
+        books["sim"] = {"equity": [], "nav": None, "risk": None, "accounts": len(sims)}
+    today = None
+    if source == "live":
+        from zoneinfo import ZoneInfo
+
+        today = dt.datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+    trades, omitted = recent_trades([r for d in book_dirs for r in _csv(d / "trades.csv")] + _sim_trades(source), today)
     return {
         "source": source,
         "status": _json(base / "status.json"),
@@ -283,6 +313,8 @@ def data(source: str = "live"):
         "summary": _json(base / "summary.json"),
         "benchmark": _csv(base / "benchmark.csv"),
         "books": books,
+        "trades": trades,
+        "trades_omitted": omitted,
     }
 
 
@@ -346,8 +378,8 @@ def _classifiers_file() -> list[dict]:
     import yaml
 
     try:
-        raw = yaml.safe_load(config.CLASSIFIERS_FILE.read_text()) or {}
-    except (OSError, yaml.YAMLError):
+        raw = yaml.safe_load(safeio.read_text(config.CLASSIFIERS_FILE)) or {}
+    except (OSError, ValueError, yaml.YAMLError):  # ValueError: refused by safeio, or not UTF-8
         return []
     if not isinstance(raw, dict) or not isinstance(raw.get("classifiers") or [], list):
         return []
@@ -364,7 +396,10 @@ def probes():
     """The latest probe report from the strategist's checkout, or null before the first one.
     Today's probe answers come with /api/data (status.json); this is the scored history."""
     path = config.STRATEGIST_ROOT / PROBE_REPORT
-    report = _json(path)
+    try:
+        report = json.loads(_strategist_text(path) or "null")
+    except ValueError:
+        report = None
     if not isinstance(report, dict) or not isinstance(report.get("probes"), dict):
         report = None
     return {"report": report, "age_s": _age_seconds(path) if report else None}
@@ -382,8 +417,8 @@ def rules():
     from trader.classifier import ClassifierSpec
 
     try:
-        raw = yaml.safe_load(config.CLASSIFIERS_FILE.read_text()) or {}
-    except (OSError, yaml.YAMLError) as e:
+        raw = yaml.safe_load(safeio.read_text(config.CLASSIFIERS_FILE)) or {}
+    except (OSError, ValueError, yaml.YAMLError) as e:  # ValueError: refused by safeio, or not UTF-8
         return {"date": None, "classifiers": [], "problems": [], "error": f"couldn't read classifiers.yaml: {e}"}
     if not isinstance(raw, dict) or not isinstance(raw.get("classifiers") or [], list):
         return {"date": None, "classifiers": [], "problems": [],
@@ -434,24 +469,19 @@ def overview():
 @app.get("/api/docs")
 def docs():
     root = config.STRATEGIST_ROOT
-    journal = {}
-    for kind in JOURNAL_KINDS:
-        d = root / "journal" / kind
-        journal[kind] = sorted((p.name for p in d.glob("*.md")), reverse=True) if d.is_dir() else []
     return {
-        "strategy": _text(root / "state" / "strategy.md"),
-        "classifiers": _text(config.CLASSIFIERS_FILE),
-        "watchlist": _text(root / "state" / "watchlist.md"),
-        "journal": journal,
+        "strategy": _strategist_text(root / "state" / "strategy.md"),
+        "classifiers": _strategist_text(config.CLASSIFIERS_FILE),
+        "watchlist": _strategist_text(root / "state" / "watchlist.md"),
+        "journal": {kind: _journal_names(kind) for kind in JOURNAL_KINDS},
     }
 
 
 @app.get("/api/journal/{kind}/{name}")
 def journal(kind: str, name: str):
-    d = config.STRATEGIST_ROOT / "journal" / kind
-    if kind not in JOURNAL_KINDS or name not in {p.name for p in d.glob("*.md")}:
+    if kind not in JOURNAL_KINDS or name not in _journal_names(kind):
         raise HTTPException(404, "no such journal entry")
-    return {"kind": kind, "name": name, "text": _text(d / name)}
+    return {"kind": kind, "name": name, "text": _strategist_text(config.STRATEGIST_ROOT / "journal" / kind / name)}
 
 
 def _strategist_stamp() -> Path:

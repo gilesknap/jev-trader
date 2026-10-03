@@ -26,7 +26,11 @@ def keys(tmp_path_factory):
         fprs[name] = next(line.split(":")[9] for line in out.splitlines() if line.startswith("fpr"))
     pub = home / "github.gpg"
     pub.write_text(sh("gpg", "--homedir", str(home), "--batch", "--armor", "--export", fprs["github"]))
-    return home, fprs, pub
+    yield home, fprs, pub
+    # Key generation and signing start a gpg-agent for this homedir that would outlive the run.
+    if shutil.which("gpgconf"):
+        subprocess.run(["gpgconf", "--homedir", str(home), "--kill", "gpg-agent"], capture_output=True)
+        subprocess.run(["gpgconf", "--homedir", str(home), "--remove-socketdir"], capture_output=True)
 
 
 class Repo:
@@ -107,9 +111,11 @@ def test_missing_key_is_an_error(tmp_path, keys):
     assert run(r, base, keys, key_file=tmp_path / "nope.gpg").code == 2
 
 
-def test_shipped_key_is_githubs():
+def test_shipped_key_is_githubs(keys):
     from trader.deploy import KEY_FILE, WEB_FLOW_FINGERPRINTS
 
-    out = subprocess.run(["gpg", "--batch", "--with-colons", "--import-options", "show-only", "--import", str(KEY_FILE)],
+    home = keys[0]  # not the real ~/.gnupg, which even a show-only import creates and locks
+    out = subprocess.run(["gpg", "--homedir", str(home), "--batch", "--with-colons", "--import-options", "show-only",
+                          "--import", str(KEY_FILE)],
                          capture_output=True, text=True).stdout
     assert WEB_FLOW_FINGERPRINTS <= {line.split(":")[9] for line in out.splitlines() if line.startswith("fpr")}
