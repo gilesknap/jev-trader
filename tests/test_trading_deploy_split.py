@@ -308,6 +308,12 @@ def split(tmp_path):
     yield from leaves_no_temp_files(Rig(tmp_path, split=True))
 
 
+@pytest.fixture
+def rig(tmp_path, two_repo):
+    """Either layout, for tests parametrized on `two_repo`."""
+    yield from leaves_no_temp_files(Rig(tmp_path, split=two_repo))
+
+
 # ---- single-repo layout: what it always did, and never a two-repo step
 
 @needs_non_root
@@ -373,8 +379,7 @@ TEST_ENV_NAMES = {"HOME", "USER", "LOGNAME", "PATH", "LANG", "XDG_RUNTIME_DIR", 
 
 
 @pytest.mark.parametrize("two_repo", [False, True])
-def test_candidate_tests_run_with_a_clean_trader_environment(tmp_path, two_repo):
-    rig = Rig(tmp_path, split=two_repo)
+def test_candidate_tests_run_with_a_clean_trader_environment(tmp_path, two_repo, rig):
     rig.push(rig.code_origin, {"src/app.py": "VERSION = 2\n"})
     r = rig.run(FAKE_PLAN_OUT="PR 0123456789 #9 merged", **LIVE_ENV, **OTHER_ENV)
     assert r.returncode == 0, r.stdout + r.stderr
@@ -577,8 +582,7 @@ def test_layout_refuses_an_unreadable_config_dir(tmp_path):
 
 
 @pytest.mark.parametrize("two_repo", [False, True])
-def test_a_failed_switch_step_prints_the_rollback(tmp_path, two_repo):
-    rig = Rig(tmp_path, split=two_repo)
+def test_a_failed_switch_step_prints_the_rollback(tmp_path, two_repo, rig):
     old_code, old_data = git(rig.code, "rev-parse", "HEAD"), ""
     rig.push(rig.code_origin, {"src/app.py": "VERSION = 2\n"})
     if two_repo:
@@ -664,8 +668,7 @@ def test_ownership_preflight_runs_early_and_again_just_before_the_switch():
 
 @needs_non_root
 @pytest.mark.parametrize("two_repo", [False, True])
-def test_ownership_preflight_refuses_before_anything_changes(tmp_path, two_repo):
-    rig = Rig(tmp_path, split=two_repo)
+def test_ownership_preflight_refuses_before_anything_changes(tmp_path, two_repo, rig):
     rig.script.write_text(rig.script.read_text().replace(f"OWNER={getpass.getuser()} ", "OWNER=root ", 1))
     old_code = git(rig.code, "rev-parse", "HEAD")
     rig.push(rig.code_origin, {"src/app.py": "VERSION = 2\n"})
