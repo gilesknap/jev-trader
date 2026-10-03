@@ -84,7 +84,7 @@ merged. `deploy/setup/0-data.sh` creates both from the code's `templates/data/`.
 
 | Path | What |
 |---|---|
-| `state/` | `strategy.md`, `classifiers.yaml`, `watchlist.md`, `steering.md` (the human's) |
+| `state/` | `strategy.md`, `classifiers.yaml`, `watchlist.md` (hypothesis records, active and rejected), `steering.md` (the human's) |
 | `journal/` | `daily/`, `weekly/`, `monthly/`, `yearly/` |
 | `logs/` | The runner's logs, archived (below) |
 | `features/custom/` | The strategist's feature functions |
