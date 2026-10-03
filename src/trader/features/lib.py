@@ -1,5 +1,14 @@
 """Seed feature library. Values are dimensionless (%, ratios, z-scores) so the
-decision model never sees absolute prices or dates."""
+decision model never sees absolute prices or dates.
+
+Bars can be missing: IEX has no bar for a minute without an IEX trade, and a halted symbol
+has none for a while. Features named in minutes (`ret_5m_pct`, `or15_*`, `rel_volume_15m`)
+are therefore defined on elapsed exchange time, never on counting rows: the opening range is
+the bars labelled before 09:45, and a return over n minutes compares the price now with the
+price n minutes ago. A price is carried forward over missing minutes (no trade, no new price)
+for at most STALE_MIN minutes; beyond that the return is NaN (unavailable). Indicators named
+in bars (`rsi_14`, `atr_14_pct`, `ema_9_21_diff_pct`, `realized_vol_30m_pct`,
+`trend_slope_30m`) count the bars there are."""
 
 from __future__ import annotations
 
@@ -11,12 +20,50 @@ import pandas as pd
 from trader.features import FeatureContext, feature
 
 NAN = float("nan")
+MINUTE = pd.Timedelta(minutes=1)
+STALE_MIN = 5  # a price older than this (minutes) at a return's endpoint is unavailable, not carried
 
 
-def _ret(bars: pd.DataFrame, n: int) -> float:
-    if len(bars) <= n:
+def _open(bars: pd.DataFrame) -> pd.Timestamp:
+    """Label of today's first bar (09:30 ET; early closes still open then)."""
+    return bars.index[-1].replace(hour=9, minute=30, second=0, microsecond=0, nanosecond=0)
+
+
+def _now(bars: pd.DataFrame, ctx) -> pd.Timestamp:
+    """Label of the current minute's bar, from the session clock (the first bar is minute 1),
+    so a symbol whose latest bar is old is seen as stale; the latest bar's label if later."""
+    last = bars.index[-1]
+    m = getattr(ctx, "minutes_since_open", None)
+    if isinstance(m, (int, float)) and math.isfinite(m):
+        return max(last, _open(bars) + (m - 1) * MINUTE)
+    return last
+
+
+def _close_at(bars: pd.DataFrame, t: pd.Timestamp) -> float:
+    """The close as of minute `t`: the last bar at or before it, carried at most STALE_MIN minutes."""
+    i = bars.index.searchsorted(t, side="right")
+    if i == 0 or bars.index[i - 1] < t - STALE_MIN * MINUTE:
         return NAN
-    return (bars.close.iloc[-1] / bars.close.iloc[-1 - n] - 1) * 100
+    return float(bars.close.iloc[i - 1])
+
+
+def _ret(bars: pd.DataFrame, ctx, n: int) -> float:
+    if not len(bars):
+        return NAN
+    now = _now(bars, ctx)
+    return (_close_at(bars, now) / _close_at(bars, now - n * MINUTE) - 1) * 100
+
+
+def recent_returns_bps(bars: pd.DataFrame, now, n: int = 10) -> list[float]:
+    """The last `n` one-minute returns up to the bar completed at `now`, in bps, oldest first, on
+    a minute grid: a minute without a bar carries the last close (a 0 return) rather than one
+    return spanning several minutes. Minutes before today's first bar are left out."""
+    if not len(bars):
+        return []
+    grid = pd.date_range(end=pd.Timestamp(now) - MINUTE, periods=n + 1, freq="1min").as_unit(bars.index.unit)
+    grid = grid[grid >= bars.index[0]]
+    close = bars.close.reindex(bars.index.union(grid)).ffill().reindex(grid)
+    return (close.pct_change().iloc[1:] * 1e4).round(1).fillna(0).tolist()
 
 
 def _vwap(bars: pd.DataFrame) -> float:
@@ -27,26 +74,26 @@ def _vwap(bars: pd.DataFrame) -> float:
 
 @feature("ret_1m_pct")
 def ret_1m(bars, ctx):
-    """% change of the close over the last 1 bar."""
-    return _ret(bars, 1)
+    """% change of the close over the last 1 minute of exchange time (NaN if a price is stale)."""
+    return _ret(bars, ctx, 1)
 
 
 @feature("ret_5m_pct")
 def ret_5m(bars, ctx):
-    """% change of the close over the last 5 bars."""
-    return _ret(bars, 5)
+    """% change of the close over the last 5 minutes of exchange time (NaN if a price is stale)."""
+    return _ret(bars, ctx, 5)
 
 
 @feature("ret_15m_pct")
 def ret_15m(bars, ctx):
-    """% change of the close over the last 15 bars."""
-    return _ret(bars, 15)
+    """% change of the close over the last 15 minutes of exchange time (NaN if a price is stale)."""
+    return _ret(bars, ctx, 15)
 
 
 @feature("ret_30m_pct")
 def ret_30m(bars, ctx):
-    """% change of the close over the last 30 bars."""
-    return _ret(bars, 30)
+    """% change of the close over the last 30 minutes of exchange time (NaN if a price is stale)."""
+    return _ret(bars, ctx, 30)
 
 
 @feature("ret_since_open_pct")
@@ -70,45 +117,52 @@ def vwap_dist(bars, ctx):
     return (bars.close.iloc[-1] / v - 1) * 100 if v == v else NAN
 
 
-def _or_break(bars, minutes):
-    if len(bars) <= minutes:
-        return NAN
-    hi = bars.high.iloc[:minutes].max()
-    return (bars.close.iloc[-1] / hi - 1) * 100
+def _opening_range(bars, ctx, minutes, ready_at):
+    """(high, low) of the bars labelled in the first `minutes` of the session, once the clock has
+    reached `ready_at` minutes after the open (the bar labelled then is the current one); None
+    before that or if the window has no bars. A missing opening bar never pulls a later one in."""
+    if not len(bars):
+        return None
+    start = _open(bars)
+    if _now(bars, ctx) < start + ready_at * MINUTE:
+        return None
+    w = bars[bars.index < start + minutes * MINUTE]
+    return (w.high.max(), w.low.min()) if len(w) else None
 
 
-def _or_breakdown(bars, minutes):
-    if len(bars) <= minutes:
-        return NAN
-    lo = bars.low.iloc[:minutes].min()
-    return (bars.close.iloc[-1] / lo - 1) * 100
+def _or_break(bars, ctx, minutes):
+    rng = _opening_range(bars, ctx, minutes, minutes)  # from the first bar after the range
+    return (bars.close.iloc[-1] / rng[0] - 1) * 100 if rng else NAN
+
+
+def _or_breakdown(bars, ctx, minutes):
+    rng = _opening_range(bars, ctx, minutes, minutes)
+    return (bars.close.iloc[-1] / rng[1] - 1) * 100 if rng else NAN
 
 
 @feature("or15_break_pct")
 def or15_break(bars, ctx):
-    """% above the 15-min opening-range high (negative = below it)."""
-    return _or_break(bars, 15)
+    """% above the 15-min opening-range high (bars before 09:45; negative = below it)."""
+    return _or_break(bars, ctx, 15)
 
 
 @feature("or30_break_pct")
 def or30_break(bars, ctx):
-    """% above the 30-min opening-range high (negative = below it)."""
-    return _or_break(bars, 30)
+    """% above the 30-min opening-range high (bars before 10:00; negative = below it)."""
+    return _or_break(bars, ctx, 30)
 
 
 @feature("or15_low_dist_pct")
 def or15_low(bars, ctx):
-    """% relative to the 15-min opening-range low (negative = broke down)."""
-    return _or_breakdown(bars, 15)
+    """% relative to the 15-min opening-range low (bars before 09:45; negative = broke down)."""
+    return _or_breakdown(bars, ctx, 15)
 
 
 @feature("or15_width_pct")
 def or15_width(bars, ctx):
-    """Width of the 15-min opening range (high / low - 1), in %."""
-    if len(bars) < 15:
-        return NAN
-    hi, lo = bars.high.iloc[:15].max(), bars.low.iloc[:15].min()
-    return (hi / lo - 1) * 100
+    """Width of the 15-min opening range (bars before 09:45; high / low - 1), in %, from its last bar."""
+    rng = _opening_range(bars, ctx, 15, 14)
+    return (rng[0] / rng[1] - 1) * 100 if rng else NAN
 
 
 @feature("rsi_14")
@@ -125,11 +179,15 @@ def rsi14(bars, ctx):
 
 @feature("rel_volume_15m")
 def rel_volume(bars, ctx):
-    """Volume of the last 15 bars vs the prior session's average per-bar volume."""
-    if len(bars) < 15 or ctx.prev_day.empty:
+    """Volume per minute over the last 15 minutes (a minute without a bar traded nothing) vs the
+    prior session's average volume per bar (per minute)."""
+    if not len(bars) or ctx.prev_day.empty:
+        return NAN
+    now = _now(bars, ctx)
+    if now < _open(bars) + 14 * MINUTE:
         return NAN
     base = ctx.prev_day.volume.mean()
-    return float(bars.volume.iloc[-15:].mean() / base) if base > 0 else NAN
+    return float(bars.volume[bars.index > now - 15 * MINUTE].sum() / 15 / base) if base > 0 else NAN
 
 
 @feature("atr_14_pct")
@@ -169,7 +227,7 @@ def ema_diff(bars, ctx):
 
 @feature("realized_vol_30m_pct")
 def rv30(bars, ctx):
-    """Annualised-free: stdev of 1-min returns over 30 bars, in %."""
+    """Annualised-free: stdev of bar-to-bar returns over the last 30 bars, in %."""
     if len(bars) < 31:
         return NAN
     return float(bars.close.pct_change().iloc[-30:].std() * 100)
@@ -177,7 +235,7 @@ def rv30(bars, ctx):
 
 @feature("trend_slope_30m")
 def slope30(bars, ctx):
-    """OLS slope of log price over 30 bars, in bps/min, divided by its stderr (t-stat)."""
+    """OLS slope of log price over the last 30 bars, per bar, divided by its stderr (t-stat)."""
     if len(bars) < 30:
         return NAN
     y = np.log(bars.close.iloc[-30:].to_numpy())

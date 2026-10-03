@@ -863,7 +863,8 @@ class Engine:
             self.alert("urgent", f"[{b.name}] Kill switch: day loss {eq - b.day_start_equity:.2f}. Flat until next session.")
 
     def _run_classifiers(self, now, bars, minutes_to_close, feed_spy=None) -> None:
-        mso = (now - now.replace(hour=9, minute=30, second=0, microsecond=0)).total_seconds() / 60 + 1
+        # Minutes since the open counting the bar just completed: 1 at 09:31, when the 09:30 bar is in.
+        mso = (now - now.replace(hour=9, minute=30, second=0, microsecond=0)).total_seconds() / 60
         spy = bars.get("SPY", pd.DataFrame())
         # Least recently asked first, so a slow model can't starve later classifiers/symbols.
         oldest = dt.datetime.min.replace(tzinfo=now.tzinfo)
@@ -948,10 +949,10 @@ class Engine:
         self._ask(spec, sym, now, sb, feats, None, "probe")
 
     def _ask(self, spec, sym, now, sb, feats, pos, kind):
-        rets = (sb.close.pct_change().iloc[-10:] * 1e4).round(1).fillna(0).tolist()
+        rets = F.lib.recent_returns_bps(sb, now)
         state = {
             "symbol": sym,
-            "minutes_since_open": int((now - now.replace(hour=9, minute=30)).total_seconds() // 60) + 1,
+            "minutes_since_open": int((now - now.replace(hour=9, minute=30)).total_seconds() // 60),
             "features": {k: (round(v, 4) if math.isfinite(v) else None) for k, v in feats.items()},
             "recent_1m_returns_bps": rets,
             "position": pos,
