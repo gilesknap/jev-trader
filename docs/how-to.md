@@ -8,6 +8,7 @@ Practical step-by-step guides for running and operating your copy.
 how-to/daily-operations
 how-to/deploy
 how-to/take-updates
+how-to/steer-the-strategist
 how-to/proposals
 how-to/controls
 how-to/go-live

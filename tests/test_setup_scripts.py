@@ -454,7 +454,7 @@ def test_0_data_builds_both_branches_and_the_labels(data_env):
     s = config.load_settings(cfg_file)
     assert (s.owner.name, s.owner.github_repo, s.dashboard.users, str(s.experiment.start_date)) == \
         ("Ada Lovelace", "you/your-data", ["ada@example.com", "b@example.com"], "2026-11-02")
-    assert "TRADER_DASHBOARD_USERS=ada@example.com,b@example.com" in git_out(remote, "show", "main:deploy/systemd/trader.env")
+    assert "TRADER_DASHBOARD_USERS" not in git_out(remote, "show", "main:deploy/systemd/trader.env")  # config.yaml alone
     # strategist: an orphan holding the template, no config
     sfiles = set(git_out(remote, "ls-tree", "-r", "--name-only", "strategist").split())
     assert {"CLAUDE.md", ".gitignore", "state/strategy.md", "journal/daily/.gitkeep", "proposals/.gitkeep"} <= sfiles
