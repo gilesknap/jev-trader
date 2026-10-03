@@ -43,7 +43,7 @@ REST_MAX_CALLS = 2
 # IEX bars) gets at most this long. They run about 2 minutes before the open, in turn, before the
 # stream subscribes: a hung call must cost NaN context features or rejected custom features,
 # never a session without bars. Today's bars at a late start get CATCH_UP_TIMEOUT_S.
-STARTUP_FETCH_TIMEOUT_S = 40.0
+STARTUP_FETCH_TIMEOUT_S = 60.0
 CATCH_UP_TIMEOUT_S = 15.0
 BAR_COLS = ["ts", "open", "high", "low", "close", "volume"]
 
@@ -178,9 +178,12 @@ def _load_specs(file, secrets, calendar: Calendar | None = None):
         notify("urgent", f"could not fetch the custom-feature gate's sample sessions ({e!r}): custom features "
                          "are rejected today")
         samples = []
+        report_note = " (the gate had no sample sessions)"
+    else:
+        report_note = ""
     report = run_gate(config.CUSTOM_FEATURES_DIR, samples, alert=notify)
     if report.errors:
-        notify("urgent", f"Custom features rejected: {report.errors}")
+        notify("urgent", f"Custom features rejected{report_note}: {report.errors}")
     specs, dropped = load_specs_report(file, F.known_features(), set(config.universe()))
     _alert_dropped(dropped)
     return specs
@@ -252,7 +255,7 @@ def stream_bars(rows: dict[str, list], tick: dt.datetime) -> dict[str, pd.DataFr
 def catch_up_bars(rows: dict[str, list], lock, base: list[str], extra: list[str], open_: dt.datetime,
                   tick: dt.datetime, secrets, alert=notify) -> None:
     """Today's IEX bars from the open to `tick`, added to the stream's rows: once, at the first
-    tick of a stream that subscribed after the open. It runs after the subscription, so no minute
+    tick of a stream that subscribed late (under 90 s before the open). It runs after the subscription, so no minute
     falls between the two; a minute both have is the same bar (stream_bars keeps one). Each fetch
     gets CATCH_UP_TIMEOUT_S. Never raises: a failure alerts and those symbols start from live bars."""
     for syms, why in ((base, "features and stops start from live bars only"),
@@ -569,8 +572,9 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
 
     stream.subscribe_bars(on_bar, *symbols)
     threading.Thread(target=stream.run, daemon=True).start()
-    # The 09:30 bar is published at about 09:31; a stream asked for well before the open has it.
-    caught_up = dt.datetime.now(ET) < open_ - dt.timedelta(seconds=30)
+    # The 09:30 bar is published at about 09:31. A stream asked for well before the open has
+    # connected by then (the margin covers a slow websocket connect); any later one catches up.
+    caught_up = dt.datetime.now(ET) < open_ - dt.timedelta(seconds=90)
 
     rest = RestBars(lambda syms, start, end: fetch_alpaca(syms, start, end, secrets, feed="iex"),
                     open_, engine._alert_every)
@@ -588,7 +592,8 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
             continue
         if not caught_up:
             caught_up = True
-            catch_up_bars(rows, lock, base, extra, open_, tick, secrets)
+            if not G.flatten_due((close - tick).total_seconds() / 60):  # the EOD flatten never waits on REST
+                catch_up_bars(rows, lock, base, extra, open_, tick, secrets)
         with lock:
             live = stream_bars(rows, tick)
         minutes_to_close = (close - tick).total_seconds() / 60
