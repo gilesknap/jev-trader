@@ -40,7 +40,7 @@ root it looked in. The comments in the file itself describe each key too; the te
 | `models.strategist` | string | The Claude Code model for the strategist runs |
 | `alerts.ntfy_server` | `https://` URL | The ntfy push server. The topic is `NTFY_TOPIC` in the secrets file |
 | `capital.sim_cash` | number | Each `mode: sim` classifier's simulated account starts with this (USD) |
-| `capital.replay_cash` | number | The default pretend account for a replay run from code (USD). `trader replay` passes its own `--cash` (default 250) |
+| `capital.replay_cash` | number | The pretend account a replay starts with (USD), unless `trader replay --cash` gives another |
 
 The `OnCalendar` specs carry no time zone: `schedule.local_tz` is appended to each.
 
