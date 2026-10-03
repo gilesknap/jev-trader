@@ -138,3 +138,21 @@ def test_orphan_proceeds_are_not_counted_as_settled(tmp_path, session):
     eng = Engine([spec()], {"live": book, "shadow": book}, Always(), {"SPY"}, tmp_path)
     eng.start_day(day, {}, settled_at_open={"sim": 200.0})
     assert book.cash_at_open == 200.0
+
+
+def test_promotion_never_counts_trades_before_the_experiment_start(tmp_path):
+    """One rule with the gate and the scoreboard: a record that started before the start date
+    counts only the trades from the start date on."""
+    state = tmp_path / "promotion.json"
+    note = lambda lvl, msg: None
+    pre = golive.START_DATE - dt.timedelta(days=3)
+    golive.enforce_promotion([spec(id="idea", mode="shadow")], note, True, pre, tmp_path, state)
+    _trades(tmp_path / "trades.csv", "idea", 25, 0.3, day=(golive.START_DATE - dt.timedelta(days=1)).isoformat())
+    assert golive.shadow_record("idea", pre.isoformat(), tmp_path) == (0, None)
+    s = spec(id="idea", mode="live")
+    golive.enforce_promotion([s], note, True, golive.START_DATE, tmp_path, state)
+    assert s.mode == "shadow"
+    _trades(tmp_path / "trades.csv", "idea", 20, 0.3, day=golive.START_DATE.isoformat())
+    s = spec(id="idea", mode="live")
+    golive.enforce_promotion([s], note, True, golive.START_DATE + dt.timedelta(days=1), tmp_path, state)
+    assert s.mode == "live"

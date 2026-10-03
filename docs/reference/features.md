@@ -16,8 +16,10 @@ Generated from `src/trader/features/lib.py`:
 ```{include} ../_generated/features.md
 ```
 
-Volume-based features (`rel_volume_15m`) differ in level between live IEX bars and the SIP bars
-replays use. Prefer them as ratios within a session.
+Raw volume differs in level between live IEX bars and the SIP bars replays use, so volume
+features should be ratios. The prior session's bars (`ctx.prev_day`) carry SIP's prices (the
+official close) and the volume of the same feed as today's bars, so `rel_volume_15m` compares
+like with like both live and in replay.
 
 ## Custom features
 

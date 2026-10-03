@@ -81,7 +81,7 @@ def test_persistent_sim_broker_keeps_todays_orders_only(tmp_path):
     again = PersistentSimBroker(p)
     assert set(again.orders) == {oid}
     st = again.order_state(oid)
-    assert st.status == "filled" and st.price == pytest.approx(98.5) and st.filled_at is not None
+    assert st.status == "filled" and st.price == pytest.approx(98.5 * 1.0005) and st.filled_at is not None
     assert again.get_positions()["SPY"].qty == pytest.approx(0.5)
     assert again.cash == pytest.approx(b.cash)
     assert again.cancel_order("sim-old").status == "canceled" and again.order_state("gone").status == "canceled"
@@ -144,7 +144,8 @@ def test_dashboard_shows_sim_as_one_book(tmp_path, monkeypatch):
     c = TestClient(dashboard.app, headers={"Tailscale-User-Login": "me@example.com"})
     d = c.get("/api/data").json()
     assert set(d["books"]) == {"paper", "sim"} and d["books"]["sim"]["accounts"] == 2
-    assert {t["classifier"] for t in d["books"]["sim"]["trades"]} == {"a", "b"}
+    assert {t["classifier"] for t in d["trades"] if t["book"].startswith("sim")} == {"a", "b"}
+    assert {t["classifier"] for t in d["trades"]} == {"idea", "a", "b"} and d["trades_omitted"] == 0
     sb = c.get("/api/scoreboard").json()["books"]
     assert {r["id"] for r in sb["paper"]["classifiers"]} == {"idea"}
     sim = {r["id"]: r for r in sb["sim"]["classifiers"]}

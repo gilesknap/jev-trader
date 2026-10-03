@@ -1236,11 +1236,12 @@ class Engine:
 
     def _fill_price(self, b: Book, sym, p: Pending, o, now, wait: bool = True) -> tuple[float, bool]:
         """(average price of the order's fill so far, whether it is a guess). A limit buy never
-        fills above its limit, so an unpriced one is protected at the limit, as a guess. A market
-        fill Alpaca hasn't priced after UNPRICED_FILL_WAIT (or at once, when the order is settled:
-        `wait` False) takes the position's average cost, which is real; failing that the last
-        price, or else the price the order was sized at (#134), as a guess, so the shares get a
-        stop and their round trip is recorded, but isn't evidence. 0: wait."""
+        fills above its limit (a simulated one only by its slippage), so an unpriced one is
+        protected at the limit, as a guess. A market fill Alpaca hasn't priced after
+        UNPRICED_FILL_WAIT (or at once, when the order is settled: `wait` False) takes the
+        position's average cost, which is real; failing that the last price, or else the price
+        the order was sized at (#134), as a guess, so the shares get a stop and their round trip
+        is recorded, but isn't evidence. 0: wait."""
         if o.price > 0 or p.limit:
             return (o.price if o.price > 0 else p.limit), o.price <= 0
         if wait and now - p.placed < UNPRICED_FILL_WAIT:
@@ -1268,7 +1269,8 @@ class Engine:
         if delta > 1e-9 and price > 0:  # a market fill with no price yet waits for it
             cost = o.filled_qty * price - p.filled_cost
             px = cost / delta if cost > 0 else price  # the average price of just the new shares
-            px = min(p.limit, px) if p.limit else px
+            # A real limit buy never fills above its limit; a simulated one pays its slippage on top.
+            px = min(p.limit * (1 + getattr(b.broker, "limit_slippage", 0.0)), px) if p.limit else px
             p.filled_qty, p.filled_cost = o.filled_qty, p.filled_cost + delta * px
             p.price_estimated = p.price_estimated or guessed
             b.save_pending()  # booked before the position: see below for a crash in between

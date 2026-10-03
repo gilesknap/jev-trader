@@ -28,20 +28,26 @@ market through daylight-saving changes.
 | `state/strategy.md` | the living thesis: phase, beliefs, what's running and why (rewritten, not appended) |
 | `state/classifiers.yaml` | the next session's classifiers |
 | `state/watchlist.md` | hypotheses not yet traded |
+| `state/steering.md` | the human's steering decisions (read every run, never edited by the strategist) |
 | `features/custom/*.py` | its own feature functions |
 | `journal/daily/`, `journal/weekly/`, `journal/monthly/`, `journal/yearly/` | its journal, compacted over time |
 | `logs/trades.csv`, `logs/<book>_equity.csv`, `logs/<book>_cashflows.csv` | the runner's logs, archived (never edited) |
 | `logs/decisions/*.jsonl.gz` | one line per classifier decision, kept 90 days on disk, not committed |
 | `proposals/<topic>/` | its code proposals: a patch series and a rationale |
 
-Each run reads a fixed budget (the charter, the strategy, the classifiers, the watchlist, the last
+Each run reads a fixed budget (the charter, the strategy, the classifiers, the watchlist, the steering file, the last
 5 dailies and 4 weeklies, and the logs it needs), so its context doesn't grow with the history.
 `git log` on `state/strategy.md` shows how a belief evolved.
+
+The human steers it through `state/steering.md`: decisions with their reasoning, made in an
+interactive session and merged into `strategist` between runs. Active entries bind the
+strategist; it applies each new one, acknowledges it in its journal, and argues back there
+rather than editing the file (see [Steer the strategist](../how-to/steer-the-strategist.md)).
 
 ## What it may change
 
 The `strategist` branch may change only `state/`, `journal/`, `features/custom/`, `logs/` and
-`proposals/`. That's enforced by the wrapper, not by trust:
+`proposals/`, and not the human's `state/steering.md`. That's enforced by the wrapper, not by trust:
 
 - Code, the universe, the prompts or the charter: a **proposal**. It clones the deployed code
   from `/srv/trading/main` into scratch space (a clone whose only origin is that local path),

@@ -180,7 +180,8 @@ def rsi14(bars, ctx):
 @feature("rel_volume_15m")
 def rel_volume(bars, ctx):
     """Volume per minute over the last 15 minutes (a minute without a bar traded nothing) vs the
-    prior session's average volume per bar (per minute)."""
+    prior session's volume per minute, both from the same feed (live: IEX; replay: SIP), so ~1
+    means a normal pace whichever feed it is."""
     if not len(bars) or ctx.prev_day.empty:
         return NAN
     now = _now(bars, ctx)

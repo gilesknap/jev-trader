@@ -59,9 +59,10 @@ def test_an_unpriced_market_entry_takes_the_positions_average_cost_not_the_refer
     assert [r["reason"] for r in t] == ["ENTER", "manual STOP"] and t[1]["pnl_pct"] != ""
 
 
-def test_an_unpriced_market_entry_with_no_average_cost_is_a_labelled_guess(tmp_path, session, clock):
+def test_an_unpriced_market_entry_with_no_average_cost_is_a_labelled_guess(tmp_path, session, clock, monkeypatch):
     """Item 1: with no average cost either, the shares are still protected at once, at the last price,
     but that is a guess: `ENTER (price estimated)`, and the round trip is not evidence."""
+    monkeypatch.setattr(golive, "START_DATE", dt.date(2000, 1, 1))  # its trades predate the pinned start date
     e, t = _enter_unpriced(tmp_path, session, clock, 0.0)
     assert e.price == 100.0 and e.price_estimated
     assert [r["reason"] for r in t] == ["ENTER (price estimated)", "manual STOP (price estimated)"]
@@ -147,9 +148,10 @@ def test_a_limit_fill_with_no_reported_price_is_protected_at_its_limit_as_a_gues
     assert list(rows(tmp_path).reason) == ["ENTER (price estimated)"]
 
 
-def test_a_close_that_sells_more_after_its_cancel_wait_is_re_read_by_its_id(tmp_path, clock):
+def test_a_close_that_sells_more_after_its_cancel_wait_is_re_read_by_its_id(tmp_path, clock, monkeypatch):
     """Item 4: a close whose cancel isn't final after the wait is booked with what it had sold (0.4 @ 90).
     It then sells 0.3 more @ 110. The next exit re-reads it by its id, so the round trip is real: +$2."""
+    monkeypatch.setattr(golive, "START_DATE", dt.date(2000, 1, 1))  # its trades predate the pinned start date
     v = Venue()
     book, eng = open_book(tmp_path, v, held())
     v.closes = [(0.4, 90.0), (0.3, 110.0)]
@@ -175,9 +177,10 @@ def test_a_close_that_sells_more_after_its_cancel_wait_is_re_read_by_its_id(tmp_
     assert not book.entries and not v.positions
 
 
-def test_a_leg_sold_just_before_a_crash_ends_the_round_trip_estimated(tmp_path, clock):
+def test_a_leg_sold_just_before_a_crash_ends_the_round_trip_estimated(tmp_path, clock, monkeypatch):
     """Item 5 (deferred, guard): a crash between a broker sell and its booking loses that leg's order id
     (Alpaca's close_position takes no client id to find it by). The round trip is then `(price estimated)`."""
+    monkeypatch.setattr(golive, "START_DATE", dt.date(2000, 1, 1))  # its trades predate the pinned start date
     v = Venue()
     book, eng = open_book(tmp_path, v, held())
     v.closes = [(0.4, 90.0), (0.6, 110.0)]
