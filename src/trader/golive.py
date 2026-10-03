@@ -22,7 +22,6 @@ import json
 import math
 import statistics
 from dataclasses import dataclass
-from zoneinfo import ZoneInfo
 
 from trader import config
 from trader import guardrails as G
@@ -36,7 +35,6 @@ MIN_LIVE_EQUITY = 100.0
 
 STATE_FILE = config.RUNTIME_DIR / "golive.json"
 PAPER_BOOK = config.RUNTIME_DIR / "books" / "paper"
-ET = ZoneInfo("America/New_York")
 
 
 def session_date() -> dt.date:

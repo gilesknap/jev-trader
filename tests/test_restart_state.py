@@ -263,3 +263,19 @@ def test_a_state_file_from_another_day_still_resumes_what_is_held(tmp_path, sess
     eng2.start_day(day, {})
     st = eng2.states[0].symbols["SPY"]
     assert st.status == "holding" and st.trades == 1
+
+
+def test_a_rule_missing_from_todays_state_file_resumes_what_it_holds(tmp_path, session):
+    """A rule/symbol absent from today's file (added mid-session) is matched to its open position."""
+    bars = session(path=[100.0] * 390)
+    day = bars.index[0].date()
+    book, eng = make(tmp_path, [spec(max_trades=1)])
+    eng.start_day(day, {})
+    ticks(eng, bars, 0, 20)
+    assert "SPY" in book.entries
+    (tmp_path / "classifier_state.json").write_text(json.dumps({"day": day.isoformat(), "states": {}}))
+    book2 = Book("sim", book.broker, tmp_path / "sim")
+    eng2 = Engine([spec(max_trades=1)], {"live": book2, "shadow": book2}, Always(), {"SPY"}, tmp_path)
+    eng2.start_day(day, {})
+    st = eng2.states[0].symbols["SPY"]
+    assert st.status == "holding" and st.trades == 1

@@ -631,6 +631,9 @@ class Engine:
             return
         damaged = []
         for cs in self.states:
+            for sym, st in cs.symbols.items():  # one the file doesn't have (added mid-session) resumes fresh
+                if sym not in states.get(cs.spec.id, {}) and not cs.spec.probe:
+                    self._resume_symbol(cs, sym, st, "armed", 0)
             for sym, saved in states.get(cs.spec.id, {}).items():
                 st = cs.symbols.get(sym)
                 if st is None:
