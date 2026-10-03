@@ -245,3 +245,37 @@ def test_ledger_floor_counts_only_todays_entries_for_that_rule_and_symbol(tmp_pa
     eng.start_day(day, {})
     st = eng.states[0].symbols["SPY"]
     assert st.trades == 2 and st.status == "retired"  # at its max_trades: retired, not re-armed
+
+
+def test_a_state_file_from_another_day_still_resumes_what_is_held(tmp_path, session):
+    """A crash after the first entry but before the first save leaves yesterday's file: the rule
+    resumes holding its open position (counted once), not armed with the exit question unasked."""
+    bars = session(path=[100.0] * 390)
+    day = bars.index[0].date()
+    book, eng = make(tmp_path, [spec(max_trades=1)])
+    eng.start_day(day, {})
+    ticks(eng, bars, 0, 20)
+    assert "SPY" in book.entries
+    (tmp_path / "classifier_state.json").write_text(json.dumps({"day": (day - dt.timedelta(days=1)).isoformat(),
+                                                               "states": {}}))
+    book2 = Book("sim", book.broker, tmp_path / "sim")
+    eng2 = Engine([spec(max_trades=1)], {"live": book2, "shadow": book2}, Always(), {"SPY"}, tmp_path)
+    eng2.start_day(day, {})
+    st = eng2.states[0].symbols["SPY"]
+    assert st.status == "holding" and st.trades == 1
+
+
+def test_a_rule_missing_from_todays_state_file_resumes_what_it_holds(tmp_path, session):
+    """A rule/symbol absent from today's file (added mid-session) is matched to its open position."""
+    bars = session(path=[100.0] * 390)
+    day = bars.index[0].date()
+    book, eng = make(tmp_path, [spec(max_trades=1)])
+    eng.start_day(day, {})
+    ticks(eng, bars, 0, 20)
+    assert "SPY" in book.entries
+    (tmp_path / "classifier_state.json").write_text(json.dumps({"day": day.isoformat(), "states": {}}))
+    book2 = Book("sim", book.broker, tmp_path / "sim")
+    eng2 = Engine([spec(max_trades=1)], {"live": book2, "shadow": book2}, Always(), {"SPY"}, tmp_path)
+    eng2.start_day(day, {})
+    st = eng2.states[0].symbols["SPY"]
+    assert st.status == "holding" and st.trades == 1

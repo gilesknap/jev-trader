@@ -427,8 +427,9 @@ class _UTCDate(dt.date):
 def test_state_is_stamped_with_the_new_york_session_date_not_the_servers(env, monkeypatch):
     import types
 
-    monkeypatch.setattr(golive, "dt", types.SimpleNamespace(datetime=_LateEvening, date=_UTCDate,
-                                                            timedelta=dt.timedelta, UTC=dt.UTC))
+    for module in (golive, golive.config):  # session_date is config.ny_today
+        monkeypatch.setattr(module, "dt", types.SimpleNamespace(datetime=_LateEvening, date=_UTCDate,
+                                                                timedelta=dt.timedelta, UTC=dt.UTC))
     note = lambda *a: None
     day = dt.date(2026, 11, 3)
     assert golive.session_date() == day
