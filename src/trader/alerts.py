@@ -1,5 +1,8 @@
 """Push alerts via ntfy (config.yaml alerts.ntfy_server), with a local log as fallback and audit trail.
 
+notify must work when config.yaml is malformed (#146): it's how that failure, and STOP, reach the human.
+So it reads the server on use and falls back to DEFAULT_NTFY_SERVER when the settings won't load.
+
 The log is RUNTIME_DIR/alerts.log. The strategist (user trader) can't write there, by design (the runtime dir is
 read-only to it), so its alerts go to config.STRATEGIST_ALERTS instead: in its own checkout, 0640, which runner
 and the human (group trading) can read but not write.
@@ -18,6 +21,14 @@ import httpx
 from trader import config
 
 ET = ZoneInfo("America/New_York")
+DEFAULT_NTFY_SERVER = "https://ntfy.sh"  # the template's alerts.ntfy_server
+
+
+def _ntfy_server() -> str:
+    try:
+        return config.SETTINGS.alerts.ntfy_server
+    except Exception:  # whatever broke the settings, the push is the last resort: it must still go out
+        return DEFAULT_NTFY_SERVER
 
 
 def _append(path: Path, line: str) -> None:
@@ -54,7 +65,7 @@ def notify(level: str, message: str, title: str = "trader") -> None:
         return
     try:
         httpx.post(
-            f"{config.SETTINGS.alerts.ntfy_server.rstrip('/')}/{topic}",
+            f"{_ntfy_server().rstrip('/')}/{topic}",
             content=message.encode(),
             headers={
                 "Title": title,

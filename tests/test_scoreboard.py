@@ -4,6 +4,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import pin_start_date
 from test_engine import Always, run, spec
 from trader import dashboard, golive
 from trader import scoreboard as SB
@@ -413,7 +414,7 @@ def _client(monkeypatch, runtime, replays=None):
     if replays:
         monkeypatch.setattr(dashboard.config, "REPLAY_DIR", replays)
     monkeypatch.setattr(dashboard, "USERS", {"me@example.com"})
-    monkeypatch.setattr(SB, "EXPERIMENT_START", dt.date(2026, 1, 1))
+    pin_start_date(monkeypatch, dt.date(2026, 1, 1))
     return TestClient(dashboard.app, headers={"Tailscale-User-Login": "me@example.com"})
 
 
@@ -519,7 +520,7 @@ def test_live_board_can_include_the_pre_start_test_sessions(tmp_path, monkeypatc
         json.dumps({"classifiers": [{"id": "idea", "family": "novel", "symbols": {}}]})
     )
     c = _client(monkeypatch, runtime)
-    monkeypatch.setattr(SB, "EXPERIMENT_START", dt.date(2026, 10, 5))
+    pin_start_date(monkeypatch, dt.date(2026, 10, 5))
     r = c.get("/api/scoreboard?source=live&all_days=0").json()
     assert r["experiment_start"] == "2026-10-05" and r["books"]["paper"]["days"] == ["2026-10-06"]
     assert r["books"]["paper"]["hidden_before_start"] == 1
@@ -536,10 +537,10 @@ def test_pre_start_trades_show_by_default_only_until_the_start(tmp_path, monkeyp
     _write_trades(book / "trades.csv", round_trip("2020-01-06", "test_x", 0.5))
     (runtime / "status.json").write_text(json.dumps({"classifiers": []}))
     c = _client(monkeypatch, runtime)
-    monkeypatch.setattr(SB, "EXPERIMENT_START", dt.date(2999, 1, 1))  # not started: nothing else to show
+    pin_start_date(monkeypatch, dt.date(2999, 1, 1))  # not started: nothing else to show
     r = c.get("/api/scoreboard?source=live").json()
     assert r["all_days"] and r["books"]["paper"]["days"] == ["2020-01-06"]
-    monkeypatch.setattr(SB, "EXPERIMENT_START", dt.date(2020, 2, 3))  # started: tests hidden
+    pin_start_date(monkeypatch, dt.date(2020, 2, 3))  # started: tests hidden
     r = c.get("/api/scoreboard?source=live").json()
     assert not r["all_days"] and r["books"]["paper"]["days"] == [] and r["books"]["paper"]["hidden_before_start"] == 1
 
@@ -547,7 +548,7 @@ def test_pre_start_trades_show_by_default_only_until_the_start(tmp_path, monkeyp
 def test_promotion_column_never_counts_trades_before_the_start_even_with_all_days_shown():
     """Matches golive.shadow_record: the pre-start toggle shows the earlier trades but they never
     count towards promotion, whenever the classifier's current spec started."""
-    start = SB.EXPERIMENT_START
+    start = golive.start_date()
     before = (start - dt.timedelta(days=2)).isoformat()
     rows = round_trip(before, "idea", 1.0) + round_trip(start.isoformat(), "idea", 1.0)
     b = SB.build(rows, {"idea": "novel"}, {"idea"}, 250.0, since={"idea": before}, from_date=None)

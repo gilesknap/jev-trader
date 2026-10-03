@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from conftest import TEST_START_DATE as START_DATE  # what the autouse fixture pins golive.START_DATE to
+from conftest import TEST_START_DATE as START_DATE  # what the autouse fixture pins config.yaml's start date to
 from test_engine import run, spec
 from trader import cli, config
 from trader import features as F

@@ -195,9 +195,10 @@ class SimBroker:
         pass
 
 
-SIM_START_CASH = float(
-    config.SETTINGS.capital.sim_cash
-)  # config.yaml: each `mode: sim` classifier's own simulated account starts here
+def sim_start_cash() -> float:
+    """What each `mode: sim` classifier's own simulated account starts with (config.yaml), read on use,
+    not at import (#146), so `trader stop` still imports this module when config.yaml is malformed."""
+    return float(config.SETTINGS.capital.sim_cash)
 
 
 class PersistentSimBroker(SimBroker):
@@ -206,11 +207,11 @@ class PersistentSimBroker(SimBroker):
     after every change, so a restart mid-session finds the positions and resting orders the
     engine's entries.json and pending.json refer to. Cash carries over from day to day."""
 
-    def __init__(self, path, start_cash: float = SIM_START_CASH):
+    def __init__(self, path, start_cash: float | None = None):
         import json
         from pathlib import Path
 
-        super().__init__(start_cash)
+        super().__init__(sim_start_cash() if start_cash is None else start_cash)
         self.path = Path(path)
         if self.path.exists():
             d = json.loads(self.path.read_text())

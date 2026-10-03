@@ -83,8 +83,10 @@ def require_mode_file(data_root: Path | None = None, code_root: Path | None = No
 
 # ---- deployment settings (config.yaml at the data root) ----------------------------------
 # Personal and deployment values: who owns it, when the experiment starts, the operator's clock,
-# model ids. Safety rules stay in code. Loaded at import and validated strictly, so a malformed
-# file stops every command (the runner must never trade with a wrong start date).
+# model ids. Safety rules stay in code. Loaded on first use (config.SETTINGS or get_settings()), not at
+# import, and validated strictly: whatever reads a setting stops on a malformed file, and the runner
+# loads it before it trades (it must never trade with a wrong start date), as `trader validate` does.
+# STOP, the watchdog and notify read no setting they can't do without, so they still work (#146).
 SETTINGS_FILE = Path(os.environ.get("TRADER_CONFIG", DATA_ROOT / "config.yaml"))
 _HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
@@ -193,7 +195,7 @@ def load_settings(path: Path | None = None) -> Settings:
     path = path or SETTINGS_FILE
     try:
         raw = yaml.safe_load(path.read_text())
-    except (OSError, yaml.YAMLError) as e:
+    except (OSError, ValueError, yaml.YAMLError) as e:  # ValueError: not UTF-8 (UnicodeDecodeError)
         hint = ""
         if isinstance(e, FileNotFoundError) and not os.environ.get("TRADER_CONFIG"):
             hint = (
@@ -209,7 +211,25 @@ def load_settings(path: Path | None = None) -> Settings:
         raise SettingsError(f"{path}: invalid deployment settings:\n{e}") from e
 
 
-SETTINGS = load_settings()
+SETTINGS: Settings  # declared for type checkers only: no value, so the module __getattr__ below loads it
+
+
+def get_settings() -> Settings:
+    """config.yaml's settings, loaded and validated on the first call and cached for the process.
+    Raises SettingsError while the file is malformed (a failure isn't cached: fix it and the next
+    call loads). A test's monkeypatch of config.SETTINGS wins."""
+    s = globals().get("SETTINGS")
+    if s is None:
+        s = globals()["SETTINGS"] = load_settings()
+    return s
+
+
+def __getattr__(name: str):
+    # PEP 562: `config.SETTINGS` loads on first access. Inside this module, call get_settings():
+    # a bare SETTINGS doesn't come through here.
+    if name == "SETTINGS":
+        return get_settings()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def ny_today() -> dt.date:
@@ -220,7 +240,7 @@ def ny_today() -> dt.date:
 
 def setting(key: str, settings: Settings | None = None):
     """A dotted key from config.yaml (e.g. `schedule.strategist.premarket`), for the CLI and templates."""
-    node = (settings or SETTINGS).model_dump(mode="json")
+    node = (settings or get_settings()).model_dump(mode="json")
     for part in key.split("."):
         if not isinstance(node, dict) or part not in node:
             raise KeyError(key)

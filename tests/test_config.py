@@ -11,7 +11,6 @@ import pytest
 import yaml
 
 from trader import config, golive
-from trader import scoreboard as SB
 
 ROOT = Path(__file__).resolve().parents[1]  # the tree under test, even if TRADER_CODE_ROOT points elsewhere
 # The data under test (#169): this tree's own config.yaml and rendered files in a monorepo checkout; else
@@ -31,7 +30,7 @@ def _write(tmp_path, mutate):
 def test_the_checked_in_config_loads_and_feeds_the_code():
     s = config.load_settings(DATA / "config.yaml")
     assert isinstance(s.experiment.start_date, dt.date)
-    assert golive.START_DATE == s.experiment.start_date == SB.EXPERIMENT_START
+    assert golive.start_date() == s.experiment.start_date
     assert s.schedule.tz.key == s.schedule.local_tz
 
 
@@ -87,10 +86,12 @@ def _py(code: str, **env) -> subprocess.CompletedProcess:
 
 
 def test_every_command_refuses_to_start_on_a_broken_config(tmp_path):
+    # Loaded on first use, not at import (#146): the last resorts that don't need it are in test_broken_config.py.
     bad = tmp_path / "config.yaml"
     bad.write_text("experiment: {start_date: soon}\n")
-    r = _py("import trader.golive", TRADER_CONFIG=str(bad))
-    assert r.returncode != 0 and "invalid deployment settings" in r.stderr
+    for code in ("from trader import cli; cli.main(['golive'])", "from trader.golive import start_date; start_date()"):
+        r = _py(code, TRADER_CONFIG=str(bad))
+        assert r.returncode != 0 and "invalid deployment settings" in r.stderr, code
 
 
 def test_dashboard_users_come_from_config_env_overrides_and_empty_means_nobody(tmp_path):
