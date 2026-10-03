@@ -120,8 +120,8 @@ still works.
 **C4. Clone data `main` for the runner.** The deploy key you already have is on this repository,
 so it covers it. (If you ever need a new one, run `3-runner.sh key` with `TRADER_DATA_ROOT`
 pointing at a checkout of your data repository's `main`, as in the
-[installation tutorial](../tutorials/installation.md); without it the script reads the code's
-placeholder config and prints the wrong repository.) The directory may not exist on an older host:
+[installation tutorial](../tutorials/installation.md); without it the script stops, because the
+code carries no `config.yaml`.) The directory may not exist on an older host:
 
 ```bash
 sudo install -d -o runner -g trading -m 2750 /srv/trading/config
@@ -219,12 +219,6 @@ Then repeat P4's token check as `trader`: the dry-run push to `gilesknap/jev-tra
 the one to your data repository must succeed. Open the dashboard: its Deployed card shows the code
 and config commits, and its links point at the public code and your data repository.
 
-**Leftovers in the public repository.** For now `gilesknap/jev-trader` still carries a
-placeholder `config.yaml`, `config/mode.yaml`, `state/` and rendered deploy files, left over from
-before the split; a follow-up removes them. They aren't part of the code's layout and nothing on
-your host reads them (the runner and the strategist read `/srv/trading/config` and
-`/srv/trading/strategist`), but don't be surprised to see them in the C5 review.
-
 **C9. The first weekday.** Watch the pre-market run's log (`~trader/.local/state/trader/`) and the
 runner's start.
 
@@ -277,10 +271,9 @@ the old `2-strategist.sh` needs the strategist's code back before it can run.
    Or, preferably, run only the `git remote set-url` line above, then, once step 5 is merged,
    `sudo -u runner trading-deploy`: it shows a full review back to the old tree and does the reset,
    clean, permissions, sync, units and dashboard restart itself. `trading-deploy` never changes
-   `origin`, so the `set-url` line is essential: if the deploy says "nothing to deploy", `origin`
-   still points at the public code, and the runner would stay on it, reading the placeholder
-   `config.yaml` and `config/mode.yaml` (`auto`) that repository still carries. By hand, use
-   `git clean -fd`, never `-x`.
+   `origin`, so the `set-url` line is essential: with `origin` still on the public code, which
+   carries no `config.yaml`, the deploy refuses, and the runner would fail at its next start
+   (`check.sh` fails "main checkout holds config.yaml"). By hand, use `git clean -fd`, never `-x`.
 7. **The strategist**, as `trader`: pull the reverted branch (step 5), which brings its code back,
    then reinstall the old unit and timers from it:
 
