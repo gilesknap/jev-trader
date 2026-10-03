@@ -172,13 +172,15 @@ POST=$(git rev-parse HEAD)
 git reset -q
 # Changed paths outside ALLOWED, from `git status -z` (NUL-separated and unquoted, so spaces and
 # non-ASCII parse exactly, #177): untracked ones in OUT_UNTRACKED, the rest in OUT_TRACKED, all
-# of them in OUT_ALL. A rename or copy entry carries its source path as a second field. Returns
+# of them in OUT_ALL. A rename or copy entry carries its source path as a second field. Untracked
+# files are listed one by one, whatever status.showUntrackedFiles says: `no` would hide them, and
+# the default names only the top untracked directory, which can hold allowed paths too. Returns
 # non-zero if git can't list them.
 outside_paths() {
     OUT_TRACKED=(); OUT_UNTRACKED=(); OUT_ALL=()
     local list rec xy path orig p rc=0
     list=$(mktemp "$LOGDIR/status.XXXXXX") || return 1
-    git status --porcelain -z >"$list" 2>>"$LOG" || rc=1
+    git status --porcelain -z --untracked-files=all >"$list" 2>>"$LOG" || rc=1
     while IFS= read -r -d '' rec; do
         xy=${rec:0:2}; path=${rec:3}; orig=""
         if [[ $xy == *[RC]* ]]; then IFS= read -r -d '' orig || rc=1; fi
@@ -192,24 +194,45 @@ outside_paths() {
     return $rc
 }
 joined() { local out="" p; for p in "$@"; do out+="${out:+, }$p"; done; printf '%s' "${out:0:300}"; }
+# For the alerts that refuse to publish: those exits skip the publish below, which is what reverts
+# anything outside ALLOWED the run pushed to origin/strategist itself, and the next run starts past
+# it. Name every outside path origin/strategist now differs by from the run's start, so a human
+# can check them: the run's own pushes, or a human push during the run.
+origin_note() {
+    local diff out
+    if git fetch -q origin strategist >>"$LOG" 2>&1 \
+        && diff=$(git diff --name-only --no-renames "$PRE" refs/remotes/origin/strategist 2>>"$LOG"); then
+        mapfile -t out < <(printf '%s' "$diff" | grep -Ev "$ALLOWED")
+        (( ${#out[@]} )) && printf ' Also, origin/strategist differs from the run'\''s start outside strategy paths (NOT reverted; pushed by the run, or by a human during it): %s' "$(joined "${out[@]}")"
+    else
+        printf ' Could not check origin/strategist for pushed non-strategy paths.'
+    fi
+    return 0
+}
 # Revert them one path at a time, so one failure can't skip the rest (F5: a single `git checkout`
 # of every path failed as a whole on any untracked one). Untracked first: a tracked file replaced
-# by a directory comes back only once that directory is gone. Literal pathspecs: a name like `*`
-# must not match anything else. Then look again, and refuse to publish if anything survived.
+# by a directory comes back only once that directory is gone, so empty directories an untracked
+# file leaves behind go too (rmdir removes only empty ones; a parent of an outside path is outside
+# too). Literal pathspecs: a name like `*` must not match anything else. Then look again, and
+# refuse to publish if anything survived.
 if ! outside_paths; then
-    alert "strategist $KIND: could not list changed paths for the path check; not publishing — see $LOG"
+    alert "strategist $KIND: could not list changed paths for the path check; not publishing — see $LOG.$(origin_note)"
     exit 1
 fi
 if (( ${#OUT_ALL[@]} )); then
     TOUCHED=$(joined "${OUT_ALL[@]}")
     for p in ${OUT_UNTRACKED[@]+"${OUT_UNTRACKED[@]}"}; do
         git --literal-pathspecs clean -qfd -- "$p" >>"$LOG" 2>&1
+        d=$(dirname -- "$p")
+        while [[ $d != . && $d != / ]] && rmdir -- "$d" 2>/dev/null; do d=$(dirname -- "$d"); done
     done
     for p in ${OUT_TRACKED[@]+"${OUT_TRACKED[@]}"}; do
         git --literal-pathspecs checkout -q HEAD -- "$p" >>"$LOG" 2>&1
     done
     if ! outside_paths || (( ${#OUT_ALL[@]} )); then
-        alert "strategist $KIND touched non-strategy paths and could NOT revert all of them; not publishing, fix the checkout by hand. Still changed: $(joined ${OUT_ALL[@]+"${OUT_ALL[@]}"}). Touched: $TOUCHED"
+        # Stop today's later ticks re-running a whole session on the same broken checkout.
+        [[ -n ${STAMP:-} ]] && touch "$STAMP"
+        alert "strategist $KIND touched non-strategy paths and could NOT revert all of them; not publishing, fix the checkout by hand (no retry today). Still changed: $(joined ${OUT_ALL[@]+"${OUT_ALL[@]}"}). Touched: $TOUCHED.$(origin_note)"
         exit 1
     fi
     alert "strategist $KIND touched non-strategy paths (reverted): $TOUCHED"

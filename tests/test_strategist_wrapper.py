@@ -600,5 +600,61 @@ def test_an_outside_path_that_survives_the_revert_alerts_and_is_not_published(tm
     assert "could NOT revert" in alerts and "not publishing" in alerts
     assert survivor in alerts.split("Still changed: ")[1].split(". Touched")[0]
     assert "(reverted)" not in alerts
+    assert "differs from the run" not in alerts and "Could not check" not in alerts   # the run pushed nothing
     assert origin_log(s) == before                   # nothing published, not even state/n.md
     assert not list(s.logdir.glob("status.*"))      # the status scratch file is removed
+
+
+@pytest.mark.parametrize("mode", ["monorepo", "split"])
+def test_show_untracked_files_no_does_not_hide_outside_files(tmp_path, mode):
+    s = make_sandbox(tmp_path, split=mode == "split")
+    git(s.repo, "config", "status.showUntrackedFiles", "no", env=s.env)
+    fake_claude(s, "mkdir -p scripts/deep && echo evil > scripts/deep/evil.sh && echo evil > evil.txt\necho n > state/n.md\n")
+    r = s.run("weekly")
+    assert r.returncode == 0, r.stderr
+    alerts = s.read("alerts")
+    assert "touched non-strategy paths (reverted): evil.txt, scripts/deep/evil.sh" in alerts and "could NOT" not in alerts
+    assert not (s.repo / "evil.txt").exists() and not (s.repo / "scripts" / "deep").exists()   # no empty dir left
+    assert git(s.repo, "status", "--porcelain", "--untracked-files=all") == ""
+    files = origin_files(s)
+    assert "state/n.md" in files and not {"evil.txt", "scripts/deep/evil.sh"} & files
+
+
+@pytest.mark.parametrize("mode", ["monorepo", "split"])
+def test_tracked_file_replaced_by_a_directory_is_restored(tmp_path, mode):
+    # The untracked file inside goes first, then its now-empty directory, so the file can come back.
+    s = make_sandbox(tmp_path, split=mode == "split")
+    fake_claude(s, "rm CLAUDE.md && mkdir -p CLAUDE.md/sub && echo evil > CLAUDE.md/sub/x\n")
+    r = s.run("weekly")
+    assert r.returncode == 0, r.stderr
+    assert "could NOT" not in s.read("alerts")
+    assert (s.repo / "CLAUDE.md").read_text() == "charter\n"
+    assert git(s.repo, "status", "--porcelain", "--untracked-files=all") == ""
+    assert origin_show(s, "CLAUDE.md") == "charter\n"
+
+
+@pytest.mark.parametrize("mode", ["monorepo", "split"])
+def test_survivor_alert_names_what_the_run_pushed_and_stops_same_day_retries(tmp_path, mode):
+    # The refusal skips the publish that would revert the run's own pushes on origin: name them.
+    s = make_sandbox(tmp_path, split=mode == "split")
+    fake_claude(s, """echo n > state/n.md
+mkdir -p scripts && echo evil > scripts/evil.sh
+git add -A && git commit -qm "model commit" && git push -q origin strategist
+mkdir -p tools/x && git -C tools/x init -q && echo x > tools/x/f
+""")
+    r = s.run("premarket")
+    assert r.returncode == 1
+    (line,) = [a for a in s.read("alerts").splitlines() if "could NOT revert" in a]
+    assert "no retry today" in line
+    assert "differs from the run's start outside strategy paths (NOT reverted; pushed by the run, or by a human during it): scripts/evil.sh" in line
+    assert "state/n.md" not in line.split("during it): ")[1]   # allowed paths aren't named
+    r = s.run("premarket")                                     # a later tick the same day
+    assert r.returncode == 0 and s.read("alerts").count("could NOT revert") == 1
+    assert "already ran today" in "".join(p.read_text() for p in s.logdir.glob("*.log"))
+
+
+def test_survivor_alert_says_when_origin_cannot_be_checked(sandbox):
+    fake_claude(sandbox, f"mkdir -p tools/x && git -C tools/x init -q && echo x > tools/x/f\nmv {sandbox.tmp}/origin.git {sandbox.tmp}/gone.git\n")
+    assert sandbox.run("weekly").returncode == 1
+    alerts = sandbox.read("alerts")
+    assert "could NOT revert" in alerts and "Could not check origin/strategist" in alerts
