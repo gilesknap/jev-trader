@@ -28,6 +28,10 @@ slow, careful reasoning, once a day. Neither was being used in the live decision
 - **A Jev-judged idea is judged against its twin.** The same trigger and exits without Jev's
   judgement, or without the new inputs, run alongside it on the same days, and the verdict is the
   difference after costs. If Jev doesn't beat its twin, that is the finding.
+  The twin is a control, not a mechanical equivalent: it keeps the rule's skeleton and replaces
+  only the judgement with something trivial (always, never, random at the same rate, or no context
+  inputs), so even a rule with no mechanical equivalent has one. Where an obvious cheap proxy for the
+  judgement exists, it runs as a second baseline.
 - Mechanical rules stay first-class: they are the baselines, and the strategist may find edges with
   no Jev call at all.
 
