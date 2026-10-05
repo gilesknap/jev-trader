@@ -88,7 +88,7 @@ The model never sees dates or absolute prices, so criteria shouldn't refer to th
 ## Extra inputs (optional)
 
 `inputs` adds context to what the model is sent, for questions that need judgement rather than
-arithmetic on the features ([ADR 0018](../explanations/adr/)). Each one is opt-in; a classifier
+arithmetic on the features (ADR 0018). Each one is opt-in; a classifier
 without `inputs` is sent exactly what it was before, and keeps its identity. Turning an input on
 or off changes the identity (it changes what the model is asked), so it restarts the promotion
 record. The text of the daily note and the playbooks never does: they change every day.
