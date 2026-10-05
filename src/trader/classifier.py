@@ -94,6 +94,11 @@ class ClassifierSpec(Strict):
     trigger: list[Condition] = []  # all must hold before the entry question is asked
     features: list[str]
     context: str = ""  # strategy note passed to the decision model
+    # Extra inputs sent with every entry and exit question (#73): the symbol's recent news
+    # headlines, the pre-market run's daily note, this classifier's playbook for the day, and
+    # (exit questions) the thesis recorded when the position opened. Default none; when empty
+    # it's left out of the spec's identity. The note's and playbook's text never are.
+    inputs: list[Literal["headlines", "daily_note", "playbook", "thesis"]] = []
     entry: Question
     exit: Question | None = None  # required unless mode is probe
     size_fraction: float = Field(0.2, gt=0, le=G.MAX_POSITION_FRACTION)
@@ -121,6 +126,11 @@ class ClassifierSpec(Strict):
         if not set(q.criteria) <= {"ENTER", "WAIT", "STAND_DOWN"}:
             raise ValueError("entry criteria keys must be ENTER/WAIT/STAND_DOWN")
         return q
+
+    @field_validator("inputs")
+    @classmethod
+    def _inputs(cls, v: list[str]):
+        return sorted(set(v))  # order and repeats don't change what Jev is sent, so not the identity
 
     @field_validator("exit")
     @classmethod

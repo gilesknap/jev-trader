@@ -74,6 +74,13 @@ TRADE_COLS = [
 Alert = Callable[[str, str], None]  # (level: "urgent"|"info", message)
 
 
+def note_hash(note: str | None) -> str | None:
+    """A short fingerprint of the daily note for the decision log (None: no note today)."""
+    import hashlib
+
+    return hashlib.sha256(note.encode()).hexdigest()[:8] if note else None
+
+
 def stale_feed(spy: pd.DataFrame | None, now: dt.datetime) -> tuple[bool, str]:
     """Is the whole feed stale (e.g. a silently dead websocket)? SPY trades every minute, so a
     last bar more than 3 minutes old, or none at all a few minutes after the open (a stream that
@@ -132,6 +139,7 @@ class Entry:
     sold: dict = field(default_factory=dict)
     cost: float = 0.0  # what every share bought cost (0: orig_qty x price), for pnl_pct
     spec_hash: str = ""  # the spec it opened under: its sell rows' cohort, even after a restart on an edited spec
+    thesis: dict = field(default_factory=dict)  # why it opened (Engine._thesis); {} for entries saved before #73
 
     def exits_since(self) -> dt.datetime:
         """Where to look for this position's exit fills in the broker's order history."""
@@ -452,6 +460,7 @@ class Engine:
         universe: set[str],
         run_dir: Path,
         alert: Alert = lambda level, msg: None,
+        news=None,  # a trader.jev_inputs news source, for specs with `inputs: [headlines]`; None sends none
     ):
         self.states = [ClassifierState(s) for s in specs]
         self.books = books
@@ -468,6 +477,10 @@ class Engine:
         self.decisions_paused_until: dt.datetime | None = None
         self.probes_paused_until: dt.datetime | None = None  # probe failures never pause trading decisions
         self.probe_errors = 0  # counted apart from decision_errors, which means trading is affected
+        self.news = news
+        self.news_errors = 0  # a failed news fetch sends no headlines; it never pauses a decision
+        self.daily_note: str | None = None  # today's note for specs with `inputs: [daily_note]`
+        self.playbooks: dict[str, str] = {}  # classifier id -> today's playbook (`inputs: [playbook]`)
         self.calls: dict[str, int] = {}  # answered decision calls per classifier this session (since start)
         self._outage_errors = 0
         self._tick_started = 0.0
@@ -513,10 +526,14 @@ class Engine:
         prev_day: dict[str, pd.DataFrame],
         settled_at_open: dict[str, float] | None = None,
         opened_at: dt.datetime | None = None,
+        daily_note: str | None = None,
+        playbooks: dict[str, str] | None = None,
     ) -> None:
         """`settled_at_open`: per-book settled cash measured at startup, before anything sells
         (today's sale proceeds, orphan closes included, are unsettled until T+1). `opened_at`:
-        the time stamped on the day's opening equity row (default 09:30 ET)."""
+        the time stamped on the day's opening equity row (default 09:30 ET). `daily_note`: the
+        pre-market note for specs that ask for it (None: no note today, as in every replay);
+        `playbooks` likewise, per classifier id."""
         opened_at = opened_at or dt.datetime.combine(day, dt.time(9, 30), ET)
         self.day = day
         self._spy_day = None
@@ -526,6 +543,9 @@ class Engine:
         self.decisions_paused_until = None
         self.probes_paused_until = None
         self.probe_errors = 0
+        self.news_errors = 0
+        self.daily_note = daily_note or None
+        self.playbooks = dict(playbooks or {})
         self.calls = {}
         self._outage_errors = 0
         today = day.isoformat()
@@ -1292,7 +1312,7 @@ class Engine:
                     continue
                 thr = spec.entry.threshold
                 if probs.get("ENTER", 0) >= thr:
-                    self._enter(book, cs, sym, sb, now, minutes_to_close, ctx)
+                    self._enter(book, cs, sym, sb, now, minutes_to_close, ctx, self._thesis(spec, probs, now))
                 elif probs.get("STAND_DOWN", 0) >= thr:
                     st.status = "retired"
                     st.note = "stood down"
@@ -1315,6 +1335,8 @@ class Engine:
                 }
                 if spec.scale_out:
                     pos["scaled_out"] = e.qty < e.orig_qty - 1e-9
+                if "thesis" in spec.inputs:
+                    pos["thesis"] = e.thesis
                 choice, probs = self._ask(spec, sym, now, sb, feats, pos, "exit")
                 st.count("asked_exit" if choice is not None else "jev_error")
                 # spec.exit: a classifier without an exit question is a probe, which never holds a position
@@ -1369,6 +1391,16 @@ class Engine:
             "position": pos,
             "strategy_note": spec.context,
         }
+        extra: dict = {}  # logged of the inputs: a count and hashes, not the text ("h" is the spec hash)
+        if "headlines" in spec.inputs:
+            state["headlines"] = self._headlines(sym, now)
+            extra["hl"] = len(state["headlines"])
+        if "daily_note" in spec.inputs:  # "" when there's none today: an empty field, never an error
+            state["daily_note"] = self.daily_note or ""
+            extra["nh"] = note_hash(self.daily_note)
+        if "playbook" in spec.inputs:
+            state["playbook"] = self.playbooks.get(spec.id, "")
+            extra["pb"] = note_hash(state["playbook"])
         q = spec.exit if kind == "exit" else spec.entry
         try:
             if getattr(self.decider, "offline", False) and pos is None:
@@ -1413,6 +1445,7 @@ class Engine:
                 "p": {k: round(v, 3) for k, v in d.probabilities.items()},
                 "f": {k: (round(v, 4) if math.isfinite(v) else None) for k, v in feats.items()},
                 **({"pos": pos} if pos else {}),
+                **extra,
                 # Everything else Jev saw, so probe-report's features-only baseline gets the same inputs.
                 **(
                     {"px": round(float(sb.close.iloc[-1]), 4), "m": state["minutes_since_open"], "r": rets}
@@ -1422,6 +1455,25 @@ class Engine:
             }
         )
         return d.choice, d.probabilities
+
+    def _headlines(self, sym: str, now: dt.datetime) -> list[dict]:
+        """The symbol's recent headlines as of `now`; [] when there's no source or it fails. A news
+        problem must never cost the tick, or pause a decision."""
+        if self.news is None:
+            return []
+        try:
+            return self.news.headlines(sym, now)
+        except Exception as e:
+            self.news_errors += 1
+            if self.news_errors == 1:
+                self._alert_every(
+                    "news",
+                    "info",
+                    f"News headlines failed ({e}); classifiers asking for them get none until it recovers. "
+                    "Trading is unaffected.",
+                    seconds=3600,
+                )
+            return []
 
     def _decisions_available(self, now: dt.datetime) -> bool:
         """Circuit breaker plus a per-tick wall-clock budget, so a slow or failing decision
@@ -1461,7 +1513,21 @@ class Engine:
             "scale_breakeven": bool(so and so.stop_to_breakeven),
         }
 
-    def _enter(self, book: Book, cs: ClassifierState, sym, sb, now, minutes_to_close, ctx=None) -> None:
+    def _thesis(self, spec: ClassifierSpec, probs: dict, now: dt.datetime) -> dict:
+        """Why the position is being opened, kept with it (and sent to its exit questions when the
+        spec asks for `thesis`): the question answered, the answer, and the playbook in use."""
+        t = {
+            "opened": now.strftime("%H:%M"),
+            "entry_question": spec.entry.instructions,
+            "p_enter": round(float(probs.get("ENTER", 0.0)), 3),
+        }
+        if "playbook" in spec.inputs and self.playbooks.get(spec.id):
+            t["playbook"] = self.playbooks[spec.id]
+        return t
+
+    def _enter(
+        self, book: Book, cs: ClassifierState, sym, sb, now, minutes_to_close, ctx=None, thesis: dict | None = None
+    ) -> None:
         spec = cs.spec
         st = cs.symbols[sym]
         px = float(sb.close.iloc[-1])
@@ -1535,7 +1601,7 @@ class Engine:
             now + dt.timedelta(minutes=expire_min),
             stop_pct,
             spec.target_pct,
-            self._entry_params(spec),
+            self._entry_params(spec) | ({"thesis": thesis} if thesis else {}),
             cid,
         )
         book.buys_today += p.reserved
@@ -1676,6 +1742,7 @@ class Engine:
             price_estimated=estimated,
             spec_hash=book.provenance.specs.get(classifier, ""),
             filled_at=filled_at.isoformat() if filled_at else "",
+            thesis=params.get("thesis") or {},
         )
         book.entries[sym] = entry
         book.save_entries()
@@ -2147,6 +2214,7 @@ class Engine:
             "decision_cost_usd": round(getattr(self.decider, "total_cost", 0.0), 5),
             "decision_errors": self.decision_errors,
             "probe_errors": self.probe_errors,
+            "news_errors": self.news_errors,
             "books": {
                 b.name: {
                     "equity": self._status_equity(b),

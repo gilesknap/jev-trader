@@ -147,6 +147,8 @@ def spec_hash(spec, custom_digest: str = "") -> str:
     for k in EXECUTION_FIELDS:  # unset optional fields don't change an existing spec's identity
         if d.get(k) is None:
             d.pop(k, None)
+    if not d.get("inputs"):  # nor does an empty `inputs` (#73); the daily note's text never does
+        d.pop("inputs", None)
     body = json.dumps(d, sort_keys=True, default=str)
     used = set(spec.features) | {t.feature for t in spec.trigger}
     if any(F.SOURCES.get(n) != "lib" for n in used):
