@@ -99,6 +99,7 @@ classifiers:
       - {feature: vwap_dist_pct, op: ">", value: 0.1}
     features: [vwap_dist_pct, rel_volume_15m, my_custom_feature]   # shown to the decision model
     context: "Why this classifier exists and what it's looking for."
+    inputs: [headlines, daily_note, playbook, thesis]   # optional extra context for Jev (default none): see below
     entry:
       instructions: "Should we open a long position now?"
       criteria: {ENTER: "...", WAIT: "...", STAND_DOWN: "..."}   # ENTER plus WAIT and/or STAND_DOWN
@@ -123,7 +124,14 @@ classifiers:
 - Keys are strict. A misspelt or unknown key (say `trail_pc`) fails `trader validate`. At session start the runner leaves that one classifier out for the day and sends an urgent alert; the rest trade as normal. Any other problem still rejects the whole file.
 - The decision model is **Jev**, a typed-decision model, not a chat model. It gets a JSON state (symbol, minutes since open, your features rounded, the last ten 1-minute returns in bps, the position if held, and your `context`) and returns probabilities over your criteria keys.
 - Write criteria as crisp, mutually exclusive descriptions of observable conditions. It never sees dates or absolute prices, so don't refer to them.
-- A call costs about $0.00002, so cadence is a strategy choice, not a cost one.
+- **Extra inputs (`inputs:`, opt-in).** They let a rule ask Jev something that needs judgement, not arithmetic on the features (ADR 0018). They go into entry and exit questions alike.
+  - `headlines`: the symbol's last few news items (18 h look-back, newest first, each with its time and minutes ago). Live from Alpaca's news API; replays use its history, cut at each decision's time. A news failure sends none and never pauses a decision.
+  - `daily_note`: `state/daily_note.md`, which you write in the pre-market run. Its first line must carry today's date (`YYYY-MM-DD`), or the runner treats it as stale and sends an empty note. Facts and schedule only (releases and their times, macro themes, which universe names are in the news), no trade calls, and the same note for every classifier. At most 3,000 characters.
+  - `playbook`: this classifier's entry in `state/playbook.yaml` (`date:` today, then `playbooks:` keyed by classifier id), also written pre-market. Here you may be specific: two to four conditional scenarios for today in plain words ("if X holds after the 10:00 release, Y is likely; if it fades, stand aside"), saying which ones are worth trading. Jev's job is then to recognise which scenario the tape is in. At most 3,000 characters each.
+  - `thesis`: exit questions get `position.thesis`, recorded when the position opened (the entry question, P(ENTER), and the playbook in use), so an exit question can ask whether the reason for the trade still holds.
+  - Turning an input on or off restarts the classifier's record; the note's and the playbook's daily text don't. A missing or stale note or playbook is an empty field, never an error: `trader validate` reports it. The runner reads both 2 minutes before the open, so write them before then, and run `trader validate` after.
+  - The note and playbooks don't exist for past days, so replays send them empty: a rule that depends on them is judged on forward sim, shadow or probe results only. Judge any such rule against a twin: the same spec without these inputs (or without Jev, as a plain trigger rule) on the same days. The verdict is the difference after costs.
+- A call costs about $0.00002 (more with long `inputs`), so cadence is a strategy choice, not a cost one.
 - **Execution toolkit.** Express entries and exits through these fields before asking for code.
   - The engine enforces them every bar, inside the hard guardrails. Each position keeps the rules it was opened with, even if you edit the spec.
   - Per bar the order is: stop first, then target, then scale-out, then the trail ratchets from that bar's high.

@@ -50,6 +50,8 @@ POSTCLOSE_STAMP = STRATEGIST_STAMP.with_name(".last_postclose")
 STRATEGIST_ALERTS = Path(os.environ.get("TRADER_STRATEGIST_ALERTS", STRATEGIST_ROOT / "strategist-alerts.log"))
 
 CLASSIFIERS_FILE = STRATEGIST_ROOT / "state" / "classifiers.yaml"
+DAILY_NOTE_FILE = STRATEGIST_ROOT / "state" / "daily_note.md"  # pre-market run's note (#73)
+PLAYBOOK_FILE = STRATEGIST_ROOT / "state" / "playbook.yaml"  # pre-market run's per-classifier playbooks (#73)
 CUSTOM_FEATURES_DIR = STRATEGIST_ROOT / "features" / "custom"
 MODE_FILE = DATA_ROOT / "config" / "mode.yaml"
 UNIVERSE_FILE = CODE_ROOT / "config" / "universe.yaml"

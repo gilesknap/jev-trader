@@ -86,7 +86,7 @@ def _replay_ids() -> list[str]:
     root = config.REPLAY_DIR
     if not root.is_dir():
         return []
-    dirs = [d for d in root.iterdir() if d.is_dir()]
+    dirs = [d for d in root.iterdir() if d.is_dir() and not d.name.startswith(".")]  # .news: replays' cache
     return [d.name for d in sorted(dirs, key=lambda d: d.stat().st_mtime, reverse=True)]
 
 

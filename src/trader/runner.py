@@ -777,7 +777,15 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
     def engine_alert(level, msg):  # a sim account's trouble is news, not a page
         notify("info" if msg.startswith("[sim:") else level, msg)
 
-    engine = Engine(specs, books, decider, universe, config.RUNTIME_DIR, alert=engine_alert)
+    from trader import jev_inputs as N
+
+    news = None
+    if any("headlines" in s.inputs for s in specs):
+        try:
+            news = N.LiveNews(N.AlpacaNewsAPI(secrets))
+        except Exception as e:  # headlines are an input, never a reason not to trade
+            notify("info", f"news headlines unavailable today ({e!r}); classifiers asking for them get none")
+    engine = Engine(specs, books, decider, universe, config.RUNTIME_DIR, alert=engine_alert, news=news)
     try:  # the trial ledger is research bookkeeping: never a reason not to trade
         from trader import trials
 
@@ -802,7 +810,24 @@ def run_session(decider_name: str = "jev", file=config.CLASSIFIERS_FILE) -> int:
     now = dt.datetime.now(ET)
     prev = prev_day_bars(base, open_.date(), now, secrets, notify, recent)
     # The opening equity row is stamped at the open, or now if starting later (#50).
-    engine.start_day(open_.date(), prev, settled_at_open, opened_at=max(open_, now))
+    daily_note = None
+    if any("daily_note" in s.inputs for s in specs):
+        daily_note, why = N.read_daily_note(config.DAILY_NOTE_FILE, open_.date())
+        if why:
+            notify("info", f"daily note: {why}" + ("" if daily_note else "; classifiers asking for it get none today"))
+    playbooks: dict[str, str] = {}
+    wanted = [s.id for s in specs if "playbook" in s.inputs]
+    if wanted:
+        playbooks, why = N.read_playbooks(config.PLAYBOOK_FILE, open_.date())
+        missing = [cid for cid in wanted if cid not in playbooks]
+        if why or missing:
+            notify(
+                "info",
+                f"playbooks: {why or 'none written for ' + ', '.join(missing)}; those classifiers get an empty one",
+            )
+    engine.start_day(
+        open_.date(), prev, settled_at_open, opened_at=max(open_, now), daily_note=daily_note, playbooks=playbooks
+    )
     engine.write_status(now, (close - now).total_seconds() / 60)
     notify("info", f"runner started session {open_:%a %d %b} ({mode}, {len(specs)} classifiers)", title="Session start")
 

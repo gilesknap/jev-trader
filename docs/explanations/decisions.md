@@ -54,6 +54,10 @@ Then the engine computes the classifier's `features` and sends Jev a state like 
 - The returns are the last ten 1-minute close-to-close returns, in basis points.
 - There are no dates, times of day or prices: everything is dimensionless, so the model can't
   key on a particular day or price level.
+- A classifier with `inputs` also gets those keys: `headlines`, `daily_note`, `playbook`, and in
+  exit questions `position.thesis` (see the [schema](../reference/classifier-schema.md#extra-inputs-optional)).
+  Headlines carry their own times; that's the one exception to the rule above. They go into
+  entry and exit questions alike.
 
 With it go the classifier's `entry.instructions` and `entry.criteria`: a short description per
 answer (`ENTER`, plus `WAIT` and/or `STAND_DOWN`). Jev returns a probability for each key.

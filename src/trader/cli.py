@@ -78,6 +78,18 @@ def cmd_validate(a):
                 f"from {start_date()}: rename or remove {plumbing}"
             )
         print(f"classifiers OK: {[s.id for s in specs]}")
+        if any("daily_note" in s.inputs for s in specs):  # a warning, not a failure: rules still trade without it
+            from trader.jev_inputs import read_daily_note
+
+            note, why = read_daily_note(config.DAILY_NOTE_FILE, config.ny_today())
+            print(f"daily note: {why}" if why else f"daily note OK ({len(note or '')} characters)")
+        wanted = [s.id for s in specs if "playbook" in s.inputs]
+        if wanted:
+            from trader.jev_inputs import read_playbooks
+
+            books, why = read_playbooks(config.PLAYBOOK_FILE, config.ny_today())
+            missing = [cid for cid in wanted if cid not in books]
+            print(f"playbooks: {why}" if why else "playbooks OK" + (f", none for {missing}" if missing else ""))
     except Exception as e:
         print(f"classifiers INVALID: {e}")
         sys.exit(1)

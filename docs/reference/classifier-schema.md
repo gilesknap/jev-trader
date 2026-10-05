@@ -66,6 +66,7 @@ classifiers:
 | `trigger` | list of conditions | `[]` | Each `{feature, op, value}` with `op` one of `>`, `>=`, `<`, `<=`. All must hold before the entry question is asked. A NaN feature never satisfies one |
 | `features` | list of names | required | Shown to the decision model (rounded to 4 decimal places) |
 | `context` | string | `""` | Sent to the model as `strategy_note` with every question |
+| `inputs` | list of `headlines`, `daily_note`, `playbook`, `thesis` | `[]` | Extra inputs sent with every entry and exit question: see [Extra inputs](#extra-inputs-optional). Order and repeats don't matter |
 | `entry` | question | required | See below. Criteria keys: `ENTER` plus `WAIT` and/or `STAND_DOWN` |
 | `exit` | question | required unless `probe` | Criteria keys: exactly `HOLD` and `EXIT` |
 | `size_fraction` | float | `0.2` | Over 0, at most 0.25. Fraction of current equity per position |
@@ -83,6 +84,38 @@ A **question** (`entry`, `exit`) has:
 | `threshold` | float | `0.6` | 0.5–0.99. The probability the answer needs before the engine acts on it (ENTER, STAND_DOWN or EXIT) |
 
 The model never sees dates or absolute prices, so criteria shouldn't refer to them.
+
+## Extra inputs (optional)
+
+`inputs` adds context to what the model is sent, for questions that need judgement rather than
+arithmetic on the features (ADR 0018). Each one is opt-in; a classifier
+without `inputs` is sent exactly what it was before, and keeps its identity. Turning an input on
+or off changes the identity (it changes what the model is asked), so it restarts the promotion
+record. The text of the daily note and the playbooks never does: they change every day.
+
+| Input | Sent as | Source | In replays |
+|---|---|---|---|
+| `headlines` | `headlines`: up to 5 of the symbol's news items from the last 18 hours, newest first, each `{at, minutes_ago, headline, summary}` | Alpaca's news API, refreshed at most every 3 minutes. Only items published at or before the decision time | Yes, from Alpaca's news history, cut at each decision's time |
+| `daily_note` | `daily_note`: text | `state/daily_note.md`, written by the pre-market run. Its first line must carry the session's date (`YYYY-MM-DD`), or it's treated as stale. At most 3,000 characters | No: always empty |
+| `playbook` | `playbook`: text | This classifier's entry in `state/playbook.yaml` (below), written by the pre-market run | No: always empty |
+| `thesis` | `position.thesis` (exit questions only) | Recorded when the position opens: `{opened, entry_question, p_enter, playbook}` (the playbook text if one was in use). Kept with the position, so it survives a restart | Yes |
+
+```yaml
+# state/playbook.yaml
+date: 2026-10-06            # must be the session's date, or no playbook is used
+playbooks:
+  my_idea: |                # keyed by classifier id; at most 3,000 characters each
+    Scenarios for today, in plain words...
+```
+
+- A missing, stale, malformed or empty note or playbook is an empty field (`""`), never an error
+  or a pause. The runner sends an info alert and `trader validate` says so.
+- A news failure sends `headlines: []` and is counted as `news_errors` in the status; it never
+  pauses a decision.
+- The decision log records what was sent, not the text: `hl` (headline count), `nh` (the
+  note's hash) and `pb` (the playbook's hash). The texts themselves are in the strategist's git
+  history.
+- The runner reads the note and the playbooks once, at session start (2 minutes before the open).
 
 ## Execution toolkit (optional)
 
