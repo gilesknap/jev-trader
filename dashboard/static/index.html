@@ -153,9 +153,10 @@ p.dayline { margin: 0 0 8px; font-size: 13.5px; color: var(--ink); }
 @media (max-width: 760px) { .pgrid { grid-template-columns: minmax(0, 1fr); } }
 
 /* ---- key/value list (at a glance) ---- */
-.kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; font-size: 13px; }
+/* Labels take at most 40% and wrap; values keep whole words, so a long value can't squeeze into a skinny column on a phone. */
+.kv { display: grid; grid-template-columns: fit-content(40%) minmax(0, 1fr); gap: 6px 14px; margin: 0; font-size: 13px; }
 .kv dt { color: var(--ink2); }
-.kv dd { margin: 0; text-align: right; font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.kv dd { margin: 0; text-align: right; font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; overflow-wrap: break-word; }
 
 /* ---- charts ---- */
 .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
