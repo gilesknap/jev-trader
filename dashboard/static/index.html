@@ -261,7 +261,8 @@ code { font-family: var(--mono); font-size: .9em; }
       <div class="segs" id="range"></div>
       <details class="about"><summary>About this chart</summary>
         <p><b>1.000</b> means break-even (the dashed line), <b>1.010</b> means +1%, measured from the close before the period starts (or the account's first mark, if it's newer). Deposits and withdrawals don't move this line, only trading does. The dashed teal line is holding SPY over the same period (from the first session's open, if that's later), the yardstick the strategist has to beat.</p>
-        <p><b>1D</b> is the latest session and <b>7D</b> the last 7 days, both marked every 5 minutes. <b>1M</b> and <b>1Y</b> plot one point per day, at the close.</p></details>
+        <p><b>1D</b> is the latest session and <b>7D</b> the last 7 days, both marked every 5 minutes. <b>1M</b> and <b>1Y</b> plot one point per day, at the close.</p>
+        <p>On <b>1D</b>, SPY is measured from that session's open, not the previous close: the books never hold overnight, so the overnight gap isn't something they could have earned. The legend shows the gap separately. The longer ranges include overnights, as real buy-and-hold would.</p></details>
       <div class="chart" id="chart"></div><div class="legend" id="legend"></div></section>
     <section id="sec-glance"><h2>At a glance <span>refreshes every 15 s</span></h2>
       <dl class="kv" id="health"></dl></section>
@@ -320,7 +321,7 @@ code { font-family: var(--mono); font-size: .9em; }
   <section>
     <details class="help"><summary>How to read the scoreboard</summary><dl>
       <dt>Avg per trade</dt><dd>The mean profit or loss of a closed trade as a % of what it put in, after slippage. The <b>±</b> is a 95% interval: if it straddles zero, the result can't be told apart from luck.</dd>
-      <dt>Race chart</dt><dd>Each rule's running profit or loss after slippage, as a % of the account's starting money, at the end of each trading day. The 1D/7D/1M/1Y buttons count back from the latest trading day, and every line starts the range at zero. Rules take positions of different sizes, so compare the verdicts too, not just the lines.</dd>
+      <dt>Race chart</dt><dd>Each rule's running profit or loss after slippage, as a % of the account's starting money, at the end of each trading day. The 1D/7D/1M/1Y buttons count back from the latest trading day, and every line starts at zero on the left edge (the close before the range), so even a single day draws a line. Rules take positions of different sizes, so compare the verdicts too, not just the lines.</dd>
       <dt>Promotion</dt><dd>Closed paper trades on the rule's current settings. It needs 20, with positive average after slippage, before it may trade real money. Editing a rule (other than its label, mode or on/off) restarts the count.</dd>
       <dt>Why the intervals are wide</dt><dd>Trades on the same day share that day's market, so ten trades on one day are not ten separate pieces of evidence. The intervals count trading days, not just trades, and no verdict is given before 10 trades over 3 days.</dd>
       <dt>The objective</dt><dd>The mission is to beat SPY on a risk-adjusted basis, so the whole book's return per session (from its unit NAV, so deposits don't count as gains, and including days nothing traded) is the measure that answers it. The per-trade figures elsewhere on this page describe the rules; they don't say whether the book is beating SPY. <b>Exposure</b> is the average share of the account held in positions during the session. The <b>vs SPY</b> interval treats sessions as independent, so read it as a rough guide.</dd>
@@ -501,6 +502,16 @@ function raceWindow(days, rows, span) {
   }).filter(r => i0 === 0 || r.curve.some(v => v !== 0));
   return { days: days.slice(i0), rows: moved, quiet: rows.length - moved.length };
 }
+// What the race draws: a zero point before the range's first day (the close before it), then
+// one point per day, so every line visibly starts level, even when the range holds one day.
+function raceFromZero(rows) {
+  return rows.map(r => ({ ...r, curve: [0, ...r.curve] }));
+}
+// Room above and below the extreme values, so no point sits on the chart's edge gridlines.
+function padRange(lo, hi, frac = 0.08) {
+  const pad = (hi - lo) * frac;
+  return [lo - pad, hi + pad];
+}
 // The 1D/7D/1M/1Y buttons, into `el`; pick(key) runs on a click.
 function rangeSegs(el, cur, pick) {
   el.innerHTML = RANGES.map(([k, l, , t]) => `<button data-r="${k}" title="${t}" class="${k === cur ? "on" : ""}">${l}</button>`).join("");
@@ -572,7 +583,10 @@ function chart(books, bench, marks) {
     return [n, { equity: idx.map(i => [b.equity[i][0], b.equity[i][1], b.equity[i][2] / b0]) }];
   });
   let spy = null;
-  if (spyAll) {
+  if (days === 1) {  // one session: SPY from its open, like the books (see spyFromOpen)
+    const { idx } = rangeIdx(longest, days, daily), one = spyFromOpen(idx.map(i => longest[i][0]), bench, marks || {});
+    if (one) spy = { vals: one.vals, gap: one.gap, fromOpen: true };
+  } else if (spyAll) {
     const { idx, base } = rangeIdx(longest, days, daily);
     const s0 = spyAll.vals[base] ?? idx.map(i => spyAll.vals[i]).find(v => v != null);
     const vals = idx.map(i => spyAll.vals[i] == null || !s0 ? null : spyAll.vals[i] / s0);
@@ -609,7 +623,10 @@ function chart(books, bench, marks) {
   $("legend").innerHTML = series.map(([n, b], k) => {
     const e = b.equity; return `<span><i style="background:${COLORS[k % 3]}"></i>${esc(n)} <b class="${cls(e[e.length - 1][2] - 1)}">${pct(e[e.length - 1][2] - 1)}</b> · <b>$${fmt(e[e.length - 1][1])}</b></span>`;
   }).join("") + (spy ? (() => {
-    const last = [...spy.vals].reverse().find(v => v != null), since = spy.from > first[0][0].slice(0, 10) ? ` since ${esc(spy.from)}` : "";
+    const last = [...spy.vals].reverse().find(v => v != null);
+    if (spy.fromOpen) return `<span title="SPY from this session's open, like the books, which never hold overnight"><i style="background:var(--spy)"></i>SPY from the open <b class="${cls(last - 1)}">${pct(last - 1)}</b>` +
+      (spy.gap != null ? ` <span class="muted">(overnight gap ${pct(spy.gap)} not included)</span>` : "") + "</span>";
+    const since = spy.from > first[0][0].slice(0, 10) ? ` since ${esc(spy.from)}` : "";
     return `<span title="Holding SPY over the same period, overnights included (marked at each day's close, and through the day where the runner recorded SPY's price)"><i style="background:var(--spy)"></i>SPY buy-and-hold${since} <b class="${cls(last - 1)}">${pct(last - 1)}</b></span>`;
   })() : "");
 }
@@ -640,6 +657,27 @@ function spyLine(equity, bench, marks = {}) {
     return v / base;
   });
   return vals.some(v => v != null) ? { vals, from } : null;
+}
+// SPY over one session, from that session's open: the yardstick for 1D. The books never hold
+// overnight, so the gap from the previous close isn't something they could have earned; it's
+// returned separately (gap, or null when the previous close isn't known) for the legend. `times`
+// are the session's equity-mark times. The open is benchmark.csv's spy_open once the day has a
+// row, else the first intraday mark; a mark-less time carries the last price forward, and the
+// day's last mark is its close when benchmark.csv has it. Returns {vals, gap} or null.
+function spyFromOpen(times, bench, marks = {}) {
+  if (!times.length) return null;
+  const day = times[0].slice(0, 10), rows = [...(bench || [])].sort((a, b) => a.date.localeCompare(b.date));
+  const row = rows.find(r => r.date === day), prevRow = rows.filter(r => r.date < day && +r.spy_close > 0).pop();
+  const prices = times.map(t => +marks[t] > 0 ? +marks[t] : null);
+  const open = row && +row.spy_open > 0 ? +row.spy_open : prices.find(v => v != null);
+  if (!open) return null;
+  let last = open;
+  const vals = prices.map((v, i) => {
+    if (i === times.length - 1 && row && +row.spy_close > 0) last = +row.spy_close;
+    else if (v != null) last = v;
+    return last / open;
+  });
+  return { vals, gap: prevRow ? open / +prevRow.spy_close - 1 : null };
 }
 // ---- end SPY line ----
 
@@ -1007,9 +1045,11 @@ function race(b) {
     $("racelegend").innerHTML = ""; focusLine(null); return;
   }
   const W = 640, H = 250, P = 56, R = 160;
-  const pts = rows.flatMap(r => r.curve);
-  let lo = Math.min(0, ...pts), hi = Math.max(0, ...pts); if (hi - lo < 1e-3) { hi += 0.05; lo -= 0.05; }
-  const x = i => P + (W - P - R) * (days.length === 1 ? 1 : i / (days.length - 1));
+  const lines = raceFromZero(rows), n = days.length + 1;  // the zero point, then one per day
+  const pts = lines.flatMap(r => r.curve);
+  let lo = Math.min(0, ...pts), hi = Math.max(0, ...pts);
+  if (hi - lo < 1e-3) { hi += 0.05; lo -= 0.05; } else [lo, hi] = padRange(lo, hi);
+  const x = i => P + (W - P - R) * i / (n - 1);
   const y = v => 10 + (H - 10 - 24) * (hi - v) / (hi - lo);
   const unit = b.units === "$" ? "$" : "%";
   const style = lineStyle(rows);
@@ -1017,18 +1057,18 @@ function race(b) {
   for (const t of [lo, (lo + hi) / 2, hi]) svg += `<line x1="${P}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--rule)"/><text x="${P - 6}" y="${y(t) + 4}" text-anchor="end">${t >= 0 ? "+" : ""}${t.toFixed(2)}${unit}</text>`;
   svg += `<line x1="${P}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}" stroke="var(--muted)" stroke-dasharray="3 3"/>`;
   svg += `<line x1="${P}" x2="${W - R}" y1="${H - 24}" y2="${H - 24}" stroke="var(--ink2)"/>`;
-  svg += (days.length > 1 ? `<text x="${P}" y="${H - 6}">${esc(days[0])}</text>` : "") + `<text x="${W - R}" y="${H - 6}" text-anchor="end">${esc(days[days.length - 1])}</text>`;
+  svg += `<text x="${P}" y="${H - 6}">start</text><text x="${W - R}" y="${H - 6}" text-anchor="end">${esc(days[days.length - 1])}</text>`;
   // End labels are spread so they never overlap; each gets the rule's marker.
-  const labels = rows.map(r => ({ id: r.id, y: y(r.curve[r.curve.length - 1]) })).sort((a, c) => a.y - c.y);
+  const labels = lines.map(r => ({ id: r.id, y: y(r.curve[r.curve.length - 1]) })).sort((a, c) => a.y - c.y);
   for (let i = 1; i < labels.length; i++) labels[i].y = Math.max(labels[i].y, labels[i - 1].y + 15);
   const labelY = Object.fromEntries(labels.map(l => [l.id, l.y]));
   // Draw control first so the strategist's lines sit on top.
-  const order = [...rows].sort((a, c) => (a.family === "control") - (c.family === "control")).reverse();
+  const order = [...lines].sort((a, c) => (a.family === "control") - (c.family === "control")).reverse();
   for (const r of order) {
     const { k, col, dash } = style[r.id], end = r.curve.length - 1, ex = x(end), ey = y(r.curve[end]), ly = labelY[r.id];
     const p = r.curve.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
     svg += `<g class="ln${r.active ? "" : " old"}" data-id="${esc(r.id)}">` +
-      (days.length === 1 ? "" : `<polyline fill="none" stroke="${col}" stroke-width="${r.active ? 2.2 : 1.4}"${dash ? ` stroke-dasharray="${dash}"` : ""} stroke-linejoin="round" points="${p}"/>`) +
+      `<polyline fill="none" stroke="${col}" stroke-width="${r.active ? 2.2 : 1.4}"${dash ? ` stroke-dasharray="${dash}"` : ""} stroke-linejoin="round" points="${p}"/>` +
       `<polyline class="hit" fill="none" stroke="transparent" stroke-width="12" points="${p}"/>` +
       marker(k, ex, ey, col) +
       (Math.abs(ly - ey) > 2 ? `<line x1="${ex + 5}" y1="${ey}" x2="${W - R + 4}" y2="${ly}" stroke="${col}" stroke-width=".8" opacity=".6"/>` : "") +
