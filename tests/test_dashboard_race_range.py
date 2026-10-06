@@ -82,3 +82,14 @@ def test_the_subtitle_names_the_dates_the_range_covers():
     assert re.fullmatch(r"1M · 28 Aug – 29 Sept?", _run("raceSpan('1m', ['2026-08-28', '2026-09-29'])"))
     assert re.fullmatch(r"1Y · 30 Dec 2025 – 5 Jan 2026", _run("raceSpan('1y', ['2025-12-30', '2026-01-05'])"))
     assert _run("raceSpan('7d', [])") == "7D"
+
+
+def test_race_lines_start_from_zero_even_for_one_day():
+    out = _run("raceFromZero([{id: 'a', curve: [0.15]}, {id: 'b', curve: [-0.3, 0.2]}])")
+    assert [r["curve"] for r in out] == [[0, 0.15], [0, -0.3, 0.2]]
+
+
+def test_the_axis_is_padded_so_extremes_dont_sit_on_the_edge_gridlines():
+    lo, hi = _run("padRange(-0.07, 0.15)")
+    assert lo < -0.07 and hi > 0.15
+    assert hi - lo == pytest.approx(0.22 * 1.16)

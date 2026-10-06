@@ -181,3 +181,38 @@ def test_a_past_day_with_marks_but_no_benchmark_row_still_plots():
 @js
 def test_no_benchmark_rows_means_no_line_even_with_marks():
     assert _line({"2026-09-22T10:00-04:00": 102.0}, bench=[]) is None
+
+
+# ---- 1D: SPY from the session's open (spyFromOpen) ----------------------------------
+
+TODAY = ["2026-09-22T09:30-04:00", "2026-09-22T09:35-04:00", "2026-09-22T09:40-04:00", "2026-09-22T09:45-04:00"]
+
+
+def _open(times=TODAY, bench=BENCH, marks=None):
+    out = _js(f"spyFromOpen({json.dumps(times)}, {json.dumps(bench)}, {json.dumps(marks or {})})")
+    return out and {
+        "vals": [round(v, 6) for v in out["vals"]],
+        "gap": None if out["gap"] is None else round(out["gap"], 6),
+    }
+
+
+@js
+def test_one_session_starts_level_at_its_open_and_reports_the_gap_apart():
+    # Prev close 101; the first mark (102) stands in for the open: a gap, but the line starts at 1.
+    out = _open(marks={TODAY[1]: 102.0, TODAY[3]: 103.02})
+    assert out["vals"] == [1.0, 1.0, 1.0, 1.01]  # 09:30 and 09:40 carry the last price
+    assert out["gap"] == pytest.approx(102 / 101 - 1, abs=1e-6)
+
+
+@js
+def test_once_the_day_has_a_benchmark_row_its_open_and_close_are_used():
+    bench = [*BENCH, {"date": "2026-09-22", "spy_open": "102", "spy_close": "100.98"}]
+    out = _open(bench=bench, marks={TODAY[1]: 102.51})
+    assert out["vals"] == [1.0, 1.005, 1.005, 0.99]  # the last mark is the day's close
+    assert out["gap"] == pytest.approx(102 / 101 - 1, abs=1e-6)
+
+
+@js
+def test_no_open_known_means_no_line_and_no_previous_close_means_no_gap():
+    assert _open(marks={}) is None
+    assert _open(bench=[], marks={TODAY[0]: 100})["gap"] is None
