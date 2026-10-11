@@ -140,8 +140,8 @@ The watchdog also alerts once per session if no post-close run has succeeded by 
 - **Saturday:** the weekly retrospective. The wrapper archives logs and applies the retention
   policy (`trader compact`); the strategist writes the weekly journal and opens the weekly issue
   in the data repository, its body the journal. Reading it is the human's weekly job.
-- **Daily housekeeping** (`trader housekeeping`) checks OpenRouter credit, token expiry,
-  undeployed merges in either repository and disk space (see [Alerts](../how-to/alerts.md)).
+- **Daily housekeeping** (`trader housekeeping`) checks OpenRouter credit, token and Claude
+  login expiry, undeployed merges in either repository and disk space (see [Alerts](../how-to/alerts.md)).
 
 ## After a crash
 

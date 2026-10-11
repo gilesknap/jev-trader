@@ -1,6 +1,8 @@
-"""The undeployed check, in today's monorepo and the split layout (#169: public code, private data repo)."""
+"""Housekeeping checks: undeployed merges, in today's monorepo and the split layout (#169: public code, private data
+repo), and the Claude login's expiry."""
 
 import importlib
+import json
 import subprocess
 import time
 
@@ -225,3 +227,64 @@ def test_split_unreadable_config_checkout(split, monkeypatch, tmp_path):
     monkeypatch.setenv("TRADER_DATA_ROOT", str(tmp_path / "missing"))
     ((pid, msg, _),) = housekeeping.check_undeployed({})
     assert pid == "config_deploy_check" and "deployed config" in msg
+
+
+DAY_MS = 86400 * 1000
+
+
+def _login(tmp_path, monkeypatch, content):
+    """A Claude credentials file in a temporary HOME; content None leaves it missing."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    if content is not None:
+        (tmp_path / ".claude").mkdir()
+        (tmp_path / ".claude" / ".credentials.json").write_text(content)
+
+
+def _expiring_in(days):
+    return json.dumps({"claudeAiOauth": {"refreshTokenExpiresAt": int(time.time() * 1000 + days * DAY_MS)}})
+
+
+def test_claude_login_far_from_expiry(tmp_path, monkeypatch):
+    _login(tmp_path, monkeypatch, _expiring_in(60))
+    assert housekeeping.check_claude_login() == []
+
+
+@pytest.mark.parametrize(("days", "urgent"), [(14.3, False), (3.3, True)])
+def test_claude_login_expiring(tmp_path, monkeypatch, days, urgent):
+    _login(tmp_path, monkeypatch, _expiring_in(days))
+    assert housekeeping.check_claude_login() == [
+        (
+            "claude_login_expiry",
+            f"Claude login expires in {int(days)} days; the strategist's runs stop working after that. "
+            "Run `claude auth login` as trader.",
+            urgent,
+        )
+    ]
+
+
+def test_claude_login_expired(tmp_path, monkeypatch):
+    _login(tmp_path, monkeypatch, _expiring_in(-2.3))
+    ((pid, msg, urgent),) = housekeeping.check_claude_login()
+    assert pid == "claude_login_expiry" and msg.startswith("Claude login expired 2 days ago;") and urgent
+
+
+def test_claude_login_missing(tmp_path, monkeypatch):
+    _login(tmp_path, monkeypatch, None)
+    ((pid, msg, urgent),) = housekeeping.check_claude_login()
+    assert pid == "claude_login" and "is missing" in msg and "`claude auth login` as trader" in msg and urgent
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "not json",
+        json.dumps({"claudeAiOauth": {}}),
+        json.dumps({"apiKey": "x"}),
+        json.dumps({"claudeAiOauth": {"refreshTokenExpiresAt": None}}),
+        json.dumps({"claudeAiOauth": {"refreshTokenExpiresAt": 1e300}}),
+    ],
+)
+def test_claude_login_unreadable_expiry_warns(tmp_path, monkeypatch, content):
+    _login(tmp_path, monkeypatch, content)
+    ((pid, msg, urgent),) = housekeeping.check_claude_login()
+    assert pid == "claude_login_check" and msg.startswith("Couldn't read the Claude login's expiry") and not urgent

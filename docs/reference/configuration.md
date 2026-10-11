@@ -40,7 +40,7 @@ it looked in. The comments in the file itself describe each key too; the templat
 | `schedule.strategist.premarket` | systemd `OnCalendar` | When the pre-market timer fires (the run itself happens once, 30–75 min before the open) |
 | `schedule.strategist.postclose` | systemd `OnCalendar` | When the post-close timer fires (after the close; a second time is a retry) |
 | `schedule.strategist.weekly` | systemd `OnCalendar` | The weekly retrospective |
-| `schedule.strategist.housekeeping` | systemd `OnCalendar` | The daily credit, token, deploy and disk checks |
+| `schedule.strategist.housekeeping` | systemd `OnCalendar` | The daily credit, token, login, deploy and disk checks |
 | `models.jev` | string | The OpenRouter decision model, pinned. Bump it deliberately, after checking behaviour |
 | `models.strategist` | string | The Claude Code model for the strategist runs |
 | `alerts.ntfy_server` | `https://` URL | The ntfy push server. The topic is `NTFY_TOPIC` in the secrets file |

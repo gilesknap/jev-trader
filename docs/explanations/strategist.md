@@ -14,7 +14,7 @@ describes.
 | `premarket` | once, 30–75 min before the open | 25 min | news and the macro calendar; confirm, tweak or stand down today's classifiers; a few lines in today's journal |
 | `postclose` | at least 20 min after the close | 50 min | review the day's trades, decisions and alerts; research; rewrite `state/strategy.md`; draft tomorrow's classifiers; the daily journal |
 | `weekly` | Saturday | 50 min | the weekly retrospective; monthly and yearly compressions; the weekly issue |
-| `housekeeping` | daily | (no Claude) | `trader housekeeping`: credit, token, deploy and disk checks |
+| `housekeeping` | daily | (no Claude) | `trader housekeeping`: credit, token, login, deploy and disk checks |
 
 The timers are systemd user timers (`deploy/systemd-trader/` in your data repository's `main`),
 rendered from `config.yaml`'s `schedule.strategist`. They fire on a fixed local schedule; the wrapper decides from Alpaca's
