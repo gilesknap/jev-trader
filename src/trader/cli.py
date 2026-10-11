@@ -519,7 +519,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="first day to include, YYYY-MM-DD (default: the experiment's start date)",
     )
     s.set_defaults(fn=cmd_daily_returns)
-    s = sub.add_parser("housekeeping", help="daily checks: API credit, token expiry, undeployed merges, disk")
+    s = sub.add_parser("housekeeping", help="daily checks: API credit, token and login expiry, undeployed merges, disk")
     s.set_defaults(fn=cmd_housekeeping)
 
     s = sub.add_parser("rebase-paper", help="human: restart the paper book's NAV after an Alpaca paper reset")

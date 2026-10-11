@@ -5,7 +5,7 @@ What happens on a normal day, and what's yours to do. Local times are from `conf
 
 | When (UK, as shipped) | What |
 |---|---|
-| 09:00 daily | Housekeeping checks: OpenRouter credit, token expiry, undeployed merges in either repository, disk (see [Alerts](alerts.md)) |
+| 09:00 daily | Housekeeping checks: OpenRouter credit, token and Claude login expiry, undeployed merges in either repository, disk (see [Alerts](alerts.md)) |
 | 12:50 Mon–Fri | The runner starts, checks Alpaca's calendar and waits for the open |
 | 30–75 min before the open | The strategist's pre-market run (short) |
 | open–close | The runner trades. The watchdog checks its heartbeat every 10 minutes. Any position the engine didn't open (left from a crash, or **bought by hand**) is sold within about a minute of the first tick after the open, with an urgent alert |

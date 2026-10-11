@@ -3,6 +3,7 @@
 - OpenRouter credit is low, or will run out within LOW_DAYS at the current burn rate
 - the OpenRouter key's spend limit is nearly used, or the key is about to expire
 - the GitHub token (used for pushes and PRs) is about to expire
+- the Claude subscription login (used by the strategist's runs) is about to expire
 - changes merged to main haven't been deployed to the runner for more than 2 days (in the split layout,
   either repo's main: the public code or the private data repo's deployment config)
 - disk space is low
@@ -114,6 +115,33 @@ def check_github() -> list[tuple[str, str, bool]]:
                         d < URGENT_DAYS,
                     )
                 ]
+    return []
+
+
+def check_claude_login() -> list[tuple[str, str, bool]]:
+    """The subscription login's refresh token has a fixed expiry: the access token renews itself, but once
+    refreshTokenExpiresAt (epoch ms) passes, `claude` runs fail until someone logs in again."""
+    creds = Path.home() / ".claude" / ".credentials.json"
+    if not creds.exists():
+        return [
+            ("claude_login", f"No Claude login found ({creds} is missing). Run `claude auth login` as trader.", True)
+        ]
+    try:
+        ms = json.loads(creds.read_text())["claudeAiOauth"]["refreshTokenExpiresAt"]
+        iso = dt.datetime.fromtimestamp(float(ms) / 1000, dt.UTC).isoformat()
+    except (OSError, ValueError, KeyError, TypeError, OverflowError) as e:
+        return [("claude_login_check", f"Couldn't read the Claude login's expiry from {creds}: {e!r}"[:200], False)]
+    d = _days_until(iso)
+    if d is not None and d < LOW_DAYS:
+        when = f"expires in {d:.0f} days" if d >= 0 else f"expired {-d:.0f} days ago"
+        return [
+            (
+                "claude_login_expiry",
+                f"Claude login {when}; the strategist's runs stop working after that. "
+                "Run `claude auth login` as trader.",
+                d < URGENT_DAYS,
+            )
+        ]
     return []
 
 
@@ -246,6 +274,7 @@ def run() -> list[str]:
     for check in (
         lambda: check_openrouter(secrets["OPENROUTER_API_KEY"]),
         check_github,
+        check_claude_login,
         lambda: check_undeployed(state),
         check_disk,
     ):
