@@ -25,6 +25,7 @@ numbers in **Origin** refer to that repository, and aren't links.
 | [0016](adr/0016-execution-toolkit-in-the-spec.md) | 2026-09-27 | Strategies are declarative specs with an execution toolkit |
 | [0017](adr/0017-strategist-checkout-is-untrusted-input.md) | 2026-09-27 | The strategist's checkout is untrusted input |
 | [0018](adr/0018-jev-applies-strategist-context.md) | 2026-10-05 | Jev applies the strategist's context in real time, and is judged against a twin without it |
+| [0019](adr/0019-deploy-to-kubernetes.md) | 2026-10-12 | Run on the home Kubernetes cluster, with the trust split carried by namespaces (proposed) |
 
 ```{toctree}
 :hidden:
