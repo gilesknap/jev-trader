@@ -47,10 +47,12 @@ those must run in a process with no keys, no network and no access to runtime st
   with the same limits, never the runner's, so the strategist can't change what the runner's
   worker runs during a session.
 - **The strategist's runs are CronJobs** with `timeZone: America/New_York` (stable since
-  Kubernetes 1.27),
-  `concurrencyPolicy: Forbid` and a starting deadline. They replace the systemd user timers
-  ([0012](0012-systemd-timers-for-the-strategist.md)). `scripts/strategist.sh` runs in split mode
-  as today.
+  Kubernetes 1.27), `concurrencyPolicy: Forbid` and a starting deadline. They replace the systemd
+  user timers ([0012](0012-systemd-timers-for-the-strategist.md)). `scripts/strategist.sh` runs
+  in split mode as today. `Forbid` only stops one CronJob overlapping itself, so the wrapper's
+  state directory (`XDG_STATE_HOME`: its run lock, daily completion stamps and logs) is one
+  persistent volume that every strategist CronJob mounts, on the pinned node; that lock, not the
+  CronJobs, keeps runs from overlapping.
 - **The Claude subscription login is a `claude setup-token` token** in a Secret, passed as
   `CLAUDE_CODE_OAUTH_TOKEN`. Nothing is written back, so the pod can be ephemeral. The strategist
   keeps running the Claude Code CLI, which is what the subscription covers. The token's issue
