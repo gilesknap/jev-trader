@@ -28,23 +28,34 @@ those must run in a process with no keys, no network and no access to runtime st
   because anyone who can create a pod in a namespace can mount any Secret in it.
 - **The runner is a single-replica StatefulSet.** It won't be recreated until the old pod is
   confirmed gone, so a lost node gives no runner, never two. The pod stays up and sleeps between
-  sessions. `updateStrategy: OnDelete` replaces the deploy-time session lock: a new image takes
-  effect only when the pod is deleted between sessions ([0007](0007-deploy-from-signed-merges.md)).
+  sessions. With `updateStrategy: OnDelete` a new image or deployed configuration takes effect
+  only when the pod is deleted. `OnDelete` doesn't stop anyone deleting the pod mid-session, so
+  whatever deletes it (by hand or a roll job after the close) first checks that the runner is
+  idle, as the deploy's session-lock check does now ([0007](0007-deploy-from-signed-merges.md)).
+  Images are built only from signed merge commits on `main` whose tests pass, keeping 0007's
+  guarantees.
 - **Custom features run in a separate feature-worker pod**, not under bubblewrap in the runner's
   pod. It has no Secrets, no service-account token and no volumes, runs non-root with a read-only
   root filesystem and no capabilities, and its network policy denies all egress and allows
-  ingress only from the runner. At session start the runner sends it the feature source, so the
-  code that passed the morning gate is the code that runs all day. The JSON-lines protocol is
+  ingress only from the runner. The worker keeps its own memory and file-descriptor limits
+  (`trader.features.worker`), and the pod has a memory limit as well. At session start the
+  runner sends it the feature source, so the code that passed the morning gate is the code that
+  runs all day. The JSON-lines protocol is
   unchanged, over TCP rather than a pipe. It still fails closed: if the worker is unreachable,
-  custom features are NaN and nothing enters. The static import gate stays.
-- **The strategist's runs are CronJobs** with `timeZone: America/New_York`,
+  custom features are NaN and nothing enters. The static import gate stays. `trader validate`
+  and replays in the strategist's pod run custom features too: they use a worker of their own
+  with the same limits, never the runner's, so the strategist can't change what the runner's
+  worker runs during a session.
+- **The strategist's runs are CronJobs** with `timeZone: America/New_York` (stable since
+  Kubernetes 1.27),
   `concurrencyPolicy: Forbid` and a starting deadline. They replace the systemd user timers
   ([0012](0012-systemd-timers-for-the-strategist.md)). `scripts/strategist.sh` runs in split mode
   as today.
 - **The Claude subscription login is a `claude setup-token` token** in a Secret, passed as
   `CLAUDE_CODE_OAUTH_TOKEN`. Nothing is written back, so the pod can be ephemeral. The strategist
-  keeps running the Claude Code CLI, which is what the subscription covers. Housekeeping's expiry
-  check reads an issue date recorded on the Secret.
+  keeps running the Claude Code CLI, which is what the subscription covers. The token's issue
+  date is a second key in the same Secret, passed to the pod, and housekeeping's expiry check
+  reads that, so the strategist needs no access to the Kubernetes API.
 - **Storage is local to one node, backed up to NFS.** The runtime directory and the strategist
   checkout are local-path volumes. The runner and the strategist are pinned to that node, so
   `flock` stays on a local filesystem. A CronJob copies the runtime directory to the NAS after the
@@ -56,7 +67,9 @@ those must run in a process with no keys, no network and no access to runtime st
   - The feature worker reaches nothing.
   - The dashboard accepts traffic only from the Tailscale proxy, so the `Tailscale-User-Login`
     header can't be forged from another pod ([0002](0002-dashboard-on-a-private-socket.md)).
-  - Hubble's flow logs are used to build the allowlists before they are enforced.
+  - Hubble's flow logs are used to build the allowlists before they are enforced. Whether the
+    strategist's WebFetch gets general web egress is decided then, explicitly; WebSearch runs on
+    Anthropic's side and needs none.
 - **The runner keeps reading the strategist's files through `trader.safeio`**
   ([0017](0017-strategist-checkout-is-untrusted-input.md)): mounting them read-only protects the
   files, not the reader.
@@ -67,7 +80,9 @@ those must run in a process with no keys, no network and no access to runtime st
 ## Consequences
 
 - No automatic failover. If the pinned node is lost, the runtime directory is restored from the
-  NAS by hand, and the VPS stays as the rollback.
+  NAS by hand, and the VPS stays as the rollback. Before the runner's pod is force-deleted or the
+  runner started anywhere else, the lost node is powered off and confirmed down: deleting the pod
+  through the API doesn't stop a process on a node the control plane can't reach.
 - The cluster's control plane becomes the trust boundary: whoever can deploy to the cluster can
   read the live keys, so the cluster's GitOps repository and admin credentials need the care the
   VPS's admin account gets now. k3s should encrypt Secrets at rest.
@@ -78,3 +93,10 @@ those must run in a process with no keys, no network and no access to runtime st
   cluster's own provisioning before this moves.
 - Custom features gain a network hop per call, which must stay well inside the 5 ms budget.
 - The VPS setup scripts and docs remain the supported route until the cutover is proven on paper.
+- If this is accepted, it supersedes [0012](0012-systemd-timers-for-the-strategist.md) on the
+  cluster, and replaces the mechanisms, not the aims, of
+  [0001](0001-separate-runner-and-strategist-accounts.md) (accounts),
+  [0002](0002-dashboard-on-a-private-socket.md) (the socket),
+  [0004](0004-sandbox-strategist-features.md) (bubblewrap) and
+  [0007](0007-deploy-from-signed-merges.md) (the session lock). Those records point here once the
+  cutover is done.
