@@ -9,9 +9,10 @@ Every alert is also logged:
   `/srv/trading/strategist/strategist-alerts.log` (0640, git-ignored), because `trader` can't
   write the runtime directory by design.
 
-If `config.yaml` can't be read or is invalid, alerts still go out, but to the default public
-server, `https://ntfy.sh`, since the file that names yours is the thing that's broken. A
-self-hosted ntfy server won't get them until it's fixed; the logs above still have every one.
+If `config.yaml` can't be read or is invalid, alerts aren't pushed anywhere, since the file that
+names your server is the thing that's broken. They are still written to the logs above, marked
+`(not pushed: config.yaml unreadable)`, and the watchdog logs hourly that the file is unreadable,
+so check the logs if your phone goes quiet.
 
 ## Use your own ntfy server
 
@@ -28,7 +29,7 @@ To push to a self-hosted ntfy server instead of ntfy.sh:
 
 Without `NTFY_TOKEN` alerts are published anonymously, which is what ntfy.sh's public topics
 need. The token is never written to a log, and it is sent only to the server `config.yaml`
-names: the ntfy.sh fallback above gets the alert without it.
+names.
 
 ## What pages you
 

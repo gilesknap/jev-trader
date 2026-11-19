@@ -21,9 +21,10 @@ a command first needs it: up front for every `trader` command except `stop`, `wa
 `config render-deploy` (which validates its own data root's file just as strictly). An unknown
 key, a bad date or an unquoted time stops those commands with a message naming the file, so a
 typo can't slip through quietly: the runner never starts a session on it, and `trader validate`
-fails. The last resorts don't depend on it: `trader stop` still flags and flattens, alerts still
-push (to the default `https://ntfy.sh`; see [Understand the alerts](../how-to/alerts.md)), and
-`trader watchdog` alerts hourly that the file is unreadable. A missing file names the data root
+fails. The last resorts don't depend on it: `trader stop` still flags and flattens, alerts are
+still logged (but not pushed, since the file names the server; see
+[Understand the alerts](../how-to/alerts.md)), and `trader watchdog` logs an alert hourly that the
+file is unreadable. A missing file names the data root
 it looked in. The comments in the file itself describe each key too; the template is
 `templates/data/main/config.yaml` in the code.
 

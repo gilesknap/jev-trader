@@ -1,9 +1,9 @@
 """Push alerts via ntfy (config.yaml alerts.ntfy_server), with a local log as fallback and audit trail.
 
 notify must work when config.yaml is malformed (#146): it's how that failure, and STOP, reach the human.
-So it reads the server on use and falls back to DEFAULT_NTFY_SERVER when the settings won't load.
-NTFY_TOKEN (optional, in the secrets file) is sent as a bearer token to the configured server only, never to that
-fallback, and is never logged.
+So it reads the server on use, and when the settings won't load it pushes nowhere: the alert goes to the local
+log only, marked "not pushed". NTFY_TOKEN (optional, in the secrets file) is sent as a bearer token to the
+configured server, and is never logged.
 
 The log is RUNTIME_DIR/alerts.log. The strategist (user trader) can't write there, by design (the runtime dir is
 read-only to it), so its alerts go to config.STRATEGIST_ALERTS instead: in its own checkout, 0640, which runner
@@ -23,15 +23,14 @@ import httpx
 from trader import config
 
 ET = ZoneInfo("America/New_York")
-DEFAULT_NTFY_SERVER = "https://ntfy.sh"  # the template's alerts.ntfy_server
 
 
-def _ntfy_server() -> tuple[str, bool]:
-    """The push server, and whether it is the configured one (not the fallback)."""
+def _ntfy_server() -> str | None:
+    """The configured push server, or None when the settings won't load."""
     try:
-        return config.SETTINGS.alerts.ntfy_server, True
-    except Exception:  # whatever broke the settings, the push is the last resort: it must still go out
-        return DEFAULT_NTFY_SERVER, False
+        return config.SETTINGS.alerts.ntfy_server
+    except Exception:  # whatever broke the settings, notify must still log the alert
+        return None
 
 
 def _append(path: Path, line: str) -> None:
@@ -49,7 +48,9 @@ def _append(path: Path, line: str) -> None:
 def notify(level: str, message: str, title: str = "trader") -> None:
     """level: 'urgent' (high priority push) or 'info'."""
     stamp = dt.datetime.now(ET).isoformat(timespec="seconds")  # New York time with its offset, like trades.csv
-    line = f"{stamp} {level.upper()} {message}\n"
+    server = _ntfy_server()
+    unpushed = "" if server else " (not pushed: config.yaml unreadable)"
+    line = f"{stamp} {level.upper()} {message}{unpushed}\n"
     try:
         _append(config.RUNTIME_DIR / "alerts.log", line)
     except OSError:  # read-only to this user, or a full disk: the push below matters more, and callers mustn't crash
@@ -63,18 +64,19 @@ def notify(level: str, message: str, title: str = "trader") -> None:
             print(f"{line.rstrip()} ({where})", file=sys.stderr)  # the journal keeps it
         except Exception:
             pass  # stderr gone too: nothing left to write to
+    if not server:
+        return
     secrets = config.load_secrets()
     topic = secrets.get("NTFY_TOPIC")
     if not topic:
         return
-    server, configured = _ntfy_server()
     headers = {
         "Title": title,
         "Priority": "high" if level == "urgent" else "default",
         "Tags": "rotating_light" if level == "urgent" else "chart_with_upwards_trend",
     }
     token = secrets.get("NTFY_TOKEN")
-    if token and configured:  # a self-hosted server's token must never go to the public fallback
+    if token:
         headers["Authorization"] = f"Bearer {token}"
     try:
         httpx.post(f"{server.rstrip('/')}/{topic}", content=message.encode(), headers=headers, timeout=10)
