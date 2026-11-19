@@ -56,6 +56,8 @@ ALPACA_PAPER_SECRET=
 OPENROUTER_API_KEY=
 # ntfy.sh push topic: subscribe to this exact name in the ntfy app
 NTFY_TOPIC=trader-$(openssl rand -hex 12)
+# Only for your own ntfy server that refuses anonymous publishing: its access token
+# NTFY_TOKEN=
 ENV
     echo "created $S/.env: fill in the keys"
 fi

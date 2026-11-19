@@ -4,6 +4,7 @@ import os
 import stat
 from pathlib import Path
 
+import httpx
 import pytest
 
 from trader import alerts, config
@@ -92,3 +93,32 @@ def test_template_strategist_gitignore_covers_the_wrappers_local_files():
     ):
         assert name in ignored, name
     assert config.STRATEGIST_ALERTS.name in ignored
+
+
+def test_ntfy_token_is_sent_as_a_bearer_header_to_the_configured_server(paths, monkeypatch):
+    sent = []
+    monkeypatch.setattr(config, "load_secrets", lambda: {"NTFY_TOPIC": "t", "NTFY_TOKEN": "tk_secret"})
+    monkeypatch.setattr(alerts.httpx, "post", lambda url, **k: sent.append((url, k["headers"])))
+    alerts.notify("info", "hello")
+    assert sent[0][0] == f"{config.SETTINGS.alerts.ntfy_server.rstrip('/')}/t"
+    assert sent[0][1]["Authorization"] == "Bearer tk_secret"
+
+
+def test_no_token_means_no_authorization_header(paths, monkeypatch):
+    sent = []
+    monkeypatch.setattr(alerts.httpx, "post", lambda url, **k: sent.append(k["headers"]))
+    alerts.notify("info", "hello")
+    assert "Authorization" not in sent[0]
+
+
+def test_ntfy_token_never_reaches_the_logs(paths, capsys, monkeypatch):
+    runtime, fallback, _ = paths
+    monkeypatch.setattr(config, "load_secrets", lambda: {"NTFY_TOPIC": "t", "NTFY_TOKEN": "tk_secret"})
+
+    def refused(url, **k):
+        raise httpx.ConnectError("refused")
+
+    monkeypatch.setattr(alerts.httpx, "post", refused)
+    _unwritable(runtime)
+    alerts.notify("urgent", "kill switch")
+    assert "tk_secret" not in fallback.read_text() + capsys.readouterr().err

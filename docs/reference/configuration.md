@@ -43,7 +43,7 @@ it looked in. The comments in the file itself describe each key too; the templat
 | `schedule.strategist.housekeeping` | systemd `OnCalendar` | The daily credit, token, login, deploy and disk checks |
 | `models.jev` | string | The OpenRouter decision model, pinned. Bump it deliberately, after checking behaviour |
 | `models.strategist` | string | The Claude Code model for the strategist runs |
-| `alerts.ntfy_server` | `https://` URL | The ntfy push server. The topic is `NTFY_TOPIC` in the secrets file |
+| `alerts.ntfy_server` | `https://` URL | The ntfy push server. The topic is `NTFY_TOPIC` in the secrets file, and `NTFY_TOKEN` there is its access token if it needs one |
 | `capital.sim_cash` | number | Each `mode: sim` classifier's simulated account starts with this (USD) |
 | `capital.replay_cash` | number | The pretend account a replay starts with (USD), unless `trader replay --cash` gives another |
 
@@ -132,6 +132,7 @@ host both processes set `TRADER_SECRETS`: the strategist's `trader` command poin
 | `ALPACA_LIVE_KEY`, `ALPACA_LIVE_SECRET` | **runner only** | the live account. `check.sh` fails if the strategist's `.env` has any `ALPACA_LIVE_` line |
 | `OPENROUTER_API_KEY` | strategist and runner | Jev decisions (replays and the runner) and the credit check |
 | `NTFY_TOPIC` | strategist and runner | alerts. Anyone who knows the topic can read them, so keep it random and private |
+| `NTFY_TOKEN` | strategist and runner, optional | an access token for a self-hosted ntfy server that refuses anonymous publishing, sent as `Authorization: Bearer` to `alerts.ntfy_server` only ([Use your own ntfy server](../how-to/alerts.md#use-your-own-ntfy-server)). Leave it out for ntfy.sh |
 
 ## Environment variables
 

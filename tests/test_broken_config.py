@@ -15,7 +15,7 @@ from test_alerts_robustness import _watchdog_env, et
 from trader import alerts, config, runner
 
 ROOT = Path(__file__).resolve().parents[1]
-SECRET_VARS = ("ALPACA_", "OPENROUTER_API_KEY", "NTFY_TOPIC")
+SECRET_VARS = ("ALPACA_", "OPENROUTER_API_KEY", "NTFY_")
 UNCLOSED = b"owner: [unclosed\n"
 LATIN_1 = "owner:\n  name: Ren\u00e9e\n".encode("latin-1")  # not UTF-8: a UnicodeDecodeError, not a YAMLError
 
@@ -161,3 +161,13 @@ def test_a_monkeypatched_settings_is_undone_to_the_loaded_one():
     assert config.get_settings().models.jev == "x" and config.setting("models.jev") == "x"
     mp.undo()
     assert config.get_settings() is loaded and config.SETTINGS is loaded
+
+
+def test_the_fallback_server_never_gets_the_ntfy_token(monkeypatch):
+    sent = []
+    monkeypatch.setattr(config, "load_secrets", lambda: {"NTFY_TOPIC": "t", "NTFY_TOKEN": "tk_secret"})
+    monkeypatch.setattr(alerts.httpx, "post", lambda url, **k: sent.append((url, k["headers"])))
+    monkeypatch.delattr(config, "SETTINGS")
+    monkeypatch.setattr(config, "get_settings", lambda: 1 / 0)
+    alerts.notify("urgent", "kill switch")
+    assert sent[0][0] == f"{alerts.DEFAULT_NTFY_SERVER}/t" and "Authorization" not in sent[0][1]

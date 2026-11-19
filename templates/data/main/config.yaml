@@ -38,6 +38,7 @@ models:
 
 alerts:
   ntfy_server: https://ntfy.sh        # push server; the topic is NTFY_TOPIC in the secrets file
+                                      # (plus NTFY_TOKEN if your own server needs an access token)
 
 capital:
   sim_cash: 250                       # each `mode: sim` classifier's own simulated account (USD)

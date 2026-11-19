@@ -323,6 +323,7 @@ def load_secrets() -> dict[str, str]:
         "ALPACA_LIVE_SECRET",
         "OPENROUTER_API_KEY",
         "NTFY_TOPIC",
+        "NTFY_TOKEN",
     ]:
         if key in os.environ:
             secrets[key] = os.environ[key]

@@ -2,6 +2,8 @@
 
 notify must work when config.yaml is malformed (#146): it's how that failure, and STOP, reach the human.
 So it reads the server on use and falls back to DEFAULT_NTFY_SERVER when the settings won't load.
+NTFY_TOKEN (optional, in the secrets file) is sent as a bearer token to the configured server only, never to that
+fallback, and is never logged.
 
 The log is RUNTIME_DIR/alerts.log. The strategist (user trader) can't write there, by design (the runtime dir is
 read-only to it), so its alerts go to config.STRATEGIST_ALERTS instead: in its own checkout, 0640, which runner
@@ -24,11 +26,12 @@ ET = ZoneInfo("America/New_York")
 DEFAULT_NTFY_SERVER = "https://ntfy.sh"  # the template's alerts.ntfy_server
 
 
-def _ntfy_server() -> str:
+def _ntfy_server() -> tuple[str, bool]:
+    """The push server, and whether it is the configured one (not the fallback)."""
     try:
-        return config.SETTINGS.alerts.ntfy_server
+        return config.SETTINGS.alerts.ntfy_server, True
     except Exception:  # whatever broke the settings, the push is the last resort: it must still go out
-        return DEFAULT_NTFY_SERVER
+        return DEFAULT_NTFY_SERVER, False
 
 
 def _append(path: Path, line: str) -> None:
@@ -60,19 +63,20 @@ def notify(level: str, message: str, title: str = "trader") -> None:
             print(f"{line.rstrip()} ({where})", file=sys.stderr)  # the journal keeps it
         except Exception:
             pass  # stderr gone too: nothing left to write to
-    topic = config.load_secrets().get("NTFY_TOPIC")
+    secrets = config.load_secrets()
+    topic = secrets.get("NTFY_TOPIC")
     if not topic:
         return
+    server, configured = _ntfy_server()
+    headers = {
+        "Title": title,
+        "Priority": "high" if level == "urgent" else "default",
+        "Tags": "rotating_light" if level == "urgent" else "chart_with_upwards_trend",
+    }
+    token = secrets.get("NTFY_TOKEN")
+    if token and configured:  # a self-hosted server's token must never go to the public fallback
+        headers["Authorization"] = f"Bearer {token}"
     try:
-        httpx.post(
-            f"{_ntfy_server().rstrip('/')}/{topic}",
-            content=message.encode(),
-            headers={
-                "Title": title,
-                "Priority": "high" if level == "urgent" else "default",
-                "Tags": "rotating_light" if level == "urgent" else "chart_with_upwards_trend",
-            },
-            timeout=10,
-        )
+        httpx.post(f"{server.rstrip('/')}/{topic}", content=message.encode(), headers=headers, timeout=10)
     except httpx.HTTPError:
         pass  # the local log still has it; watchdog covers a dead daemon
