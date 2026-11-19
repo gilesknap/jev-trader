@@ -92,8 +92,11 @@ The `strategist` branch may change only `state/`, `journal/`, `features/custom/`
 7. **Prepares inputs:** archives the runner's logs into `logs/` (post-close and weekly), writes
    `logs/probe_report.json` (post-close), applies the retention policy (weekly).
 8. **Runs Claude** with the run's prompt and the charter appended to its system prompt, under
-   `timeout` (25 or 50 minutes). `ANTHROPIC_API_KEY` is unset, so runs can only use the Claude
-   subscription, never API billing.
+   `timeout` (25 or 50 minutes). Billing is the Claude subscription login, unless the secrets
+   file sets `ANTHROPIC_API_KEY`: then the run bills that key, which it gets only through its
+   environment, never its command line or the log. An `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`
+   in the inherited environment is always dropped (see
+   [Switch between an API key and the subscription](../how-to/daily-operations.md#switch-between-an-api-key-and-the-subscription)).
 9. **Path-checks the result:** undoes any commits the run made itself, reverts every change
    outside the allowed paths (with an alert), and commits what's left as one commit.
 10. **Publishes** to `origin/strategist` as a fast-forward, never a force-push. If the run pushed

@@ -7,8 +7,11 @@ code checkout at TRADER_CODE_ROOT, with `trader` from PATH.
 """
 
 import fcntl
+import os
+import re
 import shutil
 import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -27,6 +30,7 @@ case "$args" in
            [[ -e "$HOME/sync_fails" ]] && exit 1; exit 0 ;;
   "run trader session") echo '{"minutes_to_open": 45, "minutes_to_close": 400}' ;;
   "run trader config get models.strategist") echo cfg-model ;;
+  run\\ python\\ -c\\ *load_secrets*) cat "$HOME/api_key" 2>/dev/null; echo ;;  # the wrapper's ANTHROPIC_API_KEY lookup
   run\\ python*) echo "${@: -1}" >> "$HOME/alerts" ;;
   *) echo "$args" >> "$HOME/uv_calls" ;;
 esac
@@ -39,11 +43,15 @@ case "$*" in
 esac
 """
 FAKE_TRADER_PYTHON = """#!/bin/bash
-echo "${@: -1}" >> "$HOME/alerts"
+case "$*" in
+  *load_secrets*) cat "$HOME/api_key" 2>/dev/null; echo ;;  # the wrapper's ANTHROPIC_API_KEY lookup
+  *) echo "${@: -1}" >> "$HOME/alerts" ;;
+esac
 """
 FAKE_CLAUDE = """#!/bin/bash
 env | grep ^STRATEGIST_ >> "$HOME/claude_env"
 echo "$*" >> "$HOME/claude_args"
+echo "key=${ANTHROPIC_API_KEY-unset} token=${ANTHROPIC_AUTH_TOKEN-unset}" >> "$HOME/claude_auth"
 echo run >> "$HOME/claude_runs"
 sleep 3 >/dev/null 2>&1 &   # a stray background process outliving the run
 echo note >> state/note.md
@@ -169,6 +177,53 @@ def test_reexecs_merged_wrapper_and_pushes_merge(sandbox):
     assert sandbox.read("alerts") == ""
     assert "change wrapper" in git(sandbox.tmp / "origin.git", "log", "--oneline", "strategist")
     assert len(list(sandbox.logdir.glob("*-premarket.log"))) == 1
+
+
+KEY = "sk-ant-api03-test-secret"
+
+
+@pytest.mark.parametrize("mode", ["monorepo", "split"])
+def test_without_an_api_key_the_run_uses_the_login(tmp_path, mode):
+    # Today's behaviour: no ANTHROPIC_API_KEY in the secrets file, so claude gets no API credential at all,
+    # even one inherited from the environment, and falls back to trader's subscription login.
+    s = make_sandbox(tmp_path, split=mode == "split")
+    s.env |= {"ANTHROPIC_API_KEY": "inherited", "ANTHROPIC_AUTH_TOKEN": "inherited"}
+    assert s.run("weekly").returncode == 0
+    assert s.read("claude_auth") == "key=unset token=unset\n"
+    assert "billing the Claude subscription login" in "".join(p.read_text() for p in s.logdir.glob("*.log"))
+
+
+@pytest.mark.parametrize("mode", ["monorepo", "split"])
+def test_api_key_from_the_secrets_file_reaches_only_claudes_environment(tmp_path, mode):
+    s = make_sandbox(tmp_path, split=mode == "split")
+    (s.home / "api_key").write_text(KEY)
+    s.env |= {"ANTHROPIC_API_KEY": "inherited", "ANTHROPIC_AUTH_TOKEN": "inherited"}
+    assert s.run("weekly").returncode == 0
+    assert s.read("claude_auth") == f"key={KEY} token=unset\n"  # the file's key, never the inherited one
+    logs = "".join(p.read_text() for p in s.logdir.glob("*.log"))
+    assert "billing the Anthropic API key" in logs
+    # Never on claude's command line, in the log or in an alert.
+    assert KEY not in s.read("claude_args") + logs + s.read("alerts")
+    # Removing the line switches the next run back to the login: no deploy, nothing cached.
+    (s.home / "api_key").unlink()
+    assert s.run("weekly").returncode == 0
+    assert s.read("claude_auth").splitlines()[-1] == "key=unset token=unset"
+
+
+@pytest.mark.parametrize(
+    ("secrets", "expected"),
+    [("ANTHROPIC_API_KEY=k1\n", "k1"), ("# ANTHROPIC_API_KEY=k1\n", ""), ("NTFY_TOPIC=t\n", "")],
+)
+def test_the_wrappers_key_lookup_reads_the_secrets_file(tmp_path, secrets, expected):
+    # The fakes above stand in for this lookup, so run the wrapper's own one-liner against a real secrets file.
+    code = re.search(r'-c "(from trader\.config import load_secrets;[^"]*)"', WRAPPER.read_text())
+    assert code
+    (tmp_path / "env").write_text(secrets)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("ANTHROPIC_")} | {
+        "TRADER_SECRETS": str(tmp_path / "env")
+    }
+    r = subprocess.run([sys.executable, "-c", code[1]], env=env, capture_output=True, text=True, check=True)
+    assert r.stdout == expected + "\n"
 
 
 def test_stray_child_does_not_hold_the_lock(sandbox):

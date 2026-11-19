@@ -3,7 +3,7 @@
 - OpenRouter credit is low, or will run out within LOW_DAYS at the current burn rate
 - the OpenRouter key's spend limit is nearly used, or the key is about to expire
 - the GitHub token (used for pushes and PRs) is about to expire
-- the Claude subscription login (used by the strategist's runs) is about to expire
+- the Claude subscription login (used by the strategist's runs unless ANTHROPIC_API_KEY is set) is about to expire
 - changes merged to main haven't been deployed to the runner for more than 2 days (in the split layout,
   either repo's main: the public code or the private data repo's deployment config)
 - disk space is low
@@ -118,9 +118,12 @@ def check_github() -> list[tuple[str, str, bool]]:
     return []
 
 
-def check_claude_login() -> list[tuple[str, str, bool]]:
+def check_claude_login(secrets: dict[str, str] | None = None) -> list[tuple[str, str, bool]]:
     """The subscription login's refresh token has a fixed expiry: the access token renews itself, but once
-    refreshTokenExpiresAt (epoch ms) passes, `claude` runs fail until someone logs in again."""
+    refreshTokenExpiresAt (epoch ms) passes, `claude` runs fail until someone logs in again. Skipped while the
+    secrets set ANTHROPIC_API_KEY: the strategist's runs bill that key, and the login isn't used."""
+    if secrets and secrets.get("ANTHROPIC_API_KEY"):
+        return []
     creds = Path.home() / ".claude" / ".credentials.json"
     if not creds.exists():
         return [
@@ -274,7 +277,7 @@ def run() -> list[str]:
     for check in (
         lambda: check_openrouter(secrets["OPENROUTER_API_KEY"]),
         check_github,
-        check_claude_login,
+        lambda: check_claude_login(secrets),
         lambda: check_undeployed(state),
         check_disk,
     ):
