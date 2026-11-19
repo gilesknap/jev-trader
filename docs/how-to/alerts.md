@@ -23,6 +23,8 @@ To push to a self-hosted ntfy server instead of ntfy.sh:
 3. If the server refuses anonymous publishing, create an access token there that may write to
    that topic (`ntfy token add`, plus `ntfy access` for its user), and add it to both secrets
    files as `NTFY_TOKEN`. Alerts then carry `Authorization: Bearer <token>`.
+4. Subscribe to the topic on that server in the ntfy app, with a login that may read it if the
+   server refuses anonymous reading too.
 
 Without `NTFY_TOKEN` alerts are published anonymously, which is what ntfy.sh's public topics
 need. The token is never written to a log, and it is sent only to the server `config.yaml`
