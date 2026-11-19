@@ -1,5 +1,5 @@
 """A malformed config.yaml must not take the last resorts with it (#146): a fresh `trader stop` still
-flags and flattens, the watchdog still runs (and says the file is broken), and notify still pushes.
+flags and flattens, the watchdog still runs (and says the file is broken), and notify still logs (pushing nowhere).
 Strict validation stays where it matters: `trader validate`, every other command, and the runner's
 session start, which must never trade on a wrong start date."""
 
@@ -15,7 +15,7 @@ from test_alerts_robustness import _watchdog_env, et
 from trader import alerts, config, runner
 
 ROOT = Path(__file__).resolve().parents[1]
-SECRET_VARS = ("ALPACA_", "OPENROUTER_API_KEY", "NTFY_TOPIC")
+SECRET_VARS = ("ALPACA_", "OPENROUTER_API_KEY", "NTFY_")
 UNCLOSED = b"owner: [unclosed\n"
 LATIN_1 = "owner:\n  name: Ren\u00e9e\n".encode("latin-1")  # not UTF-8: a UnicodeDecodeError, not a YAMLError
 
@@ -61,12 +61,13 @@ def test_fresh_stop_watchdog_and_notify_work_with_a_malformed_config(tmp_path, c
     (tmp_path / "runtime" / "books" / "paper").mkdir(parents=True)
     r = _fresh(tmp_path, script=FRESH, content=content, NTFY_TOPIC="t")
     assert r.returncode == 0, r.stderr
-    assert json.loads(r.stdout.splitlines()[-1]) == [f"{alerts.DEFAULT_NTFY_SERVER}/t"] * 4  # stop, 2 watchdog, notify
+    assert json.loads(r.stdout.splitlines()[-1]) == []  # no server to push to: nothing goes to a default one
     assert json.loads((tmp_path / "runtime" / "books" / "paper" / "stop.json").read_text())["stop_on"]
     log = (tmp_path / "runtime" / "alerts.log").read_text()
     assert "STOP flagged for ['paper']" in log
     assert "WATCHDOG: config.yaml unreadable" in log and "bad.yaml: can't read deployment settings" in log
-    assert "strategist postclose: run failed" in log
+    assert "strategist postclose: run failed (not pushed: config.yaml unreadable)" in log
+    assert log.count("(not pushed: config.yaml unreadable)") == 4  # stop, 2 watchdog, notify
 
 
 @pytest.mark.parametrize("argv", [["validate"], ["run", "--decider", "stub"], ["golive"], ["config", "get", "owner"]])
@@ -100,7 +101,8 @@ def test_stop_flattens_directly_with_a_malformed_config(broken, tmp_path, monkey
     msg = runner.request_stop()
     assert "flattened paper directly" in msg and flattened == [True]
     assert (tmp_path / "books" / "live" / "stop.json").exists()
-    assert posts == [(f"{alerts.DEFAULT_NTFY_SERVER}/t", msg.encode())]
+    assert posts == []
+    assert f"{msg} (not pushed: config.yaml unreadable)" in (tmp_path / "alerts.log").read_text()
 
 
 def test_run_session_refuses_a_malformed_config_before_anything_else(broken, monkeypatch):
@@ -128,14 +130,16 @@ def test_a_config_that_is_not_utf8_is_a_settings_error(tmp_path):
         config.load_settings(bad)
 
 
-def test_notify_pushes_to_the_default_server_whatever_breaks_the_settings(monkeypatch):
+def test_notify_logs_and_pushes_nowhere_whatever_breaks_the_settings(tmp_path, monkeypatch):
     posts = []
-    monkeypatch.setattr(config, "load_secrets", lambda: {"NTFY_TOPIC": "t"})
+    monkeypatch.setattr(config, "load_secrets", lambda: {"NTFY_TOPIC": "t", "NTFY_TOKEN": "tk_secret"})
     monkeypatch.setattr(alerts.httpx, "post", lambda url, **k: posts.append(url))
+    monkeypatch.setattr(config, "RUNTIME_DIR", tmp_path)
     monkeypatch.delattr(config, "SETTINGS")
     monkeypatch.setattr(config, "get_settings", lambda: 1 / 0)  # not even a SettingsError
     alerts.notify("urgent", "kill switch")
-    assert posts == [f"{alerts.DEFAULT_NTFY_SERVER}/t"]
+    assert posts == []
+    assert "URGENT kill switch (not pushed: config.yaml unreadable)" in (tmp_path / "alerts.log").read_text()
 
 
 def test_settings_load_on_first_use_and_a_failure_is_not_cached(tmp_path):

@@ -263,7 +263,7 @@ The token lets the strategist push its branch and open issues (its `needs-human`
 
 **Merging.** Merge PRs in GitHub's web UI with **"Create a merge commit"**, on your fork and on your data repository. Those merge commits are signed by GitHub, and `trading-deploy` checks that signature (against `deploy/github-web-flow.gpg`): signed code merges deploy after a PR list and the tests, and anything else makes you read the diff and type `yes`. Config changes always show their diff.
 
-**ntfy.** Install the ntfy app on your phone. Step 6 generates a random topic name (`NTFY_TOPIC` in the strategist's `.env`); subscribe to exactly that name. Alerts go to the public ntfy.sh server, so the random name is what keeps them private: don't share it.
+**ntfy.** Install the ntfy app on your phone. Step 6 generates a random topic name (`NTFY_TOPIC` in the strategist's `.env`); subscribe to exactly that name. Alerts go to the public ntfy.sh server, so the random name is what keeps them private: don't share it. To use your own ntfy server instead, see [Use your own ntfy server](../how-to/alerts.md#use-your-own-ntfy-server).
 
 ## 6. Install
 

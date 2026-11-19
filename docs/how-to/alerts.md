@@ -9,9 +9,27 @@ Every alert is also logged:
   `/srv/trading/strategist/strategist-alerts.log` (0640, git-ignored), because `trader` can't
   write the runtime directory by design.
 
-If `config.yaml` can't be read or is invalid, alerts still go out, but to the default public
-server, `https://ntfy.sh`, since the file that names yours is the thing that's broken. A
-self-hosted ntfy server won't get them until it's fixed; the logs above still have every one.
+If `config.yaml` can't be read or is invalid, alerts aren't pushed anywhere, since the file that
+names your server is the thing that's broken. They are still written to the logs above, marked
+`(not pushed: config.yaml unreadable)`, and the watchdog logs hourly that the file is unreadable,
+so check the logs if your phone goes quiet.
+
+## Use your own ntfy server
+
+To push to a self-hosted ntfy server instead of ntfy.sh:
+
+1. Set `alerts.ntfy_server` in `config.yaml` to its `https://` URL and deploy the change.
+2. Set `NTFY_TOPIC` in both secrets files (the strategist's `.env` and runner's `env`) to the
+   topic you subscribe to on that server.
+3. If the server refuses anonymous publishing, create an access token there that may write to
+   that topic (`ntfy token add`, plus `ntfy access` for its user), and add it to both secrets
+   files as `NTFY_TOKEN`. Alerts then carry `Authorization: Bearer <token>`.
+4. Subscribe to the topic on that server in the ntfy app, with a login that may read it if the
+   server refuses anonymous reading too.
+
+Without `NTFY_TOKEN` alerts are published anonymously, which is what ntfy.sh's public topics
+need. The token is never written to a log, and it is sent only to the server `config.yaml`
+names.
 
 ## What pages you
 

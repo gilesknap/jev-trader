@@ -73,7 +73,7 @@ def _env(home: Path, **env) -> dict:
     """The current environment minus every TRADER_* variable and every secret load_secrets() lets the
     environment override, with HOME moved (no services.env, no ~/.config/trading/env), plus CODE_ENV and
     `env` (a None value drops that variable)."""
-    secrets = ("ALPACA_", "OPENROUTER_API_KEY", "NTFY_TOPIC")
+    secrets = ("ALPACA_", "OPENROUTER_API_KEY", "NTFY_")
     base = {k: v for k, v in os.environ.items() if not k.startswith(("TRADER_", *secrets))}
     return {k: v for k, v in (base | {"HOME": str(home)} | CODE_ENV | env).items() if v is not None}
 
@@ -318,3 +318,13 @@ def test_cli_render_deploy_refuses_a_data_root_without_mode_file(tmp_path):
     r = _run(["-m", "trader.cli", "config", "render-deploy", "--check", "--data-root", str(data)], tmp_path)
     assert r.returncode != 0 and "mode.yaml is missing" in r.stderr
     assert not (data / "deploy").exists()
+
+
+def test_ntfy_token_comes_from_the_secrets_file_or_the_environment(tmp_path):
+    secret = tmp_path / "sec"
+    secret.write_text("NTFY_TOPIC=t\nNTFY_TOKEN=from_file\n")
+    code = "from trader import config; s = config.load_secrets(); print(s['NTFY_TOPIC'], s['NTFY_TOKEN'])"
+    r = _run(["-c", code], tmp_path, TRADER_SECRETS=str(secret))
+    assert r.stdout.split() == ["t", "from_file"], r.stderr
+    r = _run(["-c", code], tmp_path, TRADER_SECRETS=str(secret), NTFY_TOKEN="from_env")
+    assert r.stdout.split() == ["t", "from_env"], r.stderr
