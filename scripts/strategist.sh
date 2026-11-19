@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Timer-run wrapper (trader-strategist@.service) for a headless strategist run. Usage: strategist.sh premarket|postclose|weekly|housekeeping
 # Runs as `trader`. Billing: ANTHROPIC_API_KEY in the strategist's secrets file (.env) when set there, else
-# trader's Claude subscription login. Both are unset from the inherited environment, so only that file decides.
+# trader's Claude subscription login. ANTHROPIC_API_KEY and ANTHROPIC_AUTH_TOKEN are unset from the inherited
+# environment, so only that file decides.
 set -uo pipefail
 KIND="${1:?premarket|postclose|weekly|housekeeping}"
 REPO="${TRADER_STRATEGIST_ROOT:-$HOME/trading}"

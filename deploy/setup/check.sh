@@ -56,6 +56,7 @@ chk  "strategist .env is 600"                     "[[ \$(stat -c %a /srv/trading
 nchk "strategist .env holds no live keys"         "grep -q '^ALPACA_LIVE_' /srv/trading/strategist/.env"
 chk  "runner env is 600 runner-owned"             "[[ \$(stat -c %U:%a /home/runner/.config/trading/env) == runner:600 ]]"
 nchk "trader cannot read runner env"              "as_trader cat /home/runner/.config/trading/env"
+nchk "runner env has no ANTHROPIC_API_KEY"         "grep -q '^ANTHROPIC_API_KEY=' /home/runner/.config/trading/env"
 nchk "runner env has no duplicated keys"          "grep -o '^[A-Z_]*=' /home/runner/.config/trading/env | sort | uniq -d | grep -q ."
 
 echo "Services"

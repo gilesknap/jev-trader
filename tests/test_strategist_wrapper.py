@@ -7,8 +7,11 @@ code checkout at TRADER_CODE_ROOT, with `trader` from PATH.
 """
 
 import fcntl
+import os
+import re
 import shutil
 import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -205,6 +208,22 @@ def test_api_key_from_the_secrets_file_reaches_only_claudes_environment(tmp_path
     (s.home / "api_key").unlink()
     assert s.run("weekly").returncode == 0
     assert s.read("claude_auth").splitlines()[-1] == "key=unset token=unset"
+
+
+@pytest.mark.parametrize(
+    ("secrets", "expected"),
+    [("ANTHROPIC_API_KEY=k1\n", "k1"), ("# ANTHROPIC_API_KEY=k1\n", ""), ("NTFY_TOPIC=t\n", "")],
+)
+def test_the_wrappers_key_lookup_reads_the_secrets_file(tmp_path, secrets, expected):
+    # The fakes above stand in for this lookup, so run the wrapper's own one-liner against a real secrets file.
+    code = re.search(r'-c "(from trader\.config import load_secrets;[^"]*)"', WRAPPER.read_text())
+    assert code
+    (tmp_path / "env").write_text(secrets)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("ANTHROPIC_")} | {
+        "TRADER_SECRETS": str(tmp_path / "env")
+    }
+    r = subprocess.run([sys.executable, "-c", code[1]], env=env, capture_output=True, text=True, check=True)
+    assert r.stdout == expected + "\n"
 
 
 def test_stray_child_does_not_hold_the_lock(sandbox):
