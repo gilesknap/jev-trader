@@ -25,7 +25,7 @@ Opus 5.5 strategist gets ~£200 (held as USD) and autonomy to invent and run an 
 - Broker: **Alpaca**, US stocks/ETFs, **cash account**, fractional shares. Funded once in USD; all accounting in USD. W-8BEN.
 - Market data: **free IEX** websocket 1-min bars live (at most 30 symbols); **historical SIP** (>15 min old) for research and backtests. Alpaca news API + web search for context.
 - Decision model: **TypeSafe Jev via OpenRouter** (`models.jev`, `typesafe/jev-1.13` as shipped) through its Decisions API, behind an adapter (a local model can be swapped in by implementing its `decide`). About $0.00002 per call.
-- Strategist: headless `claude -p` from systemd user timers on the Max subscription (the wrapper unsets `ANTHROPIC_API_KEY`).
+- Strategist: headless `claude -p` from systemd user timers on trader's Claude subscription login, or on an Anthropic API key when the strategist's secrets file sets `ANTHROPIC_API_KEY` (the wrapper ignores any inherited one).
 
 ## Schedule
 Times are US Eastern; the host's timers fire on the operator's clock (`schedule` in `config.yaml`), and everything that matters gates on Alpaca's calendar, which handles holidays, half-days and UK/US daylight-saving mismatches.

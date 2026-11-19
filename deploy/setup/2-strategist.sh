@@ -58,6 +58,10 @@ OPENROUTER_API_KEY=
 NTFY_TOPIC=trader-$(openssl rand -hex 12)
 # Only for your own ntfy server that refuses anonymous publishing: its access token
 # NTFY_TOKEN=
+# Optional: bill the strategist's Claude runs to an Anthropic API key instead of trader's subscription
+# login. Use a dedicated Console workspace with a monthly spend limit. Remove the line to switch back
+# (then renew the login: claude auth login). Strategist only: runner doesn't need it.
+# ANTHROPIC_API_KEY=
 ENV
     echo "created $S/.env: fill in the keys"
 fi

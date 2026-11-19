@@ -133,6 +133,7 @@ host both processes set `TRADER_SECRETS`: the strategist's `trader` command poin
 | `ALPACA_LIVE_KEY`, `ALPACA_LIVE_SECRET` | **runner only** | the live account. `check.sh` fails if the strategist's `.env` has any `ALPACA_LIVE_` line |
 | `OPENROUTER_API_KEY` | strategist and runner | Jev decisions (replays and the runner) and the credit check |
 | `NTFY_TOPIC` | strategist and runner | alerts. Anyone who knows the topic can read them, so keep it random and private |
+| `ANTHROPIC_API_KEY` | strategist only, optional | bills the strategist's Claude runs to this Anthropic API key instead of `trader`'s subscription login; leave it out to use the login. Read at the start of every run, so removing it switches back with no deploy ([Switch between an API key and the subscription](../how-to/daily-operations.md#switch-between-an-api-key-and-the-subscription)) |
 | `NTFY_TOKEN` | strategist and runner, optional | an access token for a self-hosted ntfy server that refuses anonymous publishing, sent as `Authorization: Bearer` to `alerts.ntfy_server` only ([Use your own ntfy server](../how-to/alerts.md#use-your-own-ntfy-server)). Leave it out for ntfy.sh |
 
 ## Environment variables

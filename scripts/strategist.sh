@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Timer-run wrapper (trader-strategist@.service) for a headless strategist run. Usage: strategist.sh premarket|postclose|weekly|housekeeping
-# Runs as `trader` on the Max subscription: ANTHROPIC_API_KEY is unset so billing can't switch to the API.
+# Runs as `trader`. Billing: ANTHROPIC_API_KEY in the strategist's secrets file (.env) when set there, else
+# trader's Claude subscription login. Both are unset from the inherited environment, so only that file decides.
 set -uo pipefail
 KIND="${1:?premarket|postclose|weekly|housekeeping}"
 REPO="${TRADER_STRATEGIST_ROOT:-$HOME/trading}"
@@ -158,8 +159,23 @@ if ! MODEL=$("${TRADER_BIN[@]}" config get models.strategist 2>>"$LOG") || [[ -z
     alert "strategist $KIND: can't read models.strategist from config.yaml — see $LOG"
     exit 1
 fi
+# Billing: an ANTHROPIC_API_KEY line in the secrets file (read every run, so removing it switches back with no
+# deploy) makes the run bill that API key, which `claude -p` always prefers to the login; without one, the
+# subscription login. The key reaches claude only through its environment: never argv, never the log.
+if ! API_KEY=$("${PY_BIN[@]}" -c "from trader.config import load_secrets; print(load_secrets().get('ANTHROPIC_API_KEY', ''))" 2>>"$LOG"); then
+    alert "strategist $KIND: can't read the secrets file — see $LOG"
+    exit 1
+fi
+if [[ -n "$API_KEY" ]]; then
+    echo "$(date -u +%FT%TZ) $KIND: billing the Anthropic API key from the secrets file" >>"$LOG"
+    export ANTHROPIC_API_KEY="$API_KEY"
+else
+    echo "$(date -u +%FT%TZ) $KIND: billing the Claude subscription login" >>"$LOG"
+fi
+unset API_KEY
 timeout "$LIMIT" claude -p "$PROMPT" ${CHARTER[@]+"${CHARTER[@]}"} --model "$MODEL" --output-format text >>"$LOG" 2>&1
 rc=$?
+unset ANTHROPIC_API_KEY
 if [[ $rc -ne 0 ]]; then
     alert "strategist $KIND run failed (exit $rc) — see $LOG"
     exit $rc

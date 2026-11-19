@@ -274,6 +274,20 @@ def test_claude_login_missing(tmp_path, monkeypatch):
     assert pid == "claude_login" and "is missing" in msg and "`claude auth login` as trader" in msg and urgent
 
 
+@pytest.mark.parametrize("content", [None, _expiring_in(-2.3)])
+def test_claude_login_not_checked_while_an_api_key_is_set(tmp_path, monkeypatch, content):
+    # The strategist bills ANTHROPIC_API_KEY when the secrets file sets it, so the login doesn't matter.
+    _login(tmp_path, monkeypatch, content)
+    assert housekeeping.check_claude_login({"ANTHROPIC_API_KEY": "sk-ant-x"}) == []
+
+
+def test_claude_login_checked_without_an_api_key(tmp_path, monkeypatch):
+    _login(tmp_path, monkeypatch, _expiring_in(-2.3))
+    for secrets in ({}, {"ANTHROPIC_API_KEY": ""}, {"OPENROUTER_API_KEY": "k"}):
+        ((pid, _, urgent),) = housekeeping.check_claude_login(secrets)
+        assert pid == "claude_login_expiry" and urgent
+
+
 @pytest.mark.parametrize(
     "content",
     [

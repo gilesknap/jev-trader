@@ -65,7 +65,9 @@ A daily `trader housekeeping` run (through `scripts/strategist.sh housekeeping`)
 - the OpenRouter key's spend limit is nearly used, or the key expires soon;
 - `trader`'s **GitHub token** expires within 21 days, or stops working;
 - `trader`'s **Claude login** expires within 21 days, or can't be found (renew it with
-  `claude auth login` as trader);
+  `claude auth login` as trader). Not checked while the strategist's `.env` sets
+  `ANTHROPIC_API_KEY`, since runs then bill the key and don't use the login; a key that stops
+  working (revoked, out of credit) shows up as a failed strategist run instead;
 - **merged changes haven't been deployed** for 48 hours: on the code repository's `main` (read
   anonymously, over HTTPS), or on your data repository's `main` (the deployment config), each
   alerted separately;
