@@ -52,6 +52,30 @@ def _refuse_unsafe_bind(path: Path) -> None:
             raise SandboxError(f"refusing to bind {path} into the feature sandbox: it would expose {p}")
 
 
+def _symlinks_on_path(path: Path) -> list[tuple[Path, str]]:
+    """Every symlink met while resolving `path`, in order: (where it lives, what it says).
+
+    Each location has its parent already resolved, so recreating these links (with their
+    targets bound) rebuilds the same path inside the sandbox.
+    """
+    links: list[tuple[Path, str]] = []
+    cur, todo = Path("/"), list(path.parts[1:])
+    while todo:
+        part = todo.pop(0)
+        nxt = cur.parent if part == ".." else cur / part
+        if part != ".." and nxt.is_symlink():
+            if len(links) >= 40:
+                raise SandboxError(f"too many symlinks resolving {path}")
+            target = os.readlink(nxt)
+            links.append((nxt, target))
+            if Path(target).is_absolute():
+                cur = Path("/")
+            todo = [p for p in Path(target).parts if p != "/"] + todo
+        elif part != ".":
+            cur = nxt
+    return links
+
+
 def bwrap_cmd(
     custom_dir: Path, code_root: Path = config.CODE_ROOT, prefix: Path | None = None, base_prefix: Path | None = None
 ) -> list[str]:
@@ -61,7 +85,10 @@ def bwrap_cmd(
     strategist's venv works as well as the runner's, wherever it lives (#169). That venv is
     bound read-only only when it isn't already visible (under `code_root` or /usr), and so is
     its base interpreter (`sys.base_prefix`, where the venv's `bin/python` symlink and the
-    stdlib point). `prefix`/`base_prefix` exist for tests.
+    stdlib point). `prefix`/`base_prefix` exist for tests. Symlinks on the way from the
+    venv's `bin/python` to the real interpreter that would otherwise be missing (uv's
+    minor-version directory `cpython-3.12-...` -> `cpython-3.12.16-...`, say) are recreated
+    as symlinks, which expose nothing: only their bound targets are readable.
 
     Fail-closed floor: a bind that would expose `/`, the home directory, the runtime dir or
     a secrets file (the bind is an ancestor of, or equal to, one of them) raises
@@ -96,7 +123,7 @@ def bwrap_cmd(
         elif p.exists():
             cmd += ["--ro-bind", str(p), str(p)]
     cmd += ["--ro-bind", str(code_root), str(code_root)]
-    visible = [Path("/usr"), code_root]
+    visible = [Path("/usr"), code_root, *(Path("/") / link for link in ("bin", "lib", "lib64", "sbin"))]
     for env in (prefix, base_prefix):
         if env.is_dir() and not any(env.is_relative_to(v) for v in visible):
             _refuse_unsafe_bind(env)
@@ -104,6 +131,12 @@ def bwrap_cmd(
             visible.append(env)
     if custom_dir.exists() and not custom_dir.is_relative_to(code_root):
         cmd += ["--ro-bind", str(custom_dir), str(custom_dir)]
+    python = prefix / "bin" / "python"
+    if not python.exists():
+        python = Path(sys.executable)
+    for link, target in _symlinks_on_path(python):
+        if not any(link.is_relative_to(v) for v in visible):
+            cmd += ["--symlink", target, str(link)]
     cmd += [
         "--setenv",
         "PATH",
@@ -120,10 +153,7 @@ def bwrap_cmd(
         "--chdir",
         "/tmp",
     ]
-    python = str(prefix / "bin" / "python")
-    if not Path(python).exists():
-        python = sys.executable
-    return cmd + [python, "-I", "-m", "trader.features.worker"]
+    return cmd + [str(python), "-I", "-m", "trader.features.worker"]
 
 
 class FeatureSandbox:

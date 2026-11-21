@@ -200,6 +200,42 @@ def test_bwrap_cmd_binds_base_interpreter_outside_usr(tmp_path):
     assert binds.count("/usr") == 1 and len(binds) == len(_ro_binds(_legacy_bwrap_cmd(custom, code)))
 
 
+def _symlinks(cmd):
+    return {(cmd[i + 1], cmd[i + 2]) for i, a in enumerate(cmd) if a == "--symlink"}
+
+
+def test_bwrap_cmd_recreates_symlinks_to_a_uv_minor_version_dir(tmp_path):
+    """uv points the venv at a minor-version link dir; only its resolved target is bound.
+
+    .venv/bin/python -> <uv>/cpython-3.12-x/bin/python3.12, and cpython-3.12-x ->
+    cpython-3.12.16-x (where sys.base_prefix resolves). The link dir must exist in the
+    sandbox as a symlink, or execvp of .venv/bin/python fails (CI on ubuntu-26.04).
+    """
+    tmp_path = tmp_path.resolve()
+    code, custom, uv = tmp_path / "code", tmp_path / "snap", tmp_path / "uv"
+    custom.mkdir()
+    real = uv / "cpython-3.12.16-x"
+    (real / "bin").mkdir(parents=True)
+    (real / "bin" / "python3.12").touch()
+    (uv / "other-python").mkdir()  # a sibling install the sandbox must not see
+    minor = uv / "cpython-3.12-x"
+    minor.symlink_to(real)
+    venv = code / ".venv"
+    (venv / "bin").mkdir(parents=True)
+    (venv / "bin" / "python").symlink_to(minor / "bin" / "python3.12")
+    cmd = bwrap_cmd(custom, code_root=code, prefix=venv, base_prefix=minor)
+    _assert_locked_down(cmd)
+    assert cmd[-4] == str(venv / "bin" / "python")
+    binds = _ro_binds(cmd)
+    assert str(real) in binds and str(uv) not in binds and str(minor) not in binds
+    # one new symlink, the minor-version dir; an interpreter with no links gains none
+    (venv / "bin" / "python").unlink()
+    (venv / "bin" / "python").touch()
+    plain = bwrap_cmd(custom, code_root=code, prefix=venv, base_prefix=minor)
+    assert _symlinks(cmd) - _symlinks(plain) == {(str(real), str(minor))}
+    assert _symlinks(plain) == _symlinks(_legacy_bwrap_cmd(custom, code))
+
+
 def test_bwrap_cmd_refuses_to_bind_root(tmp_path):
     (tmp_path / "code").mkdir()
     with pytest.raises(SandboxError, match="refusing"):
