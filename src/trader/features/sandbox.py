@@ -123,7 +123,8 @@ def bwrap_cmd(
         elif p.exists():
             cmd += ["--ro-bind", str(p), str(p)]
     cmd += ["--ro-bind", str(code_root), str(code_root)]
-    visible = [Path("/usr"), code_root, *(Path("/") / link for link in ("bin", "lib", "lib64", "sbin"))]
+    # what is already in the sandbox (binds or the merged-/usr links), so no link is recreated there
+    visible = [Path("/usr"), Path("/etc"), code_root, *(Path("/") / link for link in ("bin", "lib", "lib64", "sbin"))]
     for env in (prefix, base_prefix):
         if env.is_dir() and not any(env.is_relative_to(v) for v in visible):
             _refuse_unsafe_bind(env)
