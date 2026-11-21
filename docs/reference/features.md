@@ -45,7 +45,8 @@ timestamp rather than counting rows: the library's minute-named features (`ret_*
 Rules, enforced by the gate (`src/trader/features/harness.py`) and the sandbox:
 
 - They run only in a bubblewrap sandbox: no network, a cleared environment, a private `/tmp`,
-  and only `/usr`, `/etc`, the code checkout and a runner-owned copy of the feature files mounted,
+  and only `/usr`, `/etc`, the code checkout, the running interpreter's environment and a
+  runner-owned copy of the feature files mounted,
   all read-only (no home directories, runtime directory or secrets).
 - Allowed imports: `import math`, `statistics`, `numpy` or `pandas`; `from <one of those> import
   <name>` (not `*`, and not a name starting with `_` or `read_`, or a banned attribute below);
